@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "fastapi_project"
+version = "0.1.0"
+description = "FastAPI Project Setup"
+authors = ["Lucas"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.100.0"
+uvicorn = "^0.23.0"
+pydantic = "^2.0"
+
+[tool.poetry.dev-dependencies]
+pytest = "^7.0"
+pytest-cov = "^4.0"
+httpx = "^0.25.0"
+flake8 = "^6.0"
+black = "^23.0"
+isort = "^5.0"
