@@ -1,11 +1,8 @@
-from fastapi.testclient import TestClient
-
-from app.main import app
-
-client = TestClient(app)
+"""Test main route."""
 
 
-def test_read_root():
+def test_main_route(client):
+    """Confirm that main root is working."""
     response = client.get("/")
     assert response.status_code == 200
     assert response.json() == {"message": "Hello, FastAPI!"}
