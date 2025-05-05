@@ -3,9 +3,11 @@
 from fastapi import FastAPI
 
 from app.api.endpoints.example import router as example_route
+from app.api.endpoints.load import router as load_router
 
 app = FastAPI()
 app.include_router(example_route)
+app.include_router(load_router, prefix="/load", tags=["Load Testing"])
 
 
 @app.get("/")
