@@ -6,6 +6,8 @@ services:
       - "8002:8002"
     environment:
       - DEBUG=True
+      - LOADGEN_INTERVAL=5
+      - LOADGEN_URLS=http://app:8002/load/io-bound,http://app:8002/load/cpu-bound,http://app:8002/load/memory-spike,http://app:8002/load/stress/1
 
   prometheus:
     image: prom/prometheus:latest
@@ -20,6 +22,16 @@ services:
     image: grafana/grafana:latest
     ports:
       - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+
+  loadgen:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    depends_on:
+      - app
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
