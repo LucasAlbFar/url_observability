@@ -1,4 +1,5 @@
 import asyncio
+
 import httpx
 
 URLS = [
@@ -18,12 +19,14 @@ async def call_endpoint(url):
         print(f"{url}: {e}")
 
 
-async def main():
-    while True:
+async def main(cycles: int = None):
+    count = 0
+    while cycles is None or count < cycles:
         tasks = [call_endpoint(url) for url in URLS]
         await asyncio.gather(*tasks)
         await asyncio.sleep(5)
+        count += 1
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(main())  # pragma: no cover
