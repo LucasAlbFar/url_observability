@@ -2,6 +2,7 @@
 # pip-compile requirements/dev.in
 
 pytest
+pytest-asyncio
 pytest-cov
 httpx
 flake8
