@@ -6,15 +6,17 @@ authors = ["Lucas"]
 
 [tool.poetry.dependencies]
 python = "^3.11"
-fastapi = "^0.100.0"
-uvicorn = "^0.23.0"
-pydantic = "^2.0"
-pydantic-settings = "^2.0"
+fastapi = { extras = ["standard-no-fastapi-cloud-cli"], version = "^0.139.2" }
+uvicorn = { extras = ["standard"], version = "^0.51.0" }
+pydantic = "^2.13.4"
+pydantic-settings = "^2.14.2"
+prometheus-fastapi-instrumentator = "^8.0.2"
 
 [tool.poetry.dev-dependencies]
-pytest = "^7.0"
-pytest-cov = "^4.0"
-httpx = "^0.25.0"
-flake8 = "^6.0"
-black = "^23.0"
-isort = "^5.0"
+pytest = "^9.1.1"
+pytest-asyncio = "^1.4.0"
+pytest-cov = "^7.1.0"
+httpx = "^0.28.1"
+flake8 = "^7.3.0"
+black = "^26.5.1"
+isort = "^8.0.1"
