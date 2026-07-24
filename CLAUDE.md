@@ -62,7 +62,18 @@ docker compose up --build
 # grafana:    http://localhost:3000 (admin/admin)
 
 uvicorn app.main:app --host 0.0.0.0 --port 8002   # app standalone, without Docker
+
+docker compose up -d --build    # detached; stop later from any terminal
+# Ctrl+C in the foreground run  -> graceful stop (second Ctrl+C force-kills)
+docker compose stop             # stop containers, keep them (resume: docker compose start)
+docker compose down             # + remove containers and the default network
+docker compose down --volumes --rmi all   # + anonymous volumes + all four service images
 ```
+All of these must run from the repo root — the compose project name comes from the directory, so running them elsewhere targets a different (or empty) project.
+
+No named volumes are declared (`docker compose config --volumes` prints nothing), so `--volumes` only drops Grafana's anonymous `/var/lib/grafana` — i.e. dashboards, users and preferences created by hand in the Grafana UI. The provisioned datasource and `grafana/dashboards/fastapi_metrics.json` are bind mounts and come back on the next `up`; bind-mounted repo files are never removed (note `./grafana/dashboards` is mounted *inside* `/var/lib/grafana`, but it's repo content and survives).
+
+`--rmi all` deletes the two built images (`app`, `loadgen`) **and** the two pulled ones (`prom/prometheus:latest`, `grafana/grafana:latest`) — the pulled ones are shared with any other project on the machine using them, and Docker skips any image still referenced by another container, so the command can partially succeed with a warning. The next `up --build` then has to re-pull and rebuild; plain `docker compose down` keeps images and the build cache, so prefer it and use `--rmi all` only to reclaim disk.
 
 ## Architecture
 
