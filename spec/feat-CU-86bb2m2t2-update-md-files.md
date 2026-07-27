@@ -22,7 +22,7 @@ Someone who followed the "Running the stack" instructions should be able to answ
 
 - `README.md` "Running the stack" (README.md:33-50) ends at the service URL table and the standalone `uvicorn` snippet — no stop instructions.
 - `CLAUDE.md` "Run the app / stack locally" (under `## Commands`) has the same gap.
-- The result is that after following the docs the user is left with running containers, a compose network, Grafana's anonymous volume, and four images on disk (`prom/prometheus:latest`, `grafana/grafana:latest`, plus the locally built `app` and `loadgen` images), with no documented way to clean any of it up.
+- The result is that after following the docs the user is left with running containers, a compose network, Prometheus's anonymous volume, and four images on disk (`prom/prometheus:latest`, `grafana/grafana:latest`, plus the locally built `app` and `loadgen` images), with no documented way to clean any of it up.
 
 ## 4. Scope
 
@@ -57,7 +57,7 @@ Both documents must use the same commands, with no contradictions between them.
 The wording must stay true to what this compose file actually declares:
 
 - **No named volumes exist.** The only volumes are bind mounts: `./prometheus.yml`, `./grafana/provisioning/dashboards`, `./grafana/provisioning/datasources`, `./grafana/dashboards`. `docker compose config --volumes` returns nothing.
-- **`--volumes` therefore only removes *anonymous* volumes** — in practice Grafana's `/var/lib/grafana`. That means Grafana runtime state (manually created dashboards, users, preferences) is lost. The provisioned datasource and the "FastAPI Metrics" dashboard come back on the next `up`, because they are bind-mounted from the repo.
+- **`--volumes` therefore only removes *anonymous* volumes** — in practice Prometheus's `/prometheus`, i.e. the scraped metrics history. Verified with `docker image inspect`: `prom/prometheus:latest` declares `VOLUME /prometheus`, `grafana/grafana:latest` declares none. Grafana runtime state (manually created dashboards, users, preferences) is therefore *not* in a volume — it lives in the container's writable layer and is already lost on any `docker compose down`, so the docs must not present `--volumes` as the point where it disappears. The provisioned datasource and the "FastAPI Metrics" dashboard come back on the next `up`, because they are bind-mounted from the repo.
 - **Bind-mounted repo files are never deleted** by `down --volumes`. Say this explicitly so the command doesn't read as dangerous to the working tree.
 - **`--rmi all` removes the images of every service**: the two locally built images (`app`, `loadgen`) and the two pulled ones (`prom/prometheus:latest`, `grafana/grafana:latest`). The next `docker compose up --build` has to re-pull and rebuild, so present it as the "reclaim disk / start fully clean" option, not the routine one.
 - **`Ctrl+X` is not a stop shortcut** in this context — it is an editor binding (e.g. nano's "exit"). Neither `docker compose up` nor `uvicorn` reacts to it. State this once, plainly, so the docs don't propagate a shortcut that does nothing.

@@ -8,7 +8,7 @@
 
 `README.md` and `CLAUDE.md` document only how to **start** the local stack. Both stop at the
 service URL table / the `uvicorn` one-liner, so after following the docs the user is left with
-four running containers, a compose network, Grafana's anonymous volume and four images on disk,
+four running containers, a compose network, Prometheus's anonymous volume and four images on disk,
 with no documented way to stop or clean any of it.
 
 The spec asks for a "stopping / cleaning up" category in both files, presenting the teardown
@@ -26,11 +26,15 @@ Checked in `docker-compose.yml`:
   prints nothing.
 - All declared volumes are bind mounts: `./prometheus.yml`, `./grafana/provisioning/dashboards`,
   `./grafana/provisioning/datasources`, `./grafana/dashboards`.
-- `./grafana/dashboards` is mounted *inside* `/var/lib/grafana` (at `/var/lib/grafana/dashboards`).
-  The `grafana/grafana` image declares `VOLUME /var/lib/grafana`, so an **anonymous** volume is
-  created for Grafana's runtime state (`grafana.db`: manually created dashboards, users,
-  preferences). That anonymous volume is what `--volumes` removes; the nested bind mount is repo
-  content and is untouched.
+- `./grafana/dashboards` is mounted *inside* `/var/lib/grafana` (at `/var/lib/grafana/dashboards`),
+  but it is repo content and is untouched by any teardown command.
+- Checked with `docker image inspect <image> --format '{{json .Config.Volumes}}'`:
+  `prom/prometheus:latest` returns `{"/prometheus":{}}`, `grafana/grafana:latest` returns `null`.
+  So the **only anonymous volume in the stack is Prometheus's `/prometheus`** (its metrics TSDB),
+  and that is what `--volumes` destroys. Grafana declares no `VOLUME`: its runtime state
+  (`grafana.db` — manually created dashboards, users, preferences) lives in the container's
+  writable layer, so it is already lost when `docker compose down` removes the container, with or
+  without `--volumes`; only `stop`/`start` preserves it.
 - Neither `Dockerfile` (app) nor `worker/Dockerfile` declares a `VOLUME`, so `app`/`loadgen` have
   no anonymous volumes.
 - Four service images: locally built `app` and `loadgen`, pulled `prom/prometheus:latest` and
@@ -109,9 +113,11 @@ order; task 3 is a verification pass with no commit of its own.
 
   - Prose note below the block, in CLAUDE.md's "why / gotcha" register:
     - No named volumes are declared (`docker compose config --volumes` is empty); `--volumes` only
-      drops Grafana's anonymous `/var/lib/grafana`, i.e. hand-made dashboards/users/preferences.
-      The provisioned datasource + `grafana/dashboards/fastapi_metrics.json` are bind mounts and
-      come back on the next `up`; bind-mounted repo files are never removed.
+      drops Prometheus's anonymous `/prometheus`, i.e. the scraped metrics history. Grafana
+      declares no `VOLUME`, so its hand-made dashboards/users/preferences sit in the container's
+      writable layer and are already gone after a plain `down`. The provisioned datasource +
+      `grafana/dashboards/fastapi_metrics.json` are bind mounts and come back on the next `up`;
+      bind-mounted repo files are never removed.
     - `--rmi all` deletes the two built images (`app`, `loadgen`) **and** the two pulled ones
       (`prom/prometheus:latest`, `grafana/grafana:latest`) — the pulled ones are shared with any
       other project on the machine using them, and the next `up --build` re-pulls and rebuilds.
