@@ -3,7 +3,7 @@
 - **Branch**: `feat/CU-86bb2m2t2-update-md-files`
 - **Ticket**: CU-86bb2m2t2
 - **Status**: Approved
-- **Affected files**: `README.md`, `CLAUDE.md`
+- **Affected files**: `README.md`, `CLAUDE.md` (plus this feature's own docs under `specs/CU-86bb2m2t2/`)
 - **Plan**: [plan.md](./plan.md)
 
 ## 1. Summary
@@ -84,7 +84,7 @@ The wording must stay true to what this compose file actually declares:
 - [ ] The `Ctrl+X` clarification appears (once) so the shortcut is not mistaken for a stop key.
 - [ ] The volume and image side effects are described accurately per section 6 — in particular, no claim that named volumes exist.
 - [ ] The two documents agree with each other.
-- [ ] No file other than `README.md` and `CLAUDE.md` is changed.
+- [ ] No file other than `README.md` and `CLAUDE.md` is changed. This feature's own `spec.md` and `plan.md` describe the change rather than implement it, so they are outside the implementation diff and not covered by this criterion.
 
 ## 9. Out of scope / possible follow-ups
 
