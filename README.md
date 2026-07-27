@@ -49,6 +49,26 @@ pip install -r requirements/base.txt
 uvicorn app.main:app --host 0.0.0.0 --port 8002
 ```
 
+### Stopping and cleaning up
+
+`Ctrl+C` in the terminal running `docker compose up` (or the standalone `uvicorn` process) asks for a graceful shutdown; pressing it a second time force-kills instead of waiting for the grace period. Note that `Ctrl+X` is **not** a stop shortcut — it's an editor binding (nano's "exit", for example), and neither `docker compose up` nor `uvicorn` reacts to it.
+
+From there, the teardown options escalate as follows:
+
+| Goal | Command |
+|---|---|
+| Stop the foreground run | `Ctrl+C` |
+| Stop containers, keep them | `docker compose stop` (restart with `docker compose start`) |
+| Stop + remove containers and the default network | `docker compose down` |
+| Run detached, stop later from any terminal | `docker compose up -d --build` → `docker compose down` |
+| Full teardown (containers, network, anonymous volumes, all four images) | `docker compose down --volumes --rmi all` |
+
+What survives a `--volumes` teardown: this compose file declares no named volumes, so `--volumes` only removes *anonymous* ones — here that means Prometheus's `/prometheus`, i.e. the metrics history scraped so far. Grafana state is a separate story: dashboards, users and preferences you created by hand in the UI aren't in a volume at all (the `grafana/grafana` image declares no `VOLUME`), they live in the container's writable layer — so a plain `docker compose down` already discards them, and only `docker compose stop`/`start` keeps them. The provisioned Prometheus datasource and the "FastAPI Metrics" dashboard come back on the next `up` because they're bind-mounted from the repo. Bind-mounted repo files are **never** deleted.
+
+`docker compose down` on its own keeps the images and the build cache, so the next `up --build` is fast — that's the option to reach for by default. Add `--rmi all` only to reclaim disk or start fully clean: it also deletes the pulled `prom/prometheus:latest` and `grafana/grafana:latest` images, which are shared with any other project on the machine, and the next `docker compose up --build` has to re-pull and rebuild everything.
+
+Run all of these from the repo root — the compose project name is derived from the directory, so running them elsewhere targets a different (or empty) project.
+
 ## Development
 
 Install dev dependencies:

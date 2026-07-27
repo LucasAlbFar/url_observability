@@ -62,7 +62,18 @@ docker compose up --build
 # grafana:    http://localhost:3000 (admin/admin)
 
 uvicorn app.main:app --host 0.0.0.0 --port 8002   # app standalone, without Docker
+
+docker compose up -d --build    # detached; stop later from any terminal
+# Ctrl+C in the foreground run  -> graceful stop (second Ctrl+C force-kills)
+docker compose stop             # stop containers, keep them (resume: docker compose start)
+docker compose down             # + remove containers and the default network
+docker compose down --volumes --rmi all   # + anonymous volumes + all four service images
 ```
+All of these must run from the repo root — the compose project name comes from the directory, so running them elsewhere targets a different (or empty) project.
+
+No named volumes are declared (`docker compose config --volumes` prints nothing), so `--volumes` only drops the stack's single anonymous volume: Prometheus's `/prometheus` — the scraped metrics history. That ownership is easy to get backwards: `prom/prometheus:latest` declares `VOLUME /prometheus`, `grafana/grafana:latest` declares no `VOLUME` at all (`docker image inspect <img> --format '{{json .Config.Volumes}}'`), so Grafana's runtime state (`grafana.db`: hand-made dashboards, users, preferences) sits in the container's writable layer and is already lost on a plain `docker compose down` — only `stop`/`start` preserves it. The provisioned datasource and `grafana/dashboards/fastapi_metrics.json` are bind mounts and come back on the next `up`; bind-mounted repo files are never removed (note `./grafana/dashboards` is mounted *inside* `/var/lib/grafana`, but it's repo content and survives).
+
+`--rmi all` deletes the two built images (`app`, `loadgen`) **and** the two pulled ones (`prom/prometheus:latest`, `grafana/grafana:latest`) — the pulled ones are shared with any other project on the machine using them, and Docker skips any image still referenced by another container, so the command can partially succeed with a warning. The next `up --build` then has to re-pull and rebuild; plain `docker compose down` keeps images and the build cache, so prefer it and use `--rmi all` only to reclaim disk.
 
 ## Architecture
 
@@ -94,3 +105,12 @@ Intentionally decoupled from the `app` package — it has its own `Dockerfile` a
 - `tests/conftest.py` provides `client` (`TestClient(app)`) and `test_settings` fixtures.
 - One test file per module (`test_config.py`, `test_example.py`, `test_main.py`, `test_load.py`, `test_load_driver.py`), asserting exact status code + JSON body.
 - Async worker tests use `pytest-asyncio` with `unittest.mock.AsyncMock`/`patch` to mock `httpx.AsyncClient.get` (both success and exception paths) and `monkeypatch` to run `main(cycles=1)` instead of an infinite loop — follow this pattern rather than making real network calls in tests.
+
+## Feature specs & plans
+
+Feature documentation lives in `specs/<CU-code>/` — one folder per ClickUp ticket, holding exactly two files:
+
+- `spec.md` — the what and the why: summary, objective, scope (in/out), expected behaviour, acceptance criteria, status (`Draft` / `Approved`).
+- `plan.md` — the how: context, facts verified against the repo, affected files, tasks, edge cases, verification steps. Links back to `./spec.md`.
+
+`<CU-code>` is the ticket code alone (e.g. `CU-86bb2m2t2`), taken from the branch name `feat/<CU-code>-<slug>` — the descriptive slug belongs in the document title, not in the folder name. The two files cross-link with sibling relative links (`./spec.md`, `./plan.md`), so the whole folder can be moved without breaking them. Nothing in CI, tox or any hook reads these files — the convention is manual, so follow it by hand when starting a new feature.
