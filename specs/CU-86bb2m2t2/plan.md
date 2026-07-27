@@ -16,7 +16,9 @@ options in order of increasing destructiveness — from `Ctrl+C` up to
 `docker compose down --volumes --rmi all` — with accurate statements about what each command
 actually destroys in *this* compose file.
 
-Documentation-only change. Scope is exactly two files.
+Documentation-only change. The teardown work itself is exactly two files (`README.md`, `CLAUDE.md`);
+a later follow-up on this branch also reorganized the feature docs into `specs/<CU-code>/` and
+documented that convention in `CLAUDE.md` — see the table below.
 
 ## Facts verified against the repo (do not contradict these)
 
@@ -48,10 +50,16 @@ Checked in `docker-compose.yml`:
 | --- | --- |
 | `README.md` | New user-facing `### Stopping and cleaning up` section inside "Running the stack" |
 | `CLAUDE.md` | Teardown commands + gotchas appended to `### Run the app / stack locally` |
+| `CLAUDE.md` | Follow-up: new `## Feature specs & plans` section documenting the `specs/<CU-code>/` convention |
+| `specs/CU-86bb2m2t2/{spec,plan}.md` | Follow-up: moved here from `spec/` and `plan/`, cross-linked |
 
 This plan file itself (`specs/CU-86bb2m2t2/plan.md`) is already written and is not
 part of the implementation diff — the spec's acceptance criterion "no file other than `README.md`
 and `CLAUDE.md` is changed" applies to the two commits below.
+
+The last two rows are outside that criterion: they are the docs-organization follow-up, not the
+teardown feature. They landed on this branch rather than a separate one because the convention they
+establish is what holds these very files.
 
 Explicitly **not** touched: `docker-compose.yml`, `Dockerfile`, `worker/Dockerfile`,
 `prometheus.yml`, `grafana/**`, any `app/`, `worker/`, `tests/` or `requirements/` file, `tox.ini`,
