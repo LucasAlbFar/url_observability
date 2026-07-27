@@ -86,8 +86,10 @@ order; task 3 is a verification pass with no commit of its own.
      | Run detached, stop later from any terminal | `docker compose up -d --build` → `docker compose down` |
      | Full teardown (containers, network, anonymous volumes, all four images) | `docker compose down --volumes --rmi all` |
 
-  4. A short "what survives" note: `--volumes` only removes *anonymous* volumes — in practice
-     Grafana's `/var/lib/grafana`, so dashboards/users created by hand in the Grafana UI are lost;
+  4. A short "what survives" note: `--volumes` only removes *anonymous* volumes — here that is
+     Prometheus's `/prometheus`, i.e. the metrics history scraped so far. Grafana declares no
+     `VOLUME`, so dashboards/users created by hand in the Grafana UI sit in the container's
+     writable layer and are already lost on a plain `down` (only `stop`/`start` keeps them);
      the provisioned datasource and the "FastAPI Metrics" dashboard come back on the next `up`
      because they are bind-mounted from the repo. Bind-mounted repo files are **never** deleted.
   5. One line framing `--rmi all` as "reclaim disk / start fully clean", not the routine option:
@@ -145,9 +147,11 @@ order; task 3 is a verification pass with no commit of its own.
 
 1. **No named volumes.** The most likely wrong sentence to write is "removes the named volumes".
    There are none — say *anonymous*.
-2. **The bind mount nested under an anonymous volume.** `./grafana/dashboards` lives at
-   `/var/lib/grafana/dashboards`, inside the anonymous volume's mount point. `--volumes` removing
-   `/var/lib/grafana` must not be described as touching `grafana/dashboards/*.json` in the repo.
+2. **The bind mount nested inside Grafana's data dir.** `./grafana/dashboards` is mounted at
+   `/var/lib/grafana/dashboards`. That path is *not* an anonymous volume — `grafana/grafana:latest`
+   declares no `VOLUME`, so `/var/lib/grafana` is just the container's writable layer. Either way
+   `grafana/dashboards/*.json` is repo content: no teardown command touches it, and `--volumes`
+   must not be described as removing it.
 3. **`--rmi all` has machine-wide effects.** `prom/prometheus:latest` and `grafana/grafana:latest`
    are shared images; other projects lose them too. Docker skips removal if another *container*
    still uses them, so the command can partially succeed with a warning — don't promise a clean
