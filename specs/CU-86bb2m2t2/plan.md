@@ -2,7 +2,7 @@
 
 - **Branch**: `feat/CU-86bb2m2t2-update-md-files`
 - **Ticket**: CU-86bb2m2t2
-- **Spec**: [spec/feat-CU-86bb2m2t2-update-md-files.md](../spec/feat-CU-86bb2m2t2-update-md-files.md) (status: Approved)
+- **Spec**: [spec.md](./spec.md) (status: Approved)
 
 ## Context
 
@@ -49,7 +49,7 @@ Checked in `docker-compose.yml`:
 | `README.md` | New user-facing `### Stopping and cleaning up` section inside "Running the stack" |
 | `CLAUDE.md` | Teardown commands + gotchas appended to `### Run the app / stack locally` |
 
-This plan file itself (`plan/feat-CU-86bb2m2t2-update-md-files.md`) is already written and is not
+This plan file itself (`specs/CU-86bb2m2t2/plan.md`) is already written and is not
 part of the implementation diff — the spec's acceptance criterion "no file other than `README.md`
 and `CLAUDE.md` is changed" applies to the two commits below.
 

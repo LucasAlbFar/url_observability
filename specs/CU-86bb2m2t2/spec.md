@@ -4,6 +4,7 @@
 - **Ticket**: CU-86bb2m2t2
 - **Status**: Approved
 - **Affected files**: `README.md`, `CLAUDE.md`
+- **Plan**: [plan.md](./plan.md)
 
 ## 1. Summary
 

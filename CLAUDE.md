@@ -105,3 +105,12 @@ Intentionally decoupled from the `app` package — it has its own `Dockerfile` a
 - `tests/conftest.py` provides `client` (`TestClient(app)`) and `test_settings` fixtures.
 - One test file per module (`test_config.py`, `test_example.py`, `test_main.py`, `test_load.py`, `test_load_driver.py`), asserting exact status code + JSON body.
 - Async worker tests use `pytest-asyncio` with `unittest.mock.AsyncMock`/`patch` to mock `httpx.AsyncClient.get` (both success and exception paths) and `monkeypatch` to run `main(cycles=1)` instead of an infinite loop — follow this pattern rather than making real network calls in tests.
+
+## Feature specs & plans
+
+Feature documentation lives in `specs/<CU-code>/` — one folder per ClickUp ticket, holding exactly two files:
+
+- `spec.md` — the what and the why: summary, objective, scope (in/out), expected behaviour, acceptance criteria, status (`Draft` / `Approved`).
+- `plan.md` — the how: context, facts verified against the repo, affected files, tasks, edge cases, verification steps. Links back to `./spec.md`.
+
+`<CU-code>` is the ticket code alone (e.g. `CU-86bb2m2t2`), taken from the branch name `feat/<CU-code>-<slug>` — the descriptive slug belongs in the document title, not in the folder name. The two files cross-link with sibling relative links (`./spec.md`, `./plan.md`), so the whole folder can be moved without breaking them. Nothing in CI, tox or any hook reads these files — the convention is manual, so follow it by hand when starting a new feature.
