@@ -28,11 +28,15 @@ file stays a traceable record of what was done.
 - `pymarkdownlnt`, the pure-Python option, implements rules MD001–MD048. The `markdownlint` the
   extension runs covers MD001–MD060, and MD060 `table-column-style` was added in markdownlint
   v0.40.0. No `requirements/dev.txt` package can report the rule that prompted this work.
-- With `MD013` off, exactly 21 violations remain, spread across two files:
+- With `MD013` off, 16 lines need editing across two files, and markdownlint reports them as 32
+  diagnostics. The two numbers differ for two reasons: MD060 counts one diagnostic per mis-spaced
+  pipe rather than one per row, and the five MD022 findings are cleared by five of the eight blank
+  lines the MD031 fix already inserts. Count edits when sizing the work, diagnostics when comparing
+  against the Problems panel:
 
 | Rule | Location | Fix |
 | --- | --- | --- |
-| MD060 `table-column-style` | `README.md` L15, L40, L59 | Delimiter rows are tight (`\|---\|---\|`) while header and body rows are compact; pad them to `\| --- \| --- \|` |
+| MD060 `table-column-style` | `README.md` L15, L40, L59 | Delimiter rows are tight (`\|---\|---\|`) while header and body rows are compact; pad them to `\| --- \| --- \|`. 14 diagnostics from 3 rows: the rule reports each pipe's left and right side separately, so `\|---\|---\|---\|` alone yields 6 |
 | MD031 `blanks-around-fences` | `CLAUDE.md` L29, L38, L43, L47, L49, L53, L58, L71 | Blank line before the opening fence, or after the closing fence |
 | MD022 `blanks-around-headings` | `CLAUDE.md` L28, L37, L46, L52, L57 | Each `###` heading is followed immediately by an opening fence; the blank line the MD031 fix inserts clears both rules at once |
 | MD034 `no-bare-urls` | `README.md` L41–43 | Wrap the `http://localhost:*` cells in angle brackets, which satisfies the rule and keeps the GFM autolink |
