@@ -137,6 +137,7 @@ pip install --upgrade pip-tools
 ```
 
 Notes:
+
 - Because `base.in` and `dev.in` are compiled independently, a shared transitive dependency can resolve to slightly different versions in each `.txt` file. This isn't harmful by itself, but keep it in mind when comparing dev vs. container behavior, and re-check `tox -e safety` after any upgrade since a drifted package can make the combined `pip-audit` invocation fail outright with a resolution error.
 - `requirements/base.in` deliberately requests `fastapi[standard-no-fastapi-cloud-cli]`, not `fastapi[standard]` — the latter pulls in `fastapi-cloud-cli` and its dependencies (`sentry-sdk`, `fastar`, `rignore`), which this project doesn't use. Keep that extra as-is when upgrading FastAPI.
 - After regenerating, also update the version ranges in `pyproject.toml` (`[tool.poetry.dependencies]` / `[tool.poetry.dev-dependencies]`) to match — nothing enforces this automatically.

@@ -71,7 +71,7 @@ One commit per task, each ticking its own checkbox in the same commit.
       Commit: `style(docs): wrap README localhost urls in backticks`
 - [x] `README.md`: declare `text` as the language of the "Project layout" fence at L147 (MD040).
       Commit: `style(docs): declare language for README layout fence`
-- [ ] `README.md`: insert a blank line between `Notes:` and the list that follows it at L139–140
+- [x] `README.md`: insert a blank line between `Notes:` and the list that follows it at L139–140
       (MD032).
       Commit: `style(docs): surround README notes list with blank line`
 - [ ] `CLAUDE.md`: insert the eight blank lines around fenced blocks — before the opening fences at
