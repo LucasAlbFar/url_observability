@@ -120,6 +120,14 @@ One commit per task, each ticking its own checkbox in the same commit.
   unchecked. MD059 is the exception: it landed in v0.38.0, one release before MD060, so a build too
   old for MD060 may well lack it too. Ordering by rule ID says which came first, not which any
   given build actually carries.
+- The floor cannot be checked by reading a version number. The Extensions view shows the extension
+  version, not the markdownlint it bundles, and the extension's changelog does not record the
+  mapping — v0.62.0 bundles v0.41.1 and is known good, but nothing published resolves anything
+  older. Test the rule instead: paste `|a|b|` under a `| A | B |` header and confirm MD060 fires.
+- The floor cannot be enforced from the repository either. `.vscode/extensions.json` takes only
+  `recommendations` and `unwantedRecommendations`, both plain lists of extension IDs with no
+  version field anywhere in the schema, so committing one would not help even if `.vscode/` were
+  not gitignored.
 - A collaborator who opens the repository without the extension installed gets no checking at all.
   The config is inert on its own.
 - The config declares no `ignores`, because that key belongs to the `markdownlint-cli2` schema and
