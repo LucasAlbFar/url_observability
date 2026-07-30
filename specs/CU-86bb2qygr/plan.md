@@ -78,7 +78,7 @@ One commit per task, each ticking its own checkbox in the same commit.
       L29, L38, L47, L53 and L58, and after the closing fences at L43, L49 and L71 (MD031). Apply
       them bottom-up so earlier insertions do not shift the later line numbers.
       Commit: `style(docs): surround CLAUDE.md code fences with blank lines`
-- [ ] `CLAUDE.md`: add a short `### Markdown lint` subsection under `## Commands`, after
+- [x] `CLAUDE.md`: add a short `### Markdown lint` subsection under `## Commands`, after
       `### Lint / format`, stating that the `markdownlint` VS Code extension checks Markdown live,
       that `.markdownlint.jsonc` at the repo root is the rule set, and that neither `tox` nor CI
       enforces it.

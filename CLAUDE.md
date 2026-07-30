@@ -46,6 +46,10 @@ flake8 .         # lint only
 
 No custom config for any of the three — all run with stock defaults. Latent flake8-default (79) vs black-default (88) line-length mismatch to watch for if flake8 starts failing on long lines.
 
+### Markdown lint
+
+No command: Markdown is checked live by the `markdownlint` VS Code extension, not by `tox` or CI. `.markdownlint.jsonc` at the repo root is the rule set — the stock rules with `MD013` (line-length) disabled, because prose here is written one paragraph per line and enforcing a column limit would mean rewrapping every documentation file. Nothing gates a commit on this, so check the editor's Problems panel after editing any `.md`.
+
 ### Security / dependency audit
 
 ```bash
