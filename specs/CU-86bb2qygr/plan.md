@@ -86,7 +86,7 @@ One commit per task, each ticking its own checkbox in the same commit.
 - [x] `README.md`: add one bullet to the `## Stack` list naming markdownlint and pointing at
       `.markdownlint.jsonc`.
       Commit: `docs: list markdownlint in README stack`
-- [ ] Reload the VS Code window so the extension picks up the new config, then open all six Markdown
+- [x] Reload the VS Code window so the extension picks up the new config, then open all six Markdown
       files and confirm the Problems panel is empty. No commit — this task only verifies.
 
 ## Edge cases
