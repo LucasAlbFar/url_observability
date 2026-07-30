@@ -12,7 +12,7 @@ A small FastAPI service instrumented end-to-end with **Prometheus** and **Grafan
 The `/load/*` endpoints each stress a different resource on purpose, so the dashboard has something to plot:
 
 | Endpoint | What it does | Dashboard panel it feeds |
-|---|---|---|
+| --- | --- | --- |
 | `GET /load/io-bound` | `asyncio.sleep(2)` | Request latency |
 | `GET /load/cpu-bound` | Blocking CPU-heavy loop | CPU usage |
 | `GET /load/stress/{seconds}` | Blocking busy-wait for N seconds | CPU usage |
@@ -26,6 +26,7 @@ The `/load/*` endpoints each stress a different resource on purpose, so the dash
 - pytest, pytest-asyncio, pytest-cov (80% coverage gate)
 - black, isort, flake8
 - pip-audit (dependency vulnerability scanning)
+- markdownlint (Markdown style, via the VS Code extension bundling markdownlint 0.39+; rules in `.markdownlint.jsonc`)
 - Docker Compose, Prometheus, Grafana
 
 See [CLAUDE.md](CLAUDE.md) for exact pinned versions and detailed architecture notes.
@@ -37,10 +38,10 @@ docker compose up --build
 ```
 
 | Service | URL |
-|---|---|
-| FastAPI app | http://localhost:8002 |
-| Prometheus | http://localhost:9090 |
-| Grafana | http://localhost:3000 (login: `admin` / `admin`) |
+| --- | --- |
+| FastAPI app | <http://localhost:8002> |
+| Prometheus | <http://localhost:9090> |
+| Grafana | <http://localhost:3000> (login: `admin` / `admin`) |
 
 The app also runs standalone, without Docker:
 
@@ -56,7 +57,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8002
 From there, the teardown options escalate as follows:
 
 | Goal | Command |
-|---|---|
+| --- | --- |
 | Stop the foreground run | `Ctrl+C` |
 | Stop containers, keep them | `docker compose stop` (restart with `docker compose start`) |
 | Stop + remove containers and the default network | `docker compose down` |
@@ -137,6 +138,7 @@ pip install --upgrade pip-tools
 ```
 
 Notes:
+
 - Because `base.in` and `dev.in` are compiled independently, a shared transitive dependency can resolve to slightly different versions in each `.txt` file. This isn't harmful by itself, but keep it in mind when comparing dev vs. container behavior, and re-check `tox -e safety` after any upgrade since a drifted package can make the combined `pip-audit` invocation fail outright with a resolution error.
 - `requirements/base.in` deliberately requests `fastapi[standard-no-fastapi-cloud-cli]`, not `fastapi[standard]` — the latter pulls in `fastapi-cloud-cli` and its dependencies (`sentry-sdk`, `fastar`, `rignore`), which this project doesn't use. Keep that extra as-is when upgrading FastAPI.
 - After regenerating, also update the version ranges in `pyproject.toml` (`[tool.poetry.dependencies]` / `[tool.poetry.dev-dependencies]`) to match — nothing enforces this automatically.
@@ -144,7 +146,7 @@ Notes:
 
 ## Project layout
 
-```
+```text
 app/
   main.py                 # FastAPI app, instrumentation, router registration
   api/endpoints/          # one module per route group (example, load)

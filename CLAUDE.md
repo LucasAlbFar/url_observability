@@ -26,6 +26,7 @@ Pinned versions live in `requirements/base.txt` / `requirements/dev.txt` (genera
 ## Commands
 
 ### Tests
+
 ```bash
 tox -e py311                                            # full suite via tox (uses requirements/dev.txt)
 pytest tests/                                           # full suite directly (after pip install -r requirements/dev.txt)
@@ -35,26 +36,36 @@ pytest --cov=app --cov=worker --cov-fail-under=80 --cov-report term-missing test
 ```
 
 ### Lint / format
+
 ```bash
 tox -e lint      # black --check, isort --check-only, flake8 (what CI/tox enforces)
 black .          # auto-format
 isort .          # auto-sort imports
 flake8 .         # lint only
 ```
+
 No custom config for any of the three — all run with stock defaults. Latent flake8-default (79) vs black-default (88) line-length mismatch to watch for if flake8 starts failing on long lines.
 
+### Markdown lint
+
+No command: Markdown is checked live by the `markdownlint` VS Code extension, not by `tox` or CI. `.markdownlint.jsonc` at the repo root is the rule set — the stock rules with two changes: `MD013` (line-length) is disabled, because prose here is written one paragraph per line and enforcing a column limit would mean rewrapping every documentation file; and `MD060` (`table-column-style`) is pinned to `compact`, because its default of `any` only asks each table to be internally consistent, so a new table written entirely tight would pass and the repo would end up with two styles. This needs an extension bundling markdownlint v0.39.0 or newer, which is where `MD060` landed. Nothing gates a commit on any of it, so check the editor's Problems panel after editing any `.md`.
+
 ### Security / dependency audit
+
 ```bash
 tox -e safety    # pip-audit against requirements/base.txt and requirements/dev.txt
 ```
+
 Part of the default `envlist` (`py311, lint, safety`). Runs `pip-audit` against `base.txt` and `dev.txt` **separately**, not in one combined invocation — a combined run can fail outright with a pip dependency-resolution error if the two files ever drift on a shared transitive package's version (see "Dependency drift risk" above), which would be a false negative for `tox -e safety` as a whole. If this env starts failing with actual CVE findings, decide whether to bump the affected pin(s) via `pip-compile --upgrade-package <name> requirements/<base|dev>.txt` or accept/ignore the finding (`pip-audit --ignore-vuln <ID>`) — don't silently drop the env from `envlist` to make CI green again.
 
 ### Run everything at once
+
 ```bash
 tox              # tests (py311) + lint + safety in one go
 ```
 
 ### Run the app / stack locally
+
 ```bash
 docker compose up --build
 # app:        http://localhost:8002
@@ -69,6 +80,7 @@ docker compose stop             # stop containers, keep them (resume: docker com
 docker compose down             # + remove containers and the default network
 docker compose down --volumes --rmi all   # + anonymous volumes + all four service images
 ```
+
 All of these must run from the repo root — the compose project name comes from the directory, so running them elsewhere targets a different (or empty) project.
 
 No named volumes are declared (`docker compose config --volumes` prints nothing), so `--volumes` only drops the stack's single anonymous volume: Prometheus's `/prometheus` — the scraped metrics history. That ownership is easy to get backwards: `prom/prometheus:latest` declares `VOLUME /prometheus`, `grafana/grafana:latest` declares no `VOLUME` at all (`docker image inspect <img> --format '{{json .Config.Volumes}}'`), so Grafana's runtime state (`grafana.db`: hand-made dashboards, users, preferences) sits in the container's writable layer and is already lost on a plain `docker compose down` — only `stop`/`start` preserves it. The provisioned datasource and `grafana/dashboards/fastapi_metrics.json` are bind mounts and come back on the next `up`; bind-mounted repo files are never removed (note `./grafana/dashboards` is mounted *inside* `/var/lib/grafana`, but it's repo content and survives).
