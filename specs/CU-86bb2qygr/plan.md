@@ -74,7 +74,7 @@ One commit per task, each ticking its own checkbox in the same commit.
 - [x] `README.md`: insert a blank line between `Notes:` and the list that follows it at L139–140
       (MD032).
       Commit: `style(docs): surround README notes list with blank line`
-- [ ] `CLAUDE.md`: insert the eight blank lines around fenced blocks — before the opening fences at
+- [x] `CLAUDE.md`: insert the eight blank lines around fenced blocks — before the opening fences at
       L29, L38, L47, L53 and L58, and after the closing fences at L43, L49 and L71 (MD031). Apply
       them bottom-up so earlier insertions do not shift the later line numbers.
       Commit: `style(docs): surround CLAUDE.md code fences with blank lines`
