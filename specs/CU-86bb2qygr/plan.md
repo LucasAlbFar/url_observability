@@ -108,8 +108,10 @@ One commit per task, each ticking its own checkbox in the same commit.
 - Nothing enforces conformance. Without a gate, a Markdown violation reaches a commit whenever
   nobody looks at the Problems panel. This is the deliberate trade recorded in the spec, not an
   oversight.
-- MD060 only exists in markdownlint v0.40.0 and later. An outdated extension will not report it,
-  and will also not report MD059 or the other table rules.
+- MD060 only exists in markdownlint v0.40.0 and later, so an outdated extension will not report it.
+  It will still report MD055, MD056, MD058 and MD059: rule IDs are assigned in order of
+  introduction, so every one of those shipped before MD060. A Problems panel with no MD060 entry is
+  not evidence that the tables went unchecked.
 - A collaborator who opens the repository without the extension installed gets no checking at all.
   The config is inert on its own.
 - `.markdownlint.jsonc` uses JSONC comments. The extension and `markdownlint-cli2` both accept
