@@ -115,9 +115,11 @@ One commit per task, each ticking its own checkbox in the same commit.
   nobody looks at the Problems panel. This is the deliberate trade recorded in the spec, not an
   oversight.
 - MD060 only exists in markdownlint v0.39.0 and later, so an outdated extension will not report it.
-  It will still report MD055, MD056, MD058 and MD059: rule IDs are assigned in order of
-  introduction, so every one of those shipped before MD060. A Problems panel with no MD060 entry is
-  not evidence that the tables went unchecked.
+  It will still report the other table rules — MD055 and MD056 shipped in v0.33.0, MD058 in
+  v0.35.0 — so a Problems panel with no MD060 entry is not evidence that the tables went
+  unchecked. MD059 is the exception: it landed in v0.38.0, one release before MD060, so a build too
+  old for MD060 may well lack it too. Ordering by rule ID says which came first, not which any
+  given build actually carries.
 - A collaborator who opens the repository without the extension installed gets no checking at all.
   The config is inert on its own.
 - The config declares no `ignores`, because that key belongs to the `markdownlint-cli2` schema and
