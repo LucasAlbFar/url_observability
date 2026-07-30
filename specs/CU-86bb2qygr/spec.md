@@ -37,7 +37,8 @@ absence of a checker, but a checker whose output carries no signal.
   headings, MD034 bare URLs, MD040 missing fence language, MD032 blank lines around lists.
 - A short subsection in `CLAUDE.md` recording that the `markdownlint` VS Code extension is the
   verification mechanism and that `.markdownlint.jsonc` is the source of truth for the rules, plus
-  one line in `README.md`'s development tooling list.
+  one line in `README.md`'s development tooling list. Both name the minimum markdownlint version the
+  rule set assumes, since an extension older than that reports no table-column-style finding at all.
 
 ### Out
 

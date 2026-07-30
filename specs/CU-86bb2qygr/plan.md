@@ -59,7 +59,7 @@ file stays a traceable record of what was done.
 | --- | --- |
 | `.markdownlint.jsonc` | New. Declares `"default": true` and `"MD013": false` |
 | `README.md` | MD060 delimiter rows, MD034 URLs, MD040 fence language, MD032 blank line, plus one bullet in `## Stack` |
-| `CLAUDE.md` | Eight blank lines around fences, plus a `### Markdown lint` subsection under `## Commands` |
+| `CLAUDE.md` | Eight blank lines around fences, plus a `### Markdown lint` subsection under `## Commands` recording the rule set and the minimum markdownlint version |
 
 ## Tasks
 
@@ -93,6 +93,11 @@ One commit per task, each ticking its own checkbox in the same commit.
       that `.markdownlint.jsonc` at the repo root is the rule set, and that neither `tox` nor CI
       enforces it.
       Commit: `docs: record markdownlint setup in CLAUDE.md`
+- [x] `CLAUDE.md` and `README.md`: name the minimum markdownlint version the rule set assumes.
+      MD060 is what holds the tables to one column style, and an extension too old for it lints
+      everything else normally while staying silent there, so the floor has to be written down.
+      Added during review, after the tasks above had shipped.
+      Commit: `docs: record the markdownlint version floor for MD060`
 - [x] `README.md`: add one bullet to the `## Stack` list naming markdownlint and pointing at
       `.markdownlint.jsonc`.
       Commit: `docs: list markdownlint in README stack`
