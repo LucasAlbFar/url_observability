@@ -1,0 +1,7 @@
+{
+  // Prose in this repo is written one paragraph per line, which keeps diffs
+  // readable. MD013 (line-length) would force rewrapping every documentation
+  // file, so it is off. Every other default rule stays on.
+  "default": true,
+  "MD013": false
+}

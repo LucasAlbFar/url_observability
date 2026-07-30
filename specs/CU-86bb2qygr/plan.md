@@ -59,7 +59,7 @@ file stays a traceable record of what was done.
 
 One commit per task, each ticking its own checkbox in the same commit.
 
-- [ ] Create `.markdownlint.jsonc` at the repo root with `"default": true`, `"MD013": false`, and a
+- [x] Create `.markdownlint.jsonc` at the repo root with `"default": true`, `"MD013": false`, and a
       comment recording that prose is written one paragraph per line so the line-length rule would
       force rewrapping every documentation file.
       Commit: `chore(markdownlint): add rule config with MD013 disabled`
