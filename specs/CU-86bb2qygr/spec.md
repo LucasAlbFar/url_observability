@@ -68,8 +68,12 @@ anything locally.
 
 Conformance rests on the editor rather than on a gate: nothing blocks a commit containing a
 Markdown violation. This is a deliberate trade for a project of this size. Should formatting drift
-become a real problem later, an automated gate reads the same `.markdownlint.jsonc` — the file is
-also the config `markdownlint-cli2` looks for — so it can be added without redoing this work.
+become a real problem later, an automated gate reads the same `.markdownlint.jsonc` for its rules —
+the file is also the config `markdownlint-cli2` looks for, so none of the rule work is redone. It
+will need one thing this file cannot carry: a `.markdownlint-cli2.jsonc` declaring `ignores`.
+Without it a repo-wide run reports around 37 findings from vendored Markdown under `.tox/` and none
+from the project's own files, and `ignores` is not a valid key in `.markdownlint.jsonc` — it exists
+only in the `markdownlint-cli2` schema.
 
 ## Acceptance criteria
 

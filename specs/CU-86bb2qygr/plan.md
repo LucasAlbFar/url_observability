@@ -120,6 +120,12 @@ One commit per task, each ticking its own checkbox in the same commit.
   not evidence that the tables went unchecked.
 - A collaborator who opens the repository without the extension installed gets no checking at all.
   The config is inert on its own.
+- The config declares no `ignores`, because that key belongs to the `markdownlint-cli2` schema and
+  not to this file. Day to day it does not matter: the extension only lints files that are open.
+  Run its "lint workspace" command on a checkout where `tox` has run, though, and the vendored
+  Markdown under `.tox/` contributes around 37 findings — its default globs exclude `node_modules`
+  and `vendor`, not `.tox/` or `.venv/`. `.markdownlintignore` is not an escape hatch either;
+  `markdownlint-cli2` dropped it, and the bundled linter contains no reference to it.
 - `.markdownlint.jsonc` uses JSONC comments. The extension and `markdownlint-cli2` both accept
   them; a strict JSON parser would not.
 - Editors configured to format Markdown on save can rewrap prose. With `MD013` disabled the long
