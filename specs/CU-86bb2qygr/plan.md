@@ -66,7 +66,7 @@ One commit per task, each ticking its own checkbox in the same commit.
 - [x] `README.md`: pad the three delimiter rows at L15, L40 and L59 to `| --- | --- | --- |` so each
       table is consistently compact (MD060).
       Commit: `style(docs): pad README table delimiter rows`
-- [ ] `README.md`: wrap the three `http://localhost:*` values at L41–43 in backticks, keeping the
+- [x] `README.md`: wrap the three `http://localhost:*` values at L41–43 in backticks, keeping the
       existing backticks around `admin` in the Grafana row (MD034).
       Commit: `style(docs): wrap README localhost urls in backticks`
 - [ ] `README.md`: declare `text` as the language of the "Project layout" fence at L147 (MD040).

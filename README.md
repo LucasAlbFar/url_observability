@@ -38,9 +38,9 @@ docker compose up --build
 
 | Service | URL |
 | --- | --- |
-| FastAPI app | http://localhost:8002 |
-| Prometheus | http://localhost:9090 |
-| Grafana | http://localhost:3000 (login: `admin` / `admin`) |
+| FastAPI app | `http://localhost:8002` |
+| Prometheus | `http://localhost:9090` |
+| Grafana | `http://localhost:3000` (login: `admin` / `admin`) |
 
 The app also runs standalone, without Docker:
 
