@@ -28,12 +28,13 @@ file stays a traceable record of what was done.
 - `pymarkdownlnt`, the pure-Python option, implements rules MD001–MD048. The `markdownlint` the
   extension runs covers MD001–MD060, and MD060 `table-column-style` was added in markdownlint
   v0.40.0. No `requirements/dev.txt` package can report the rule that prompted this work.
-- With `MD013` off, exactly 16 violations remain, spread across two files:
+- With `MD013` off, exactly 21 violations remain, spread across two files:
 
 | Rule | Location | Fix |
 | --- | --- | --- |
 | MD060 `table-column-style` | `README.md` L15, L40, L59 | Delimiter rows are tight (`\|---\|---\|`) while header and body rows are compact; pad them to `\| --- \| --- \|` |
 | MD031 `blanks-around-fences` | `CLAUDE.md` L29, L38, L43, L47, L49, L53, L58, L71 | Blank line before the opening fence, or after the closing fence |
+| MD022 `blanks-around-headings` | `CLAUDE.md` L28, L37, L46, L52, L57 | Each `###` heading is followed immediately by an opening fence; the blank line the MD031 fix inserts clears both rules at once |
 | MD034 `no-bare-urls` | `README.md` L41–43 | Wrap the `http://localhost:*` cells in angle brackets, which satisfies the rule and keeps the GFM autolink |
 | MD040 `fenced-code-language` | `README.md` L147 | The "Project layout" fence declares no language |
 | MD032 `blanks-around-lists` | `README.md` L139–140 | `Notes:` is immediately followed by a list item |

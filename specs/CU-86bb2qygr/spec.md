@@ -32,8 +32,8 @@ absence of a checker, but a checker whose output carries no signal.
 - A `.markdownlint.jsonc` file at the repo root declaring `"default": true` and `"MD013": false`,
   with a comment recording why the line-length rule is off.
 - Correction of every violation reported once that config is in place, across `CLAUDE.md` and
-  `README.md`: MD060 table column style, MD031 blank lines around fences, MD034 bare URLs, MD040
-  missing fence language, MD032 blank lines around lists.
+  `README.md`: MD060 table column style, MD031 blank lines around fences, MD022 blank lines around
+  headings, MD034 bare URLs, MD040 missing fence language, MD032 blank lines around lists.
 - A short subsection in `CLAUDE.md` recording that the `markdownlint` VS Code extension is the
   verification mechanism and that `.markdownlint.jsonc` is the source of truth for the rules, plus
   one line in `README.md`'s development tooling list.
@@ -45,7 +45,7 @@ absence of a checker, but a checker whose output carries no signal.
   the extension runs goes up to MD060, and MD060 (`table-column-style`) is precisely the rule that
   prompted this work. A `dev.txt` package could never report it.
 - A `markdown` environment in `tox.ini` running the `davidanson/markdownlint-cli2` Docker image.
-  Evaluated and rejected as disproportionate: six Markdown files and sixteen mechanical violations
+  Evaluated and rejected as disproportionate: six Markdown files and twenty-one mechanical violations
   do not justify a recurring external dependency that would fail the entire `tox` run whenever the
   Docker daemon is stopped.
 - Changes to `.github/workflows/python-app.yml`.
