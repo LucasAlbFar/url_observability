@@ -34,7 +34,7 @@ file stays a traceable record of what was done.
 | --- | --- | --- |
 | MD060 `table-column-style` | `README.md` L15, L40, L59 | Delimiter rows are tight (`\|---\|---\|`) while header and body rows are compact; pad them to `\| --- \| --- \|` |
 | MD031 `blanks-around-fences` | `CLAUDE.md` L29, L38, L43, L47, L49, L53, L58, L71 | Blank line before the opening fence, or after the closing fence |
-| MD034 `no-bare-urls` | `README.md` L41–43 | Wrap the `http://localhost:*` cells in backticks |
+| MD034 `no-bare-urls` | `README.md` L41–43 | Wrap the `http://localhost:*` cells in angle brackets, which satisfies the rule and keeps the GFM autolink |
 | MD040 `fenced-code-language` | `README.md` L147 | The "Project layout" fence declares no language |
 | MD032 `blanks-around-lists` | `README.md` L139–140 | `Notes:` is immediately followed by a list item |
 
@@ -67,9 +67,12 @@ One commit per task, each ticking its own checkbox in the same commit.
       to `| --- | --- | --- |`, and L40 and L59 to `| --- | --- |`, since only the first table has
       three columns. Padding must not change any table's column count, or MD056 fires instead.
       Commit: `style(docs): pad README table delimiter rows`
-- [x] `README.md`: wrap the three `http://localhost:*` values at L41–43 in backticks, keeping the
-      existing backticks around `admin` in the Grafana row (MD034).
-      Commit: `style(docs): wrap README localhost urls in backticks`
+- [x] `README.md`: wrap the three `http://localhost:*` values at L41–43 in angle brackets, keeping
+      the existing backticks around `admin` in the Grafana row (MD034). Backticks satisfy the rule
+      too, but render the URLs as inert code and cost the reader the clickable link, so the autolink
+      form is the one that ships.
+      Commits: `style(docs): wrap README localhost urls in backticks`, corrected by
+      `style(docs): keep README localhost urls clickable`
 - [x] `README.md`: declare `text` as the language of the "Project layout" fence at L147 (MD040).
       Commit: `style(docs): declare language for README layout fence`
 - [x] `README.md`: insert a blank line between `Notes:` and the list that follows it at L139–140
@@ -116,8 +119,8 @@ One commit per task, each ticking its own checkbox in the same commit.
 - With the VS Code window reloaded, open `CLAUDE.md`, `README.md` and the four files under `specs/`
   in turn; the Problems panel reports no `markdownlint` entry for any of them.
 - `git diff main...HEAD` on `CLAUDE.md` and `README.md` shows only inserted blank lines, respaced
-  delimiter rows, added backticks, the `text` language tag and the two documentation additions. No
-  paragraph of prose is rewrapped.
+  delimiter rows, angle-bracketed URLs, the `text` language tag and the two documentation
+  additions. No paragraph of prose is rewrapped.
 - `git diff --stat main...HEAD` confirms `requirements/`, `tox.ini` and
   `.github/workflows/python-app.yml` are untouched.
 - Preview `README.md` and confirm the three tables and the "Project layout" block still render as
