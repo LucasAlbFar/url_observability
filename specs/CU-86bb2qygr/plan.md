@@ -27,7 +27,7 @@ file stays a traceable record of what was done.
   verification mechanism.
 - `pymarkdownlnt`, the pure-Python option, implements rules MD001–MD048. The `markdownlint` the
   extension runs covers MD001–MD060, and MD060 `table-column-style` was added in markdownlint
-  v0.40.0. No `requirements/dev.txt` package can report the rule that prompted this work.
+  v0.39.0. No `requirements/dev.txt` package can report the rule that prompted this work.
 - With `MD013` off, 16 lines need editing across two files, and markdownlint reports them as 32
   diagnostics. The two numbers differ for two reasons: MD060 counts one diagnostic per mis-spaced
   pipe rather than one per row, and the five MD022 findings are cleared by five of the eight blank
@@ -108,7 +108,7 @@ One commit per task, each ticking its own checkbox in the same commit.
 - Nothing enforces conformance. Without a gate, a Markdown violation reaches a commit whenever
   nobody looks at the Problems panel. This is the deliberate trade recorded in the spec, not an
   oversight.
-- MD060 only exists in markdownlint v0.40.0 and later, so an outdated extension will not report it.
+- MD060 only exists in markdownlint v0.39.0 and later, so an outdated extension will not report it.
   It will still report MD055, MD056, MD058 and MD059: rule IDs are assigned in order of
   introduction, so every one of those shipped before MD060. A Problems panel with no MD060 entry is
   not evidence that the tables went unchecked.

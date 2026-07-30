@@ -50,7 +50,7 @@ No custom config for any of the three — all run with stock defaults. Latent fl
 
 No command: Markdown is checked live by the `markdownlint` VS Code extension, not by `tox` or CI. `.markdownlint.jsonc` at the repo root is the rule set — the stock rules with `MD013` (line-length) disabled, because prose here is written one paragraph per line and enforcing a column limit would mean rewrapping every documentation file. Nothing gates a commit on this, so check the editor's Problems panel after editing any `.md`.
 
-The extension must bundle **markdownlint v0.40.0 or newer** — that is where `MD060` (`table-column-style`) was introduced, and it is the rule that keeps the README's tables consistent. An older extension lints everything else normally and stays silent on table column style, so a `|---|---|` delimiter row would land unflagged. Extension v0.62.0 bundles v0.41.1 and is known good; `.vscode/` is gitignored, so this floor cannot be pinned via a committed `extensions.json`.
+The extension must bundle **markdownlint v0.39.0 or newer** — that is where `MD060` (`table-column-style`) was introduced, and it is the rule that keeps the README's tables consistent. An older extension lints everything else normally and stays silent on table column style, so a `|---|---|` delimiter row would land unflagged. Extension v0.62.0 bundles v0.41.1 and is known good; `.vscode/` is gitignored, so this floor cannot be pinned via a committed `extensions.json`.
 
 ### Security / dependency audit
 
