@@ -63,8 +63,9 @@ One commit per task, each ticking its own checkbox in the same commit.
       comment recording that prose is written one paragraph per line so the line-length rule would
       force rewrapping every documentation file.
       Commit: `chore(markdownlint): add rule config with MD013 disabled`
-- [x] `README.md`: pad the three delimiter rows at L15, L40 and L59 to `| --- | --- | --- |` so each
-      table is consistently compact (MD060).
+- [x] `README.md`: pad the three delimiter rows so each table is consistently compact (MD060) — L15
+      to `| --- | --- | --- |`, and L40 and L59 to `| --- | --- |`, since only the first table has
+      three columns. Padding must not change any table's column count, or MD056 fires instead.
       Commit: `style(docs): pad README table delimiter rows`
 - [x] `README.md`: wrap the three `http://localhost:*` values at L41–43 in backticks, keeping the
       existing backticks around `admin` in the Grafana row (MD034).
