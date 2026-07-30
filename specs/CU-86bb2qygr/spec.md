@@ -21,8 +21,9 @@ documentation maintainable as the project grows.
 
 The linter is already installed and already runs continuously as you type — what is missing is
 configuration. With no config file, the extension applies the default `MD013` limit of 80 columns
-to prose written one paragraph per line, producing roughly 198 warnings and burying the handful of
-genuine ones. The result is a wall of red that gets ignored, which is the actual problem: not the
+to prose written one paragraph per line, producing 166 line-length warnings across the project's
+Markdown — 198 entries in the Problems panel once the genuine findings are counted — and burying
+those genuine ones. The result is a wall of red that gets ignored, which is the actual problem: not the
 absence of a checker, but a checker whose output carries no signal.
 
 ## Scope

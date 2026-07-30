@@ -48,9 +48,10 @@ file stays a traceable record of what was done.
   checkboxes trigger no rule in the default set.
 - MD042, cited when this work was requested, is not violated by any file in the repository's
   current state.
-- At the default `MD013` limit of 80 columns the same files produce roughly 198 violations, and
-  `CLAUDE.md`'s longest line is 905 characters. Disabling the rule is what makes the remaining
-  output readable.
+- At the default `MD013` limit of 80 columns, `CLAUDE.md` and `README.md` produce 55 violations on
+  their own and the repository's Markdown produces 166 in total — which, with the 32 diagnostics
+  above, is the 198-entry Problems panel this work started from. `CLAUDE.md`'s longest line is 905
+  characters. Disabling the rule is what makes the remaining output readable.
 
 ## Affected files
 
