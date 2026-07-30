@@ -57,7 +57,7 @@ file stays a traceable record of what was done.
 
 | File | Change |
 | --- | --- |
-| `.markdownlint.jsonc` | New. Declares `"default": true` and `"MD013": false` |
+| `.markdownlint.jsonc` | New. Declares `"default": true`, `"MD013": false` and `"MD060": { "style": "compact" }` |
 | `README.md` | MD060 delimiter rows, MD034 URLs, MD040 fence language, MD032 blank line, plus one bullet in `## Stack` |
 | `CLAUDE.md` | Eight blank lines around fences, plus a `### Markdown lint` subsection under `## Commands` recording the rule set and the minimum markdownlint version |
 

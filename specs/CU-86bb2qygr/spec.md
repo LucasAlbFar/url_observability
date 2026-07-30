@@ -31,7 +31,8 @@ absence of a checker, but a checker whose output carries no signal.
 ### In
 
 - A `.markdownlint.jsonc` file at the repo root declaring `"default": true` and `"MD013": false`,
-  with a comment recording why the line-length rule is off.
+  with a comment recording why the line-length rule is off, plus `"MD060": { "style": "compact" }`
+  so table column style is held to one form repo-wide rather than per table.
 - Correction of every violation reported once that config is in place, across `CLAUDE.md` and
   `README.md`: MD060 table column style, MD031 blank lines around fences, MD022 blank lines around
   headings, MD034 bare URLs, MD040 missing fence language, MD032 blank lines around lists.
