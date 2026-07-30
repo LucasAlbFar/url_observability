@@ -83,7 +83,7 @@ One commit per task, each ticking its own checkbox in the same commit.
       that `.markdownlint.jsonc` at the repo root is the rule set, and that neither `tox` nor CI
       enforces it.
       Commit: `docs: record markdownlint setup in CLAUDE.md`
-- [ ] `README.md`: add one bullet to the `## Stack` list naming markdownlint and pointing at
+- [x] `README.md`: add one bullet to the `## Stack` list naming markdownlint and pointing at
       `.markdownlint.jsonc`.
       Commit: `docs: list markdownlint in README stack`
 - [ ] Reload the VS Code window so the extension picks up the new config, then open all six Markdown

@@ -26,6 +26,7 @@ The `/load/*` endpoints each stress a different resource on purpose, so the dash
 - pytest, pytest-asyncio, pytest-cov (80% coverage gate)
 - black, isort, flake8
 - pip-audit (dependency vulnerability scanning)
+- markdownlint (Markdown style, via the VS Code extension; rules in `.markdownlint.jsonc`)
 - Docker Compose, Prometheus, Grafana
 
 See [CLAUDE.md](CLAUDE.md) for exact pinned versions and detailed architecture notes.
