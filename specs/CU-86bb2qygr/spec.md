@@ -45,7 +45,7 @@ absence of a checker, but a checker whose output carries no signal.
   the extension runs goes up to MD060, and MD060 (`table-column-style`) is precisely the rule that
   prompted this work. A `dev.txt` package could never report it.
 - A `markdown` environment in `tox.ini` running the `davidanson/markdownlint-cli2` Docker image.
-  Evaluated and rejected as disproportionate: six Markdown files and fifteen mechanical violations
+  Evaluated and rejected as disproportionate: six Markdown files and sixteen mechanical violations
   do not justify a recurring external dependency that would fail the entire `tox` run whenever the
   Docker daemon is stopped.
 - Changes to `.github/workflows/python-app.yml`.

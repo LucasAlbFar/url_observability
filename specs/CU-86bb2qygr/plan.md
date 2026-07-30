@@ -28,7 +28,7 @@ file stays a traceable record of what was done.
 - `pymarkdownlnt`, the pure-Python option, implements rules MD001–MD048. The `markdownlint` the
   extension runs covers MD001–MD060, and MD060 `table-column-style` was added in markdownlint
   v0.40.0. No `requirements/dev.txt` package can report the rule that prompted this work.
-- With `MD013` off, exactly 15 violations remain, spread across two files:
+- With `MD013` off, exactly 16 violations remain, spread across two files:
 
 | Rule | Location | Fix |
 | --- | --- | --- |
