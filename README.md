@@ -144,7 +144,7 @@ Notes:
 
 ## Project layout
 
-```
+```text
 app/
   main.py                 # FastAPI app, instrumentation, router registration
   api/endpoints/          # one module per route group (example, load)

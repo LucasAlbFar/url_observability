@@ -69,7 +69,7 @@ One commit per task, each ticking its own checkbox in the same commit.
 - [x] `README.md`: wrap the three `http://localhost:*` values at L41–43 in backticks, keeping the
       existing backticks around `admin` in the Grafana row (MD034).
       Commit: `style(docs): wrap README localhost urls in backticks`
-- [ ] `README.md`: declare `text` as the language of the "Project layout" fence at L147 (MD040).
+- [x] `README.md`: declare `text` as the language of the "Project layout" fence at L147 (MD040).
       Commit: `style(docs): declare language for README layout fence`
 - [ ] `README.md`: insert a blank line between `Notes:` and the list that follows it at L139–140
       (MD032).
