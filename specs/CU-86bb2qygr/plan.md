@@ -102,7 +102,11 @@ One commit per task, each ticking its own checkbox in the same commit.
       `.markdownlint.jsonc`.
       Commit: `docs: list markdownlint in README stack`
 - [x] Reload the VS Code window so the extension picks up the new config, then open all six Markdown
-      files and confirm the Problems panel is empty. No commit — this task only verifies.
+      files and confirm the Problems panel is empty. No commit — this task only verifies. Run once
+      when the tasks above landed, and again at the end: the review follow-ups changed the README
+      URLs, the `CLAUDE.md` text and the config itself, so the first run no longer covered the tree
+      being merged. The second run, against the final state including `"MD060": { "style":
+      "compact" }`, reported nothing.
 
 ## Edge cases
 
