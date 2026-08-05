@@ -108,7 +108,7 @@ One commit per task, each ticking its own checkbox in the same commit.
       `/prometheus` and `/var/lib/grafana`; append `:ro` to the four configuration bind mounts
       (`./prometheus.yml`, both `grafana/provisioning/*` directories, `./grafana/dashboards`).
       Commit: `feat(compose): persist prometheus and grafana state in named volumes`
-- [ ] Extend the Prometheus `command` with `--storage.tsdb.path=/prometheus`,
+- [x] Extend the Prometheus `command` with `--storage.tsdb.path=/prometheus`,
       `--storage.tsdb.retention.time=7d` and `--storage.tsdb.retention.size=512MB`. The path flag is
       not redundant — see "Facts verified against the repo".
       Commit: `feat(compose): bound prometheus retention`
