@@ -1,4 +1,4 @@
-FROM python:3.11
+FROM python:3.11.15
 WORKDIR /app
 COPY . .
 RUN pip install --no-cache-dir --upgrade pip && pip install -r requirements/base.txt

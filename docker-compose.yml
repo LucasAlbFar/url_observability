@@ -9,7 +9,7 @@ services:
       - LOADGEN_URLS=http://app:8002/load/io-bound,http://app:8002/load/cpu-bound,http://app:8002/load/memory-spike,http://app:8002/load/stress/1
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.13.2
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     command:
@@ -18,7 +18,7 @@ services:
       - "9090:9090"
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:12.4.7
     ports:
       - "3000:3000"
     environment:

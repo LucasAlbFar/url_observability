@@ -101,7 +101,7 @@ One commit per task, each ticking its own checkbox in the same commit.
 - [x] Delete the `version: '3.8'` line from `docker-compose.yml`. Confirm with
       `docker compose config -q` that the obsolescence warning is gone.
       Commit: `chore(compose): drop obsolete version attribute`
-- [ ] Pin `prom/prometheus:v3.13.2` and `grafana/grafana:12.4.7` in `docker-compose.yml`, and
+- [x] Pin `prom/prometheus:v3.13.2` and `grafana/grafana:12.4.7` in `docker-compose.yml`, and
       `python:3.11.15` in `Dockerfile` and `worker/Dockerfile`.
       Commit: `chore(compose): pin image tags`
 - [ ] Add a top-level `volumes:` block declaring `prometheus_data` and `grafana_data`; mount them at
