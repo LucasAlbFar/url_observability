@@ -98,7 +98,7 @@ file stays a traceable record of what was done.
 
 One commit per task, each ticking its own checkbox in the same commit.
 
-- [ ] Delete the `version: '3.8'` line from `docker-compose.yml`. Confirm with
+- [x] Delete the `version: '3.8'` line from `docker-compose.yml`. Confirm with
       `docker compose config -q` that the obsolescence warning is gone.
       Commit: `chore(compose): drop obsolete version attribute`
 - [ ] Pin `prom/prometheus:v3.13.2` and `grafana/grafana:12.4.7` in `docker-compose.yml`, and
