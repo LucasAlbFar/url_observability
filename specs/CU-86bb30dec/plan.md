@@ -112,11 +112,13 @@ One commit per task, each ticking its own checkbox in the same commit.
       `--storage.tsdb.retention.time=7d` and `--storage.tsdb.retention.size=512MB`. The path flag is
       not redundant — see "Facts verified against the repo".
       Commit: `feat(compose): bound prometheus retention`
-- [ ] Add `restart: unless-stopped` to all four services and a `healthcheck` to three: `app` probing
+- [x] Add `restart: unless-stopped` to all four services and a `healthcheck` to three: `app` probing
       `http://localhost:8002/metrics` with `python -c` (the image is `python:3.11`, so no new
       dependency), `prometheus` probing `http://localhost:9090/-/healthy` with `wget --spider -q`,
       and `grafana` probing `http://localhost:3000/api/health` the same way. Use `interval: 10s`,
-      `timeout: 3s`, `retries: 3`, and `start_period: 30s` on `app` against `10s` on the other two.
+      `timeout: 3s`, `retries: 3`, and `start_period: 30s` on `app`, `10s` on `prometheus` and
+      `90s` on `grafana` — the last one raised from the planned `10s` against a measurement, see
+      "Edge cases".
       Convert `loadgen`'s `depends_on` to the long form with `condition: service_healthy`, and add
       the same for `grafana` → `prometheus`.
       Commit: `feat(compose): add healthchecks and restart policy`
@@ -217,6 +219,18 @@ One commit per task, each ticking its own checkbox in the same commit.
 - **A short `start_period` breaks the `up` outright.** With `condition: service_healthy`, `loadgen`
   does not merely wait — if `app` never reaches healthy the whole `up` fails. Hence 30s of slack on
   the app probe.
+- **Grafana's `start_period` was raised from the planned 10s to 90s, against a measurement.** On the
+  first `up` after this task, Grafana went `unhealthy` — failing streak 3, `wget: can't connect to
+  remote host` — before recovering on its own at ~53s. It was not broken: its log shows
+  `migrations completed performed=712 duration=38.4s` against a freshly created `grafana_data`, and
+  the HTTP server only binds once migrations finish. 10s of grace plus 3 × 10s of retries marks the
+  container unhealthy at ~40s, just short of ready. A second cold boot, with the volume destroyed
+  via `down --volumes`, reached healthy in 35s — so the true cost varies with machine load, which
+  here includes `loadgen` hammering the CPU-bound endpoints throughout. 90s covers both runs with
+  margin. Nothing depends on `grafana` being healthy today, so the `up` never failed; the damage
+  was a false `unhealthy` in `docker compose ps`, which is precisely the signal this feature exists
+  to make trustworthy. It would become a hard failure the moment any service declares
+  `depends_on: grafana: {condition: service_healthy}`.
 - **The infra tests are structural, not semantic.** They do not catch the duplicated `gridPos` and
   `refId` the dashboard actually has, nor a query that returns nothing. They assert the file parses
   and carries the fields this feature introduces. Name the test functions so they cannot be mistaken
