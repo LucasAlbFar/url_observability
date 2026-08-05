@@ -194,6 +194,20 @@ One commit per task, each ticking its own checkbox in the same commit.
   `down --volumes` stops being optional.
 - **Size-based retention is approximate.** `--storage.tsdb.retention.size=512MB` governs persisted
   blocks, not the WAL, so disk use can exceed it transiently.
+- **Both retention flags are deprecated in v3.13.2, and this feature ships them anyway.** The
+  image's own `--help` marks `--storage.tsdb.retention.time` and `--storage.tsdb.retention.size`
+  `[DEPRECATED]`, pointing at the `storage.tsdb.retention.{time,size}` fields of the config file
+  instead. That replacement was verified to work under the pinned image: a `prometheus.yml`
+  carrying a `storage:` block passes `promtool check config` through
+  `prom/prometheus:v3.13.2`. Only `--storage.tsdb.path` is unaffected and stays on the command
+  either way. Deferred to its own ticket after this feature closes, decided 2026-08-05: deprecated
+  is not removed within the 3.x line, and switching now would mean amending an already-approved
+  spec (the acceptance criterion names the flags) and reopening a committed task mid-feature. The
+  coupling is narrow — `retention` appears nowhere in `README.md`, `CLAUDE.md`, `prometheus.yml`
+  or the workflow, so the follow-up moves two lines out of `docker-compose.yml`, adds a `storage:`
+  block to `prometheus.yml`, and relocates one assertion from `test_compose_config.py` to
+  `test_prometheus_config.py`. The CI job gains coverage for free: `promtool` would then validate
+  the retention settings, which nothing validates today.
 - **`wget` is a property of the image variant.** The Prometheus image is the busybox variant
   (`io.prometheus.image.variant`) and Grafana's is Alpine-based; both ship `wget`. A future pin to a
   `distroless` variant silently breaks the healthcheck. The pin and the probe are coupled decisions.
