@@ -104,7 +104,7 @@ One commit per task, each ticking its own checkbox in the same commit.
 - [x] Pin `prom/prometheus:v3.13.2` and `grafana/grafana:12.4.7` in `docker-compose.yml`, and
       `python:3.11.15` in `Dockerfile` and `worker/Dockerfile`.
       Commit: `chore(compose): pin image tags`
-- [ ] Add a top-level `volumes:` block declaring `prometheus_data` and `grafana_data`; mount them at
+- [x] Add a top-level `volumes:` block declaring `prometheus_data` and `grafana_data`; mount them at
       `/prometheus` and `/var/lib/grafana`; append `:ro` to the four configuration bind mounts
       (`./prometheus.yml`, both `grafana/provisioning/*` directories, `./grafana/dashboards`).
       Commit: `feat(compose): persist prometheus and grafana state in named volumes`
