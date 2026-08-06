@@ -137,7 +137,7 @@ One commit per task, each ticking its own checkbox in the same commit.
       turning from one line into a list, and nothing else. Add `pyyaml = "^6.0.3"` to
       `[tool.poetry.dev-dependencies]` in `pyproject.toml`.
       Commit: `chore(deps): declare pyyaml as a direct dev dependency`
-- [ ] Add a session-scoped `repo_root` fixture to `tests/conftest.py` returning
+- [x] Add a session-scoped `repo_root` fixture to `tests/conftest.py` returning
       `Path(__file__).resolve().parent.parent`, then write the three test files.
       `test_compose_config.py`: no floating tag, both named volumes declared and mounted, every
       service carries a non-empty `profiles`, the three core services have a `healthcheck`,
@@ -254,9 +254,15 @@ One commit per task, each ticking its own checkbox in the same commit.
   diff — `pyyaml`'s `# via` block turning from one line into a list of two — with the header and
   every pin unchanged. The documentation task still carries the `ImportError` note, since the
   failure is what sends the next person looking for a second venv in the first place.
-- **flake8 at 79 columns, black at 88.** The new test files are the first realistic chance for this
-  latent mismatch to fire, since black will happily leave an 85-column line that flake8 rejects. Keep
-  lines short by construction.
+- **flake8 at 79 columns, black at 88 — and it fired.** The new test files were the first realistic
+  chance for this latent mismatch to bite, and `test_grafana_provisioning.py` hit it on the first
+  run: `black --check` demanded that two hand-wrapped expressions be collapsed onto single lines of
+  87 and 86 columns, which flake8 would then reject as `E501`. Neither tool is wrong on its own and
+  no formatting of that expression satisfies both. The fix is not to wrap harder but to shorten the
+  expression — binding the intermediate values (`config`, `compose_path`, `grafana`) to names, so
+  the form black prefers is already under 79. Keeping lines short by construction is therefore not
+  a style preference here; it is the only way out, and it will recur in every future file until the
+  repo gives flake8 a `max-line-length` of 88.
 - **Intermediate commits are not all green.** The infra tests land after the compose changes they
   assert, on purpose. Any ordering that puts them earlier leaves a red tree behind.
 - **`loadgen` carries two `GF_SECURITY_ADMIN_*` environment variables** that do nothing — it is not
