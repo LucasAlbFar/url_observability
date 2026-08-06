@@ -127,7 +127,7 @@ One commit per task, each ticking its own checkbox in the same commit.
       boots something useful instead of a generator retrying against nothing, and so the behaviour
       does not depend on how a given Compose version auto-enables a dependency's profile.
       Commit: `feat(compose): group services into profiles`
-- [ ] Add `pyyaml` to `requirements/dev.in`, then regenerate the lockfile with
+- [x] Add `pyyaml` to `requirements/dev.in`, then regenerate the lockfile with
       `pip-compile --output-file=requirements/dev.txt requirements/dev.in` — **without**
       `--upgrade`, so the existing pins are honoured, and with that exact spelling, since the
       command is echoed into the file's header. `pip-compile` cannot run in the project venv as it
@@ -248,7 +248,12 @@ One commit per task, each ticking its own checkbox in the same commit.
   the smaller move, but it means the project venv now carries a pip older than the system default —
   worth a line in the documentation task so the next person does not "helpfully" upgrade it back.
   The alternative, a dedicated compile venv, keeps the project venv clean at the cost of one more
-  environment to remember.
+  environment to remember. **The dedicated venv was the route taken**, built throwaway with
+  `pip==25.3` and `pip-tools==7.6.0`: the project venv keeps pip 26.2 and nothing about it now has
+  to be remembered or protected from a future upgrade. The recompile produced exactly the predicted
+  diff — `pyyaml`'s `# via` block turning from one line into a list of two — with the header and
+  every pin unchanged. The documentation task still carries the `ImportError` note, since the
+  failure is what sends the next person looking for a second venv in the first place.
 - **flake8 at 79 columns, black at 88.** The new test files are the first realistic chance for this
   latent mismatch to fire, since black will happily leave an 85-column line that flake8 rejects. Keep
   lines short by construction.
