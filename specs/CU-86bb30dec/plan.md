@@ -148,7 +148,7 @@ One commit per task, each ticking its own checkbox in the same commit.
       and non-empty `panels`; both provisioning YAMLs parse; the provider's `options.path` matches
       the container path the compose file mounts. Keep every line under 79 columns.
       Commit: `test(infra): validate compose, prometheus and grafana config`
-- [ ] Add an `infra` job to `.github/workflows/python-app.yml`, parallel to `build`, on
+- [x] Add an `infra` job to `.github/workflows/python-app.yml`, parallel to `build`, on
       `ubuntu-latest`: checkout, then `docker compose --profile '*' config -q`, then `promtool check
       config` run through `docker run --rm --entrypoint promtool prom/prometheus:v3.13.2` with
       `prometheus.yml` bind-mounted read-only. The `--profile '*'` is load-bearing: without it
@@ -184,6 +184,22 @@ One commit per task, each ticking its own checkbox in the same commit.
 - **`build` and `config` skip profiled services.** With every service behind a profile, a bare
   `docker compose build` or `docker compose config` sees nothing. This affects CI and anyone working
   locally, so it belongs in the README rather than being rediscovered.
+- **A profiled `config -q` fails green, so the CI job guards against its own flag.** Measured:
+  `docker compose config -q` with no profile enabled exits **0** while resolving zero services —
+  it validates an empty file and reports success. The CI step therefore cannot rely on
+  `--profile '*'` alone: if a runner's Compose is older than wildcard-profile support, or the quoting
+  is mangled by a future edit, the job stays green while checking nothing. The step follows the
+  `config -q` with `config --services | grep -q .`, which turns that silent pass into a hard
+  failure. Verified both ways locally — passes with the wildcard, exits 1 without it.
+- **The Prometheus tag now lives in two files.** The CI job pins `prom/prometheus:v3.13.2` in
+  `.github/workflows/python-app.yml` to run `promtool`, and `docker-compose.yml` pins it again.
+  Nothing keeps the two in step, so the next version bump has to touch both or CI silently validates
+  the config against a different Prometheus than the stack runs. Deriving the tag from the compose
+  file (`docker compose --profile '*' config --format json`, then reading
+  `.services.prometheus.image`) would remove the duplication; it was not done here because the task
+  as approved names the literal reference, and changing it mid-feature is the amendment this plan
+  has avoided elsewhere. Worth folding into the retention follow-up ticket, which already edits both
+  files.
 - **`down` *is* profile-filtered, and a bare `docker compose down` is a silent no-op.** This entry
   originally assumed the opposite and asked for it to be confirmed rather than trusted; the check
   disproved it. Measured on Compose v5.3.1 / Docker 29.7.1 with the full stack healthy: `docker
