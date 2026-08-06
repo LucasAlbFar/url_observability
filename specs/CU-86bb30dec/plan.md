@@ -154,7 +154,7 @@ One commit per task, each ticking its own checkbox in the same commit.
       `prometheus.yml` bind-mounted read-only. The `--profile '*'` is load-bearing: without it
       `config` skips every profiled service and validates an empty file.
       Commit: `ci: validate compose and prometheus config with docker`
-- [ ] Update `CLAUDE.md`: pinned versions in "Stack & versions"; every `docker compose` command in
+- [x] Update `CLAUDE.md`: pinned versions in "Stack & versions"; every `docker compose` command in
       "Run the app / stack locally" carrying `--profile`; a rewrite of the three paragraphs on
       anonymous volumes and Grafana state loss, which this feature invalidates; a new
       "### Infra checks" subsection under "## Commands"; and a line in "Testing conventions" noting
