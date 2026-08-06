@@ -126,28 +126,30 @@ drops a named volume or leaves a service without a profile; the CI infrastructur
 
 ## Acceptance criteria
 
-- [ ] `docker compose --profile '*' config --volumes` prints `prometheus_data` and `grafana_data`.
+- [x] `docker compose --profile '*' config --volumes` prints `prometheus_data` and `grafana_data`.
       The `--profile` is required: with every service behind a profile, the bare form resolves no
       services and prints nothing.
-- [ ] `docker compose --profile '*' config -q` exits zero and emits no obsolete-`version` warning.
-- [ ] No image reference in `docker-compose.yml`, `Dockerfile` or `worker/Dockerfile` resolves to a
+- [x] `docker compose --profile '*' config -q` exits zero and emits no obsolete-`version` warning.
+- [x] No image reference in `docker-compose.yml`, `Dockerfile` or `worker/Dockerfile` resolves to a
       floating tag; Prometheus is `v3.13.2`, Grafana is `12.4.7`, Python is `3.11.15`.
-- [ ] With the stack up, `docker compose ps` reports `app`, `prometheus` and `grafana` as `healthy`.
-- [ ] `docker compose --profile core up -d` starts three containers and no load generator;
+- [x] With the stack up, `docker compose ps` reports `app`, `prometheus` and `grafana` as `healthy`.
+- [x] `docker compose --profile core up -d` starts three containers and no load generator;
       `docker compose --profile load up -d` starts the app and the generator and neither Prometheus
       nor Grafana.
-- [ ] After creating a dashboard by hand in Grafana, letting the stack scrape for a few minutes,
+- [x] After creating a dashboard by hand in Grafana, letting the stack scrape for a few minutes,
       then running `docker compose --profile '*' down` and bringing it back up: the dashboard is
       still present and a `http_requests_total` query returns points from before the teardown. The
       `--profile` is required here too — the bare form silently does nothing.
-- [ ] The Prometheus command passes an explicit `--storage.tsdb.path` and both retention flags.
-- [ ] `promtool check config` reports `SUCCESS` for `prometheus.yml` under the pinned image.
-- [ ] `tox` passes end to end, including the three new infrastructure test files.
-- [ ] Replacing a pinned tag with `:latest` makes `pytest tests/test_compose_config.py` fail —
+- [x] The Prometheus command passes an explicit `--storage.tsdb.path` and both retention flags.
+- [x] `promtool check config` reports `SUCCESS` for `prometheus.yml` under the pinned image.
+- [x] `tox` passes end to end, including the three new infrastructure test files.
+- [x] Replacing a pinned tag with `:latest` makes `pytest tests/test_compose_config.py` fail —
       the tests are proven to bite, not merely to pass.
-- [ ] `pyyaml` appears in `requirements/dev.in`, in the recompiled `requirements/dev.txt` and in
+- [x] `pyyaml` appears in `requirements/dev.in`, in the recompiled `requirements/dev.txt` and in
       `pyproject.toml`.
-- [ ] The CI workflow has a job that runs `docker compose config` and `promtool check config`.
-- [ ] `CLAUDE.md` and `README.md` no longer claim Grafana state is lost on `down`, document the
+- [x] The CI workflow has a job that runs `docker compose config` and `promtool check config`.
+- [x] `CLAUDE.md` and `README.md` no longer claim Grafana state is lost on `down`, document the
       `--profile` commands, and name the pinned versions.
-- [ ] `git status` shows no change under `app/`, `worker/` or `grafana/dashboards/`.
+- [x] No runtime behaviour changes: `app/`, `worker/load_driver.py` and `grafana/dashboards/` are
+      untouched. `worker/Dockerfile` does change — pinning its base image is in scope — so the
+      check names the driver rather than the whole `worker/` directory.
