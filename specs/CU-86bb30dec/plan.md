@@ -55,9 +55,12 @@ file stays a traceable record of what was done.
   existing file **byte for byte** (checked with `pip-compile --dry-run`). Adding `pyyaml` therefore
   produces a diff limited to its own `# via` block — no pin moves. Note that `--dry-run` writes the
   result to stderr, not stdout.
-- The header of `requirements/dev.txt` records the literal argv of the run that produced it:
-  `pip-compile --output-file=requirements/dev.txt requirements/dev.in`. Using the `-o` spelling
-  instead rewrites that header line for no reason, so keep the `--output-file=` form.
+- The header of `requirements/dev.txt` records the command that produced it:
+  `pip-compile --output-file=requirements/dev.txt requirements/dev.in`. This entry originally
+  claimed that using the `-o` spelling rewrites that header line, and that is **wrong** — measured
+  2026-08-06 against pip-tools 7.6.0, `pip-compile requirements/dev.in -o requirements/dev.txt`
+  normalises to the same `--output-file=` header, byte for byte. Either spelling is safe; the
+  `README.md` documents `-o` and needed no change on this account.
 - `pip-compile` also warns that `--strip-extras` becomes the default in pip-tools 8.0.0. The current
   lockfiles keep extras (`coverage[toml]`, `uvicorn[standard]`), so the flag stays unset here and
   the eventual 8.0 upgrade is its own decision.
@@ -160,7 +163,7 @@ One commit per task, each ticking its own checkbox in the same commit.
       "### Infra checks" subsection under "## Commands"; and a line in "Testing conventions" noting
       that the infra test files check configuration rather than a Python module.
       Commit: `docs: update CLAUDE.md for the hardened compose stack`
-- [ ] Update `README.md`: pinned versions in "## Stack"; `--profile` in "## Running the stack" plus a
+- [x] Update `README.md`: pinned versions in "## Stack"; `--profile` in "## Running the stack" plus a
       short table of what each profile brings up; a rewritten "### Stopping and cleaning up" — the
       teardown table's `--volumes` row now destroys both databases, and the paragraph claiming
       Grafana state is already lost on `down` is no longer true; a note in "## Development" on
