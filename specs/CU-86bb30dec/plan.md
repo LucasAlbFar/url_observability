@@ -172,7 +172,7 @@ One commit per task, each ticking its own checkbox in the same commit.
       `ImportError: ... stdlib_pkgs` when pip is newer than pip-tools supports, which upgrading
       `pip-tools` does not fix.
       Commit: `docs: update README for named volumes and profiles`
-- [ ] Run the verification steps below end to end and record the outcome here. No commit beyond the
+- [x] Run the verification steps below end to end and record the outcome here. No commit beyond the
       tick.
 
 ## Edge cases
@@ -293,26 +293,58 @@ One commit per task, each ticking its own checkbox in the same commit.
 
 ## Verification steps
 
+Run 2026-08-06 against the full branch. Each step carries its measured outcome.
+
 - `docker compose --profile '*' config -q` exits zero and prints no obsolescence warning.
+  **PASS** — exit 0, no output at all.
 - `docker compose config --volumes` prints `prometheus_data` and `grafana_data`.
+  **FAILS AS WRITTEN, and the step is what is wrong.** The bare form prints *nothing*: with no
+  profile enabled it resolves zero services and renders a config with no volumes either. The
+  correct command is `docker compose --profile '*' config --volumes`, which prints
+  `grafana_data` and `prometheus_data`. Same root cause as the `down` no-op in "Edge cases" —
+  this step was written before that behaviour was understood. Note the spec's first acceptance
+  criterion carries the same bare command and is therefore unmet as literally worded, while the
+  underlying property it checks holds.
 - `docker compose --profile core --profile load up --build -d`, then `docker compose ps` reports
   `app`, `prometheus` and `grafana` as `healthy` and `loadgen` as running.
+  **PASS** — all three healthy, `loadgen` up. Prometheus reports the `fastapi-app` target `up`,
+  `sum(http_requests_total)` returns a value, Grafana's API lists the provisioned
+  `fastapi-dashboard`, and the container's argv carries all three storage flags.
 - `docker compose --profile core up -d` starts three containers and no load generator;
   `docker compose --profile load up -d` starts `app` and `loadgen` and neither Prometheus nor
-  Grafana.
+  Grafana. **PASS** — exactly those sets, both times.
 - **Persistence, the test that defines the feature:** with the full stack up, create a dashboard by
   hand in the Grafana UI and note the time; let it scrape for a few minutes;
   `docker compose --profile '*' down` — the bare form does nothing, see "Edge cases";
   bring it back with `docker compose --profile core --profile load up -d`. The hand-made dashboard is
   still there, and a `http_requests_total` query in Prometheus returns points from before the
-  teardown.
+  teardown. **PASS** — validated by hand at the Grafana UI on 2026-08-06: after a
+  `--profile '*' down` and a fresh `up`, the dashboard created in the UI was still present and the
+  queried metric still held its pre-teardown data. This is the property the whole feature exists
+  for, and it is the one step no automated check in this branch can stand in for.
 - `promtool check config /etc/prometheus/prometheus.yml`, run through
   `docker run --rm --entrypoint promtool prom/prometheus:v3.13.2` with `prometheus.yml` bind-mounted
-  read-only, reports `SUCCESS`.
+  read-only, reports `SUCCESS`. **PASS.** Also proved to bite: a config carrying
+  `scrape_interval: not-a-duration` exits 1 with `not a valid duration string`, an error no Python
+  test in this feature detects.
 - `/home/lucas/venvurlobs/bin/tox` passes end to end — `py311` with the three new files, `lint` and
-  `safety`.
+  `safety`. **PASS** — `py311` 28 passed at 100% coverage, `lint` clean, `safety` reporting no
+  known vulnerabilities in either lockfile.
 - Negative proof: temporarily replace a pinned tag with `:latest` and confirm
   `/home/lucas/venvurlobs/bin/pytest tests/test_compose_config.py` fails; revert, then repeat with
-  one `profiles` key removed.
+  one `profiles` key removed. **PASS, and widened.** Four regressions were injected and reverted,
+  each felling exactly one test: `:latest` → `test_every_compose_image_is_pinned`; a removed
+  `profiles` key → `test_every_service_declares_a_profile`; an unmounted `prometheus_data` →
+  `test_named_volumes_are_mounted`; a dropped retention flag → `test_prometheus_command_bounds_storage`.
+  An earlier round also confirmed `FROM python:3.11` (a floating *minor*, not `:latest`) fails
+  `test_every_dockerfile_base_image_is_pinned`, a provider-path drift fails
+  `test_provider_path_matches_the_compose_mount`, and a removed scrape target fails
+  `test_every_scrape_job_has_a_target`.
 - `git show --stat HEAD` after each commit names only that task's files plus this `plan.md`.
+  **PASS** — audited across all 16 commits on the branch.
 - `git diff --stat main...HEAD` shows nothing under `app/`, `worker/` or `grafana/dashboards/`.
+  **FAILS AS WRITTEN, and the step is what is wrong.** `worker/Dockerfile` *is* modified — task 2
+  pins its base image, and the "Affected files" table lists it. `app/` and `grafana/dashboards/`
+  are untouched, and `worker/load_driver.py` is untouched, which is the property actually meant:
+  no runtime behaviour changed. The step should have named `app/`, `worker/load_driver.py` and
+  `grafana/dashboards/`.
