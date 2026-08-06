@@ -99,9 +99,9 @@ bringing the whole stack up.
 
 ## Expected behaviour
 
-`docker compose down` followed by an `up` returns the stack with its history intact: the Prometheus
-series scraped before the teardown are still queryable, and a dashboard created by hand in the
-Grafana UI is still there. Only `docker compose down --volumes` discards them, and it now discards
+`docker compose --profile '*' down` followed by an `up` returns the stack with its history intact:
+the Prometheus series scraped before the teardown are still queryable, and a dashboard created by
+hand in the Grafana UI is still there. Only `down --volumes` discards them, and it now discards
 both — which the documentation states plainly, because that command is considerably more
 destructive than it used to be.
 
@@ -109,7 +109,8 @@ The stack starts one group at a time. `docker compose --profile core up` brings 
 and Grafana without the synthetic traffic; `--profile load up` brings the app and its load
 generator without the observability side; `--profile core --profile load up --build` reproduces
 today's full stack. Since every service declares a profile, a bare `docker compose up` starts
-nothing, and `build` and `config` need `--profile` too — the documented commands change
+nothing, and every other subcommand needs `--profile` too — `build`, `config`, and the teardown
+commands, which otherwise exit 0 having done nothing at all. The documented commands change
 accordingly.
 
 Containers report their own readiness. `docker compose ps` shows `app`, `prometheus` and `grafana`
@@ -125,7 +126,9 @@ drops a named volume or leaves a service without a profile; the CI infrastructur
 
 ## Acceptance criteria
 
-- [ ] `docker compose config --volumes` prints `prometheus_data` and `grafana_data`.
+- [ ] `docker compose --profile '*' config --volumes` prints `prometheus_data` and `grafana_data`.
+      The `--profile` is required: with every service behind a profile, the bare form resolves no
+      services and prints nothing.
 - [ ] `docker compose --profile '*' config -q` exits zero and emits no obsolete-`version` warning.
 - [ ] No image reference in `docker-compose.yml`, `Dockerfile` or `worker/Dockerfile` resolves to a
       floating tag; Prometheus is `v3.13.2`, Grafana is `12.4.7`, Python is `3.11.15`.
@@ -134,8 +137,9 @@ drops a named volume or leaves a service without a profile; the CI infrastructur
       `docker compose --profile load up -d` starts the app and the generator and neither Prometheus
       nor Grafana.
 - [ ] After creating a dashboard by hand in Grafana, letting the stack scrape for a few minutes,
-      then running `docker compose down` and bringing it back up: the dashboard is still present and
-      a `http_requests_total` query returns points from before the teardown.
+      then running `docker compose --profile '*' down` and bringing it back up: the dashboard is
+      still present and a `http_requests_total` query returns points from before the teardown. The
+      `--profile` is required here too — the bare form silently does nothing.
 - [ ] The Prometheus command passes an explicit `--storage.tsdb.path` and both retention flags.
 - [ ] `promtool check config` reports `SUCCESS` for `prometheus.yml` under the pinned image.
 - [ ] `tox` passes end to end, including the three new infrastructure test files.
