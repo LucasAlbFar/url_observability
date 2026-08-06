@@ -122,7 +122,7 @@ One commit per task, each ticking its own checkbox in the same commit.
       Convert `loadgen`'s `depends_on` to the long form with `condition: service_healthy`, and add
       the same for `grafana` → `prometheus`.
       Commit: `feat(compose): add healthchecks and restart policy`
-- [ ] Declare `profiles` on every service: `["core", "load"]` on `app`, `["core"]` on `prometheus`
+- [x] Declare `profiles` on every service: `["core", "load"]` on `app`, `["core"]` on `prometheus`
       and `grafana`, `["load"]` on `loadgen`. `app` sits in both on purpose, so `--profile load`
       boots something useful instead of a generator retrying against nothing, and so the behaviour
       does not depend on how a given Compose version auto-enables a dependency's profile.
@@ -184,10 +184,18 @@ One commit per task, each ticking its own checkbox in the same commit.
 - **`build` and `config` skip profiled services.** With every service behind a profile, a bare
   `docker compose build` or `docker compose config` sees nothing. This affects CI and anyone working
   locally, so it belongs in the README rather than being rediscovered.
-- **`down` is not profile-filtered.** It removes the project's containers whatever profiles were
-  enabled. That is the desired behaviour, but it contradicts the intuition of someone who just
-  started a single profile. Confirm the same for `ps` and `logs` during implementation rather than
-  assuming it.
+- **`down` *is* profile-filtered, and a bare `docker compose down` is a silent no-op.** This entry
+  originally assumed the opposite and asked for it to be confirmed rather than trusted; the check
+  disproved it. Measured on Compose v5.3.1 / Docker 29.7.1 with the full stack healthy: `docker
+  compose down` printed nothing, exited zero and left all four containers running. `docker compose
+  --profile '*' down` removed them and the network. The failure mode is the worst kind — no error,
+  no output, and `ps` right afterwards still lists everything, so it reads as a stuck teardown
+  rather than a command that was never given a service to act on. `logs` behaves the same way:
+  bare `docker compose logs` prints nothing at all. `ps` is the exception and is *not* filtered —
+  it lists the running containers regardless of profile, which is precisely what makes the no-op
+  `down` look like a bug. Consequence for the documentation tasks: every teardown command in
+  `README.md` and `CLAUDE.md` — `down`, `down --volumes`, `down --rmi all`, `stop`, `logs` — has to
+  carry `--profile '*'` (or `COMPOSE_PROFILES=core,load`), not just the `up` commands.
 - **`--volumes` becomes genuinely destructive.** Today it only discards Prometheus history; after
   this change it also erases `grafana_data`, the state the feature just protected. The README table
   has to say so in as many words.
@@ -263,7 +271,8 @@ One commit per task, each ticking its own checkbox in the same commit.
   `docker compose --profile load up -d` starts `app` and `loadgen` and neither Prometheus nor
   Grafana.
 - **Persistence, the test that defines the feature:** with the full stack up, create a dashboard by
-  hand in the Grafana UI and note the time; let it scrape for a few minutes; `docker compose down`;
+  hand in the Grafana UI and note the time; let it scrape for a few minutes;
+  `docker compose --profile '*' down` — the bare form does nothing, see "Edge cases";
   bring it back with `docker compose --profile core --profile load up -d`. The hand-made dashboard is
   still there, and a `http_requests_total` query in Prometheus returns points from before the
   teardown.
