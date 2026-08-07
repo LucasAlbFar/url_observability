@@ -30,3 +30,24 @@ jobs:
         if [ -f requirements/dev.txt ]; then pip install -r requirements/dev.txt; fi
     - name: Run tox
       run: tox
+
+  infra:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    # Every service sits behind a profile, so a bare `config` would
+    # validate an empty file and still exit 0. The wildcard is
+    # load-bearing, and the second command proves it resolved.
+    - name: Validate the compose file
+      run: |
+        docker compose --profile '*' config -q
+        docker compose --profile '*' config --services | grep -q . \
+          || { echo "--profile '*' resolved no services"; exit 1; }
+    - name: Validate the Prometheus config
+      run: |
+        docker run --rm --entrypoint promtool \
+          -v "$PWD/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
+          prom/prometheus:v3.13.2 \
+          check config /etc/prometheus/prometheus.yml

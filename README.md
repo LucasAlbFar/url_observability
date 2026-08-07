@@ -27,14 +27,15 @@ The `/load/*` endpoints each stress a different resource on purpose, so the dash
 - black, isort, flake8
 - pip-audit (dependency vulnerability scanning)
 - markdownlint (Markdown style, via the VS Code extension bundling markdownlint 0.39+; rules in `.markdownlint.jsonc`)
-- Docker Compose, Prometheus, Grafana
+- Docker Compose, with every service behind a `core` or `load` profile
+- Prometheus `v3.13.2` and Grafana `12.4.7`, both pinned — no image tracks `latest`
 
-See [CLAUDE.md](CLAUDE.md) for exact pinned versions and detailed architecture notes.
+Exact Python pins live in `requirements/base.txt` / `requirements/dev.txt`. [CLAUDE.md](CLAUDE.md) covers the conventions for working on the code.
 
 ## Running the stack
 
 ```bash
-docker compose up --build
+docker compose --profile core --profile load up --build
 ```
 
 | Service | URL |
@@ -43,38 +44,70 @@ docker compose up --build
 | Prometheus | <http://localhost:9090> |
 | Grafana | <http://localhost:3000> (login: `admin` / `admin`) |
 
-The app also runs standalone, without Docker:
+**Every service sits behind a profile, so `--profile` is required on every `docker compose` command** — teardown included. Without it most subcommands do nothing at all: `up` starts nothing, and `down`, `stop`, `start` and `logs` print nothing and exit `0` while leaving the containers untouched. Only `build` warns (`No services to build`), and only `ps` ignores profiles and lists the containers anyway — which is what makes a bare `down` look like it hung rather than like it did nothing. Use `--profile '*'` for anything acting on the whole stack, or export `COMPOSE_PROFILES=core,load` once per shell.
+
+Pick the group you need:
+
+| Command | Brings up | Use it for |
+| --- | --- | --- |
+| `docker compose --profile core up -d` | `app`, `prometheus`, `grafana` | dashboards, without synthetic traffic |
+| `docker compose --profile load up -d` | `app`, `loadgen` | exercising the API, without the observability side |
+| `docker compose --profile core --profile load up -d` | all four | the full demo |
+
+`app` belongs to both profiles on purpose, so `--profile load` boots something worth hitting instead of a generator retrying against nothing.
+
+The first `up` takes a while to go green: Grafana runs its schema migrations against an empty database before opening its HTTP port, so `docker compose ps` can show it as `starting` for the better part of a minute. `app`, `prometheus` and `grafana` all report `healthy` once ready, and `loadgen` waits for a healthy `app` before it starts generating traffic.
+
+The app also runs standalone, without Docker. Use a virtualenv — these requirements are pinned and installing them into your system Python is a bad trade:
 
 ```bash
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements/base.txt
 uvicorn app.main:app --host 0.0.0.0 --port 8002
 ```
 
 ### Stopping and cleaning up
 
-`Ctrl+C` in the terminal running `docker compose up` (or the standalone `uvicorn` process) asks for a graceful shutdown; pressing it a second time force-kills instead of waiting for the grace period. Note that `Ctrl+X` is **not** a stop shortcut — it's an editor binding (nano's "exit", for example), and neither `docker compose up` nor `uvicorn` reacts to it.
+`Ctrl+C` in the terminal running the foreground `up` (or the standalone `uvicorn` process) asks for a graceful shutdown; pressing it a second time force-kills instead of waiting for the grace period.
 
-From there, the teardown options escalate as follows:
+Everything below needs `--profile` for the reason given above — a bare `docker compose down` silently does nothing:
 
 | Goal | Command |
 | --- | --- |
 | Stop the foreground run | `Ctrl+C` |
-| Stop containers, keep them | `docker compose stop` (restart with `docker compose start`) |
-| Stop + remove containers and the default network | `docker compose down` |
-| Run detached, stop later from any terminal | `docker compose up -d --build` → `docker compose down` |
-| Full teardown (containers, network, anonymous volumes, all four images) | `docker compose down --volumes --rmi all` |
+| Stop containers, keep them | `docker compose --profile '*' stop` (resume with `--profile '*' start`) |
+| Stop + remove containers and the default network | `docker compose --profile '*' down` |
+| Run detached, stop later from any terminal | `docker compose --profile core --profile load up -d --build` → `docker compose --profile '*' down` |
+| Full teardown, **including both databases** | `docker compose --profile '*' down --volumes --rmi all` |
 
-What survives a `--volumes` teardown: this compose file declares no named volumes, so `--volumes` only removes *anonymous* ones — here that means Prometheus's `/prometheus`, i.e. the metrics history scraped so far. Grafana state is a separate story: dashboards, users and preferences you created by hand in the UI aren't in a volume at all (the `grafana/grafana` image declares no `VOLUME`), they live in the container's writable layer — so a plain `docker compose down` already discards them, and only `docker compose stop`/`start` keeps them. The provisioned Prometheus datasource and the "FastAPI Metrics" dashboard come back on the next `up` because they're bind-mounted from the repo. Bind-mounted repo files are **never** deleted.
+**What a `--volumes` teardown destroys.** The stack declares two named volumes, and `--volumes` erases both:
 
-`docker compose down` on its own keeps the images and the build cache, so the next `up --build` is fast — that's the option to reach for by default. Add `--rmi all` only to reclaim disk or start fully clean: it also deletes the pulled `prom/prometheus:latest` and `grafana/grafana:latest` images, which are shared with any other project on the machine, and the next `docker compose up --build` has to re-pull and rebuild everything.
+| Volume | Holds |
+| --- | --- |
+| `prometheus_data` | the scraped metrics history (`/prometheus`) |
+| `grafana_data` | dashboards, users and preferences you created by hand (`/var/lib/grafana`) |
+
+Everything else survives: a `down` without `--volumes` keeps both databases, so the metrics history and any dashboard you built in the UI are still there after the next `up`. The provisioned datasource and the "FastAPI Metrics" dashboard are bind-mounted from the repo, and bind-mounted repo files are **never** deleted.
+
+Don't take that on faith — it takes two minutes to prove. With the stack up, create a dashboard by hand in Grafana and let Prometheus scrape for a few minutes, then:
+
+```bash
+docker compose --profile '*' down
+docker compose --profile core --profile load up -d
+```
+
+Your dashboard is still in Grafana, and a `http_requests_total` query in Prometheus still returns points from before the teardown. Adding `--volumes` to that `down` is what erases them.
+
+`docker compose --profile '*' down` on its own keeps images and the build cache, so the next `up --build` is fast — that's the option to reach for by default. Add `--rmi all` only to reclaim disk: it also deletes the pulled `prom/prometheus:v3.13.2` and `grafana/grafana:12.4.7` images, which are shared with any other project on the machine using them, so Docker skips any still referenced elsewhere and the command can partially succeed with a warning.
 
 Run all of these from the repo root — the compose project name is derived from the directory, so running them elsewhere targets a different (or empty) project.
 
 ## Development
 
-Install dev dependencies:
+Install dev dependencies, in a virtualenv:
 
 ```bash
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements/dev.txt
 ```
 
@@ -101,6 +134,20 @@ Run everything (tests + lint + dependency audit) at once:
 ```bash
 tox
 ```
+
+### Infra checks
+
+Three test files validate the stack's configuration rather than any Python module — `docker-compose.yml`, `prometheus.yml` and the provisioned Grafana files. They run inside the normal `tox` and need no Docker. CI additionally validates the same files with the tools that own them:
+
+```bash
+docker compose --profile '*' config -q
+docker run --rm --entrypoint promtool \
+  -v "$PWD/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
+  prom/prometheus:v3.13.2 \
+  check config /etc/prometheus/prometheus.yml
+```
+
+The `--profile '*'` is load-bearing: without it `config` resolves no services and validates an empty file, exiting `0`.
 
 ### Security / dependency audit
 
@@ -131,15 +178,23 @@ pip-compile --upgrade requirements/base.in -o requirements/base.txt
 pip-compile --upgrade requirements/dev.in -o requirements/dev.txt
 ```
 
-If `pip-compile` crashes with `AttributeError: 'PackageFinder' object has no attribute 'allow_all_prereleases'`, your `pip-tools` install predates the installed `pip` version — fix it with:
+`pip-compile` breaks in both directions when `pip` and `pip-tools` disagree, and the two failures need opposite fixes:
+
+- `AttributeError: 'PackageFinder' object has no attribute 'allow_all_prereleases'` — `pip-tools` is older than the installed `pip`. Fix with `pip install --upgrade pip-tools`.
+- `ImportError: cannot import name 'stdlib_pkgs' from 'pip._internal.utils.compat'` — the reverse: `pip` is **newer** than any released `pip-tools` supports (`piptools.sync` imports a private symbol that pip 26 removed). Upgrading `pip-tools` does not help, because 7.6.0 is already the latest. Downgrade pip instead, or run the compile from a throwaway virtualenv:
 
 ```bash
-pip install --upgrade pip-tools
+pip install "pip<26"    # in the environment you compile from
+
+# or, leaving your environment untouched:
+python -m venv /tmp/compilevenv
+/tmp/compilevenv/bin/pip install "pip==25.3" "pip-tools==7.6.0"
+/tmp/compilevenv/bin/pip-compile --output-file=requirements/dev.txt requirements/dev.in
 ```
 
 Notes:
 
-- Because `base.in` and `dev.in` are compiled independently, a shared transitive dependency can resolve to slightly different versions in each `.txt` file. This isn't harmful by itself, but keep it in mind when comparing dev vs. container behavior, and re-check `tox -e safety` after any upgrade since a drifted package can make the combined `pip-audit` invocation fail outright with a resolution error.
+- Because `base.in` and `dev.in` are compiled independently, a shared transitive dependency can resolve to slightly different versions in each `.txt` file. This isn't harmful by itself, but keep it in mind when comparing dev vs. container behaviour. `tox -e safety` is immune, since it audits the two files in separate invocations — but a hand-written `pip-audit -r requirements/base.txt -r requirements/dev.txt` will abort with a resolution error instead of reporting vulnerabilities. If that happens, look for the same package pinned differently in the two files.
 - `requirements/base.in` deliberately requests `fastapi[standard-no-fastapi-cloud-cli]`, not `fastapi[standard]` — the latter pulls in `fastapi-cloud-cli` and its dependencies (`sentry-sdk`, `fastar`, `rignore`), which this project doesn't use. Keep that extra as-is when upgrading FastAPI.
 - After regenerating, also update the version ranges in `pyproject.toml` (`[tool.poetry.dependencies]` / `[tool.poetry.dev-dependencies]`) to match — nothing enforces this automatically.
 - Re-run `tox` after regenerating to confirm the new pins still pass tests, lint, and the audit.
@@ -155,8 +210,9 @@ worker/
   load_driver.py          # standalone async load generator (calls app's /load/* endpoints)
 grafana/                  # provisioned datasource + "FastAPI Metrics" dashboard
 prometheus.yml            # Prometheus scrape config
-tests/                    # pytest suite (one test file per module)
+docker-compose.yml        # the four services, their profiles and named volumes
+tests/                    # pytest suite: one file per module, plus three that check config
 requirements/             # pip-compile sources (base.in/dev.in) and lockfiles (base.txt/dev.txt)
 ```
 
-For a deeper architecture walkthrough and conventions, see [CLAUDE.md](CLAUDE.md).
+For the conventions to follow when changing any of this, see [CLAUDE.md](CLAUDE.md).

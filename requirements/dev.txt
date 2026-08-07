@@ -127,7 +127,9 @@ python-multipart==0.0.32
 pytokens==0.4.1
     # via black
 pyyaml==6.0.3
-    # via uvicorn
+    # via
+    #   -r requirements/dev.in
+    #   uvicorn
 rich==15.0.0
     # via
     #   rich-toolkit

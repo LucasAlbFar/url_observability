@@ -1,42 +1,84 @@
-version: '3.8'
 services:
   app:
     build: .
+    profiles: ["core", "load"]
     ports:
       - "8002:8002"
     environment:
       - DEBUG=True
       - LOADGEN_INTERVAL=1
       - LOADGEN_URLS=http://app:8002/load/io-bound,http://app:8002/load/cpu-bound,http://app:8002/load/memory-spike,http://app:8002/load/stress/1
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8002/metrics')"
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.13.2
+    profiles: ["core"]
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--storage.tsdb.retention.size=512MB"
     ports:
       - "9090:9090"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:12.4.7
+    profiles: ["core"]
     ports:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:
-      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
-      - ./grafana/dashboards:/var/lib/grafana/dashboards
-      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 90s
 
   loadgen:
     build:
       context: ./worker
       dockerfile: Dockerfile
+    profiles: ["load"]
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - DEBUG=True
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  grafana_data:

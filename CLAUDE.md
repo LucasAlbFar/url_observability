@@ -8,20 +8,17 @@ A demo/learning project showing FastAPI observability with Prometheus + Grafana.
 
 ## Stack & versions
 
-Pinned versions live in `requirements/base.txt` / `requirements/dev.txt` (generated via `pip-compile` from `base.in`/`dev.in`) — treat these as the source of truth for what actually gets installed (tox and Docker both install from them). `pyproject.toml`'s `[tool.poetry]` ranges are kept aligned with these pins by hand; if you bump a version in one place, update the other too — there's no automation enforcing this.
+`requirements/base.txt` / `requirements/dev.txt` (compiled from `base.in`/`dev.in`) are the source of truth for what gets installed — tox and Docker both install from them. `pyproject.toml`'s `[tool.poetry]` ranges are kept aligned by hand; if you bump a version in one place, update the other too, because nothing enforces it.
 
-- **Python**: 3.11 (`python:3.11` base image, tox `py311`)
-- **Web framework**: FastAPI 0.139.2, served by Uvicorn 0.51.0 (`uvicorn[standard]`, uvloop/httptools)
-- **Validation/config**: Pydantic 2.13.4, pydantic-settings 2.14.2
-- **Observability**: prometheus-fastapi-instrumentator 8.0.2, prometheus-client 0.25.0
-- **HTTP client**: httpx 0.28.1 (used by the loadgen worker and by tests via `TestClient`)
-- **Testing**: pytest 9.1.1, pytest-asyncio 1.4.0, pytest-cov 7.1.0 / coverage 7.15.2
-- **Lint/format**: black 26.5.1, isort 8.0.1, flake8 7.3.0 — no mypy, no ruff, no custom config (stock defaults)
-- **Infra**: Docker Compose (`app`, `prometheus`, `grafana`, `loadgen` services), Prometheus (`prom/prometheus:latest`), Grafana (`grafana/grafana:latest`)
+What those files don't tell you:
 
-**`fastapi[standard-no-fastapi-cloud-cli]`, not `fastapi[standard]`**: since FastAPI 0.139, the `standard` extra pulls in `fastapi-cloud-cli` and its dependencies (`sentry-sdk`, `fastar`, `rignore`, `detect-installer`) — deployment tooling this project has no use for. `requirements/base.in` intentionally uses the `standard-no-fastapi-cloud-cli` extra instead to keep that out of the dependency tree. Don't switch it back to `standard` without a reason.
+- Python 3.11 — `python:3.11.15` base image, tox `py311`.
+- Prometheus `prom/prometheus:v3.13.2`, Grafana `grafana/grafana:12.4.7`. Every image reference is pinned to an exact patch version, and `tests/test_compose_config.py` rejects anything looser, including a floating minor like `python:3.11`. A Prometheus bump also has to touch the `infra` job in `.github/workflows/python-app.yml`, which runs `promtool` through the same image.
+- No mypy, no ruff, and no custom config for black, isort or flake8.
 
-**Dependency drift risk**: `base.txt` and `dev.txt` are compiled independently (`pip-compile requirements/base.in` / `pip-compile requirements/dev.in`), so shared transitive packages can in principle resolve to different versions across the two files (this happened before with `prometheus-client` — resolved by the most recent `--upgrade`, but nothing prevents it from recurring on the next upgrade). If `pip-audit -r requirements/base.txt -r requirements/dev.txt` ever fails with a pip dependency-resolution error instead of a vulnerability report, that's this happening again — check both files for the conflicting package.
+**`fastapi[standard-no-fastapi-cloud-cli]`, not `fastapi[standard]`**: since FastAPI 0.139, the `standard` extra pulls in `fastapi-cloud-cli` and its dependencies — deployment tooling this project has no use for. Don't switch `requirements/base.in` back to `standard` without a reason.
+
+**Dependency drift risk**: `base.txt` and `dev.txt` are compiled independently, so a shared transitive package can resolve to different versions across them. If `pip-audit -r requirements/base.txt -r requirements/dev.txt` fails with a pip dependency-resolution error instead of a vulnerability report, that is what happened — check both files for the conflicting package.
 
 ## Commands
 
@@ -31,7 +28,7 @@ Pinned versions live in `requirements/base.txt` / `requirements/dev.txt` (genera
 tox -e py311                                            # full suite via tox (uses requirements/dev.txt)
 pytest tests/                                           # full suite directly (after pip install -r requirements/dev.txt)
 pytest tests/test_load.py                               # single file
-pytest tests/test_load.py::test_io_bound_endpoint -v    # single test
+pytest tests/test_load.py::test_load_io_bound -v         # single test
 pytest --cov=app --cov=worker --cov-fail-under=80 --cov-report term-missing tests/   # with coverage (tox's gate: 80%)
 ```
 
@@ -44,11 +41,11 @@ isort .          # auto-sort imports
 flake8 .         # lint only
 ```
 
-No custom config for any of the three — all run with stock defaults. Latent flake8-default (79) vs black-default (88) line-length mismatch to watch for if flake8 starts failing on long lines.
+Stock defaults leave flake8 at 79 columns and black at 88. Keep lines under 79 by construction: when black wants to collapse a wrapped expression onto a line between 80 and 88 columns, `tox -e lint` fails on code black considers already formatted, and no formatting satisfies both. Shorten the expression — bind intermediate values to names — rather than wrapping harder.
 
 ### Markdown lint
 
-No command: Markdown is checked live by the `markdownlint` VS Code extension, not by `tox` or CI. `.markdownlint.jsonc` at the repo root is the rule set — the stock rules with two changes: `MD013` (line-length) is disabled, because prose here is written one paragraph per line and enforcing a column limit would mean rewrapping every documentation file; and `MD060` (`table-column-style`) is pinned to `compact`, because its default of `any` only asks each table to be internally consistent, so a new table written entirely tight would pass and the repo would end up with two styles. This needs an extension bundling markdownlint v0.39.0 or newer, which is where `MD060` landed. Nothing gates a commit on any of it, so check the editor's Problems panel after editing any `.md`.
+No command: Markdown is checked live by the `markdownlint` VS Code extension, not by `tox` or CI, so check the editor's Problems panel after editing any `.md`. `.markdownlint.jsonc` is the rule set — stock rules, with `MD013` (line-length) disabled and `MD060` (`table-column-style`) pinned to `compact`, so write tables in the compact style (`| --- | --- |`). Needs an extension bundling markdownlint v0.39.0 or newer.
 
 ### Security / dependency audit
 
@@ -56,7 +53,23 @@ No command: Markdown is checked live by the `markdownlint` VS Code extension, no
 tox -e safety    # pip-audit against requirements/base.txt and requirements/dev.txt
 ```
 
-Part of the default `envlist` (`py311, lint, safety`). Runs `pip-audit` against `base.txt` and `dev.txt` **separately**, not in one combined invocation — a combined run can fail outright with a pip dependency-resolution error if the two files ever drift on a shared transitive package's version (see "Dependency drift risk" above), which would be a false negative for `tox -e safety` as a whole. If this env starts failing with actual CVE findings, decide whether to bump the affected pin(s) via `pip-compile --upgrade-package <name> requirements/<base|dev>.txt` or accept/ignore the finding (`pip-audit --ignore-vuln <ID>`) — don't silently drop the env from `envlist` to make CI green again.
+Part of the default `envlist` (`py311, lint, safety`). It audits `base.txt` and `dev.txt` in **separate** invocations — keep it that way; a combined run can abort with a dependency-resolution error that reads as "no findings". On a real CVE, either bump the pin via `pip-compile --upgrade-package <name> requirements/<base|dev>.txt` or ignore it explicitly with `pip-audit --ignore-vuln <ID>` — don't drop the env from `envlist` to make CI green.
+
+### Infra checks
+
+```bash
+pytest tests/test_compose_config.py tests/test_prometheus_config.py tests/test_grafana_provisioning.py
+
+docker compose --profile '*' config -q      # compose file parses and resolves
+docker run --rm --entrypoint promtool \
+  -v "$PWD/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
+  prom/prometheus:v3.13.2 \
+  check config /etc/prometheus/prometheus.yml
+```
+
+The three test files ride along in the normal `tox -e py311` run and need no Docker. They are **structural**: they assert the configuration files parse and carry the fields the stack depends on, and say nothing about whether a query returns data or a dashboard panel is correct. Don't read a green run as a dashboard review.
+
+The two `docker` commands are what the `infra` job in `.github/workflows/python-app.yml` runs, and they reach semantics no Python test does. `config -q` exits **0** when it resolves zero services, so never run it without a profile and read success as validation.
 
 ### Run everything at once
 
@@ -67,55 +80,33 @@ tox              # tests (py311) + lint + safety in one go
 ### Run the app / stack locally
 
 ```bash
-docker compose up --build
-# app:        http://localhost:8002
-# prometheus: http://localhost:9090
-# grafana:    http://localhost:3000 (admin/admin)
-
-uvicorn app.main:app --host 0.0.0.0 --port 8002   # app standalone, without Docker
-
-docker compose up -d --build    # detached; stop later from any terminal
-# Ctrl+C in the foreground run  -> graceful stop (second Ctrl+C force-kills)
-docker compose stop             # stop containers, keep them (resume: docker compose start)
-docker compose down             # + remove containers and the default network
-docker compose down --volumes --rmi all   # + anonymous volumes + all four service images
+docker compose --profile core --profile load up --build   # the whole stack
+uvicorn app.main:app --host 0.0.0.0 --port 8002           # app standalone, without Docker
 ```
 
-All of these must run from the repo root — the compose project name comes from the directory, so running them elsewhere targets a different (or empty) project.
+Run from the repo root — the compose project name comes from the directory. `README.md` ("Running the stack", "Stopping and cleaning up") owns the full command set: the profile groups, the teardown variants and what each one destroys. Three things from it change how you work on the code:
 
-No named volumes are declared (`docker compose config --volumes` prints nothing), so `--volumes` only drops the stack's single anonymous volume: Prometheus's `/prometheus` — the scraped metrics history. That ownership is easy to get backwards: `prom/prometheus:latest` declares `VOLUME /prometheus`, `grafana/grafana:latest` declares no `VOLUME` at all (`docker image inspect <img> --format '{{json .Config.Volumes}}'`), so Grafana's runtime state (`grafana.db`: hand-made dashboards, users, preferences) sits in the container's writable layer and is already lost on a plain `docker compose down` — only `stop`/`start` preserves it. The provisioned datasource and `grafana/dashboards/fastapi_metrics.json` are bind mounts and come back on the next `up`; bind-mounted repo files are never removed (note `./grafana/dashboards` is mounted *inside* `/var/lib/grafana`, but it's repo content and survives).
+- **Every service sits behind a profile**, so `--profile` belongs on every `docker compose` subcommand, teardown included. Without it most of them do nothing and still exit 0 — only `build` warns, and only `ps` ignores profiles and lists the containers anyway.
+- **`prometheus_data` and `grafana_data` survive a `down`.** Only `down --volumes` destroys them, and it destroys both.
+- **`app`, `prometheus` and `grafana` have healthchecks**, so `loadgen` waits for a healthy `app` rather than racing it. Don't lower Grafana's 90s `start_period`: a cold boot spends most of a minute on schema migrations before its HTTP port opens, and anything declaring `depends_on: grafana: {condition: service_healthy}` inherits that wait. `restart: unless-stopped` reacts to a container *exiting*, not to it going unhealthy.
 
-`--rmi all` deletes the two built images (`app`, `loadgen`) **and** the two pulled ones (`prom/prometheus:latest`, `grafana/grafana:latest`) — the pulled ones are shared with any other project on the machine using them, and Docker skips any image still referenced by another container, so the command can partially succeed with a warning. The next `up --build` then has to re-pull and rebuild; plain `docker compose down` keeps images and the build cache, so prefer it and use `--rmi all` only to reclaim disk.
+Measurements and the reasoning behind each of these: `specs/CU-86bb30dec/plan.md`.
 
 ## Architecture
 
-### Entry point & routing (`app/main.py`)
+**Routing.** Each feature lives in `app/api/endpoints/<feature>.py` and exports `router = APIRouter()`; `main.py` imports it and calls `app.include_router(...)`. Follow this pattern for any new endpoint group rather than adding routes directly to `main.py`. `/metrics` comes from `Instrumentator().instrument(app).expose(app)` in `app/main.py` — don't hand-roll a route for it.
 
-Composition root: creates the `FastAPI()` instance, wraps it with `Instrumentator().instrument(app).expose(app)` (this is what exposes `/metrics` for Prometheus scraping), and registers routers.
+**Synthetic load.** The `/load/*` endpoints each exercise a different resource on purpose — async sleep, blocking busy-loops, a large allocation — so the Grafana dashboard has something to plot. To put a new one into the continuous load, add it to `URLS` in `worker/load_driver.py`; that list is the only one any code reads.
 
-Routing convention: each feature lives in `app/api/endpoints/<feature>.py` and exports `router = APIRouter()`. `main.py` imports it aliased as `<feature>_route`/`<feature>_router` and calls `app.include_router(...)` (optionally with a `prefix`/`tags`). Follow this pattern for any new endpoint group rather than adding routes directly to `main.py`.
+**The load generator is intentionally decoupled** from the `app` package: its own `Dockerfile`, only `httpx`, no shared requirements file. Keep it that way. The `LOADGEN_INTERVAL`/`LOADGEN_URLS` env vars on the `app` service in `docker-compose.yml` are dead — no code reads them, and `LOADGEN_URLS` merely duplicates `URLS`.
 
-### API endpoints (`app/api/endpoints/`)
-
-- `example.py` — placeholder route (`GET /example`).
-- `load.py` — synthetic load endpoints mounted under `/load`, each deliberately exercising a different resource so the Grafana dashboard has data to show: `io-bound` (async sleep → latency), `cpu-bound` and `stress/{seconds}` (blocking busy-loops → CPU panel), `memory-spike` (large list allocation → memory panel). When adding new synthetic endpoints, also add them to `LOADGEN_URLS` in `docker-compose.yml` and to `worker/load_driver.py`'s `URLS` if they should be part of the continuous load.
-
-### Config (`app/core/config.py`)
-
-Single `Settings(BaseSettings)` (pydantic-settings) instantiated as a module-level singleton `settings`. This is the only thing in `core/` currently — no models or business logic beyond config. Env vars load from `.env`.
-
-### Load generator worker (`worker/load_driver.py`)
-
-Intentionally decoupled from the `app` package — it has its own `Dockerfile` and only depends on `httpx`, no shared requirements file with `app`. It loops forever (or `cycles` times, for testability), firing all URLs concurrently via `asyncio.gather` and sleeping 5s between rounds, talking to the app over the Docker network at `http://app:8002`. Note: the URLs/interval are hardcoded in this file — the `LOADGEN_INTERVAL`/`LOADGEN_URLS` env vars set on the `app` service in `docker-compose.yml` are not actually read by any code, so don't assume changing them has an effect.
-
-### Observability wiring
-
-`prometheus.yml` scrapes `app:8002/metrics` every 5s under job `fastapi-app`. Grafana auto-provisions a Prometheus datasource and a single dashboard (`grafana/dashboards/fastapi_metrics.json`, "FastAPI Metrics") from `grafana/provisioning/`. The dashboard's panels (p95 latency, req/s throughput, CPU, memory, status codes, 4xx/5xx rate — all templated by a `$handler` variable) are the reason the `/load/*` endpoints exist and shape what kind of load each one should generate.
+**Observability wiring.** `prometheus.yml` scrapes `app:8002/metrics` every 5s under job `fastapi-app`. Grafana auto-provisions its datasource and `grafana/dashboards/fastapi_metrics.json` from `grafana/provisioning/`.
 
 ## Testing conventions
 
-- `tests/conftest.py` provides `client` (`TestClient(app)`) and `test_settings` fixtures.
+- `tests/conftest.py` provides `client`, `test_settings` and `repo_root` — the last is session-scoped and returns the repository root, for tests that read files rather than call code.
 - One test file per module (`test_config.py`, `test_example.py`, `test_main.py`, `test_load.py`, `test_load_driver.py`), asserting exact status code + JSON body.
+- Three files break that rule on purpose: `test_compose_config.py`, `test_prometheus_config.py` and `test_grafana_provisioning.py` have no Python module behind them — they parse `docker-compose.yml`, `prometheus.yml` and the provisioned Grafana files. See "Infra checks" for what they do and do not cover.
 - Async worker tests use `pytest-asyncio` with `unittest.mock.AsyncMock`/`patch` to mock `httpx.AsyncClient.get` (both success and exception paths) and `monkeypatch` to run `main(cycles=1)` instead of an infinite loop — follow this pattern rather than making real network calls in tests.
 
 ## Feature specs & plans
@@ -125,4 +116,4 @@ Feature documentation lives in `specs/<CU-code>/` — one folder per ClickUp tic
 - `spec.md` — the what and the why: summary, objective, scope (in/out), expected behaviour, acceptance criteria, status (`Draft` / `Approved`).
 - `plan.md` — the how: context, facts verified against the repo, affected files, tasks, edge cases, verification steps. Links back to `./spec.md`.
 
-`<CU-code>` is the ticket code alone (e.g. `CU-86bb2m2t2`), taken from the branch name `feat/<CU-code>-<slug>` — the descriptive slug belongs in the document title, not in the folder name. The two files cross-link with sibling relative links (`./spec.md`, `./plan.md`), so the whole folder can be moved without breaking them. Nothing in CI, tox or any hook reads these files — the convention is manual, so follow it by hand when starting a new feature.
+`<CU-code>` is the ticket code alone (e.g. `CU-86bb2m2t2`), taken from the branch name `feat/<CU-code>-<slug>` — the descriptive slug belongs in the document title, not in the folder name. The two files cross-link with sibling relative links (`./spec.md`, `./plan.md`). Nothing reads these files automatically, so follow the convention by hand when starting a new feature.
