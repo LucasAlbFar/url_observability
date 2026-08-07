@@ -130,8 +130,13 @@ job, and introduces a third `Dockerfile` — every file listed above.
 - **The Prometheus `start_period` is measured against a populated `prometheus_data`** and set to
   whatever that measurement justifies. The deliverable is the recorded measurement, not a particular
   number — if ten seconds turns out to be enough, the value stays and the evidence is what changes.
-- **`actions/checkout@v4` → `@v5` in both jobs and `actions/setup-python@v5` → `@v6`**, the majors
-  that target Node.js 24.
+- **`actions/checkout@v4` → `@v7` in both jobs and `actions/setup-python@v5` → `@v7`**, the current
+  majors, both of which target Node.js 24. This spec first named `@v5` and `@v6` — the *first*
+  majors to move off Node.js 20, which was written from the deprecation notice rather than from the
+  releases. Measured 2026-08-07: `v5`/`v6` do declare `using: node24` and would clear the
+  annotation, but `checkout` is at `v7.0.1` and `setup-python` at `v7.0.0`, both also `node24`.
+  Amended before implementation began rather than during it, because landing two majors behind on
+  day one buys a bump ticket immediately.
 - **Three sentences in `CLAUDE.md` that this feature makes false are corrected.** That a Prometheus
   bump "also has to touch the `infra` job" stops being true once the job derives the tag; the
   description of what that job runs becomes approximate for the same reason; and the paragraph
@@ -296,8 +301,9 @@ link away, in the plan of the feature that measured it.
       with it.
 - [ ] A cold `docker compose --profile core up` against a populated volume reaches `healthy` for
       `prometheus` and starts `grafana` behind it, without the `up` failing.
-- [ ] `.github/workflows/python-app.yml` uses `actions/checkout@v5` in both jobs and
-      `actions/setup-python@v6`, with no older major of either remaining.
+- [ ] `.github/workflows/python-app.yml` uses `actions/checkout@v7` in both jobs and
+      `actions/setup-python@v7`, no action in the file declares `using: node20`, and no older major
+      of either remains.
 - [ ] A CI run on the branch is green on both jobs and raises no Node.js deprecation annotation.
 - [ ] `CLAUDE.md` no longer states that a Prometheus bump has to touch the `infra` job, describes
       accurately what that job runs, and no longer instructs the reader to keep lines under 79
