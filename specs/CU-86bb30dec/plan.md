@@ -203,6 +203,14 @@ One commit per task, each ticking its own checkbox in the same commit.
   as approved names the literal reference, and changing it mid-feature is the amendment this plan
   has avoided elsewhere. Worth folding into the retention follow-up ticket, which already edits both
   files.
+- **Both CI jobs raise a Node 20 deprecation annotation.** The first green run of this workflow
+  (2026-08-07) succeeded but annotated `build` and `infra`: `actions/checkout@v4` and
+  `actions/setup-python@v5` target Node.js 20 and are being forced onto Node.js 24 by the runner.
+  Nothing is broken today — the forcing is what keeps them working — but the annotation appears on
+  every run and the majors that target Node 24 (`checkout@v5`, `setup-python@v6`) are the fix. Not
+  done here: the approved task adds an `infra` job and says nothing about bumping the actions the
+  `build` job already used, so this is the same mid-feature amendment the entry above declines.
+  Goes to the same follow-up ticket, which already touches the workflow for the Prometheus tag.
 - **`down` *is* profile-filtered, and a bare `docker compose down` is a silent no-op.** This entry
   originally assumed the opposite and asked for it to be confirmed rather than trusted; the check
   disproved it. Measured on Compose v5.3.1 / Docker 29.7.1 with the full stack healthy: `docker
