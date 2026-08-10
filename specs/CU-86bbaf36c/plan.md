@@ -123,7 +123,7 @@ One commit per task; the checkbox is ticked in the same commit.
       hanging off the existing `prometheus_config` fixture. Presence only — promtool validates the
       values, as measured above.
       Commit: `test(infra): assert retention where it is now configured`
-- [ ] **Derive the promtool image from the compose file.** Replace the literal in the `infra` job
+- [x] **Derive the promtool image from the compose file.** Replace the literal in the `infra` job
       with a `--format json` + `jq` read of `.services.prometheus.image`, guarded so an empty or
       `null` result fails the step rather than reaching `docker run` — the same shape as the
       `--profile '*'` guard the job already carries.
