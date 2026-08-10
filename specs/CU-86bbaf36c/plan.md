@@ -191,10 +191,22 @@ One commit per task; the checkbox is ticked in the same commit.
       three. The bump instruction is replaced by the rule that supersedes it: one line in
       `docker-compose.yml`, with `tests/test_docs_versions.py` catching any prose copy left behind.
       Commit: `docs: correct the claims this feature invalidates`
-- [ ] **Cut `### Run the app / stack locally` to sibling size.** Keep the two commands, the
+- [x] **Cut `### Run the app / stack locally` to sibling size.** Keep the two commands, the
       repo-root rule, `--profile` on every subcommand, both volumes surviving a `down`, and the
       ninety-second Grafana `start_period`. Everything else is derivation and already lives in
       `specs/CU-86bb30dec/plan.md`; confirm each dropped fact is there before dropping it.
+      Done: **202 → 119 words**, longest line **428 → 162 characters**, 13 lines. Siblings run
+      13–160 words on 2–14 lines, and three of them carry lines of 419, 446 and 466 characters, so
+      the section is now inside the range on every axis instead of the outlier on two. Each dropped
+      fact was checked to survive elsewhere before it was dropped:
+
+      | Dropped from `CLAUDE.md` | Still recorded in |
+      | --- | --- |
+      | compose project name comes from the directory | `README.md` ("Run all of these from the repo root…") |
+      | which subcommands are silent without `--profile`, `build` warning, `ps` ignoring profiles | `README.md`, "Running the stack" — a fuller version, naming each subcommand |
+      | the three services have healthchecks; `loadgen` waits rather than racing | `README.md`, "The first `up` takes a while to go green…" |
+      | Grafana's cold boot spends a minute on schema migrations | `README.md` same paragraph, and `specs/CU-86bb30dec/plan.md` with the measurement |
+      | `restart: unless-stopped` does not react to `unhealthy` | `specs/CU-86bb30dec/plan.md`, Edge cases |
       Commit: `docs: trim the stack section to its conclusions`
 - [ ] **Update `README.md`.** Where retention is configured, and whatever the derivation task made
       inaccurate in the infra-check snippet.

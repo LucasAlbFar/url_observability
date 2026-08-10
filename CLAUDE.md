@@ -84,11 +84,11 @@ docker compose --profile core --profile load up --build   # the whole stack
 uvicorn app.main:app --host 0.0.0.0 --port 8002           # app standalone, without Docker
 ```
 
-Run from the repo root — the compose project name comes from the directory. `README.md` ("Running the stack", "Stopping and cleaning up") owns the full command set: the profile groups, the teardown variants and what each one destroys. Three things from it change how you work on the code:
+Run from the repo root. `README.md` ("Running the stack", "Stopping and cleaning up") owns the full command set; three rules change how you work on the code:
 
-- **Every service sits behind a profile**, so `--profile` belongs on every `docker compose` subcommand, teardown included. Without it most of them do nothing and still exit 0 — only `build` warns, and only `ps` ignores profiles and lists the containers anyway.
-- **`prometheus_data` and `grafana_data` survive a `down`.** Only `down --volumes` destroys them, and it destroys both.
-- **`app`, `prometheus` and `grafana` have healthchecks**, so `loadgen` waits for a healthy `app` rather than racing it. Don't lower Grafana's 90s `start_period`: a cold boot spends most of a minute on schema migrations before its HTTP port opens, and anything declaring `depends_on: grafana: {condition: service_healthy}` inherits that wait. `restart: unless-stopped` reacts to a container *exiting*, not to it going unhealthy.
+- `--profile` belongs on every `docker compose` subcommand, teardown included. Without it most do nothing and still exit 0.
+- `prometheus_data` and `grafana_data` survive a `down`. Only `down --volumes` destroys them, and it destroys both.
+- Don't lower Grafana's 90s `start_period`. It was raised from 10s against a measurement, and anything waiting on `condition: service_healthy` inherits that wait.
 
 Measurements and the reasoning behind each of these: `specs/CU-86bb30dec/plan.md`.
 
