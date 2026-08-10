@@ -208,8 +208,13 @@ One commit per task; the checkbox is ticked in the same commit.
       | Grafana's cold boot spends a minute on schema migrations | `README.md` same paragraph, and `specs/CU-86bb30dec/plan.md` with the measurement |
       | `restart: unless-stopped` does not react to `unhealthy` | `specs/CU-86bb30dec/plan.md`, Edge cases |
       Commit: `docs: trim the stack section to its conclusions`
-- [ ] **Update `README.md`.** Where retention is configured, and whatever the derivation task made
+- [x] **Update `README.md`.** Where retention is configured, and whatever the derivation task made
       inaccurate in the infra-check snippet.
+      Done: the `prometheus` bullet and the `prometheus_data` volume row now say retention lives in
+      `prometheus.yml`; `### Infra checks` counts four config test files instead of three and
+      records that CI derives the image. The snippet keeps its literal tag deliberately — it is
+      meant to be pasted into a shell, and `tests/test_docs_versions.py` is what keeps it honest.
+      Re-run after editing: `config -q` clean, promtool `SUCCESS`.
       Commit: `docs: update the readme for config-file retention`
 
 ## Edge cases

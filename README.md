@@ -6,7 +6,7 @@ A small FastAPI service instrumented end-to-end with **Prometheus** and **Grafan
 
 - **`app`** — a FastAPI service (`app/main.py`) instrumented via `prometheus-fastapi-instrumentator`, which exposes a `/metrics` endpoint.
 - **`loadgen`** — a standalone async script (`worker/load_driver.py`) that continuously calls the app's `/load/*` endpoints over HTTP, purely to generate traffic for the metrics/dashboards.
-- **`prometheus`** — scrapes `app:8002/metrics` every 5s.
+- **`prometheus`** — scrapes `app:8002/metrics` every 5s. Both the scrape interval and the retention window (7 days, capped at 512 MB) live in `prometheus.yml`; the container's command line only points it at that file and at the volume its TSDB writes to.
 - **`grafana`** — auto-provisioned with a Prometheus datasource and a ready-made "FastAPI Metrics" dashboard (request latency p95, throughput, CPU, memory, status codes, 4xx/5xx error rate).
 
 The `/load/*` endpoints each stress a different resource on purpose, so the dashboard has something to plot:
@@ -84,7 +84,7 @@ Everything below needs `--profile` for the reason given above — a bare `docker
 
 | Volume | Holds |
 | --- | --- |
-| `prometheus_data` | the scraped metrics history (`/prometheus`) |
+| `prometheus_data` | the scraped metrics history (`/prometheus`), kept for the retention window set in `prometheus.yml` |
 | `grafana_data` | dashboards, users and preferences you created by hand (`/var/lib/grafana`) |
 
 Everything else survives: a `down` without `--volumes` keeps both databases, so the metrics history and any dashboard you built in the UI are still there after the next `up`. The provisioned datasource and the "FastAPI Metrics" dashboard are bind-mounted from the repo, and bind-mounted repo files are **never** deleted.
@@ -137,7 +137,7 @@ tox
 
 ### Infra checks
 
-Three test files validate the stack's configuration rather than any Python module — `docker-compose.yml`, `prometheus.yml` and the provisioned Grafana files. They run inside the normal `tox` and need no Docker. CI additionally validates the same files with the tools that own them:
+Four test files validate the stack's configuration rather than any Python module — `docker-compose.yml`, `prometheus.yml`, the provisioned Grafana files, and the image versions this README and `CLAUDE.md` quote. They run inside the normal `tox` and need no Docker. CI additionally validates the same files with the tools that own them:
 
 ```bash
 docker compose --profile '*' config -q
@@ -148,6 +148,8 @@ docker run --rm --entrypoint promtool \
 ```
 
 The `--profile '*'` is load-bearing: without it `config` resolves no services and validates an empty file, exiting `0`.
+
+CI reads the Prometheus image out of `docker-compose.yml` rather than naming it, so it always checks `prometheus.yml` against the version the stack actually runs. Bumping Prometheus is one line in the compose file — the tag written above is a copy-pasteable convenience, and `tests/test_docs_versions.py` fails if it is left behind.
 
 ### Security / dependency audit
 
