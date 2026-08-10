@@ -128,10 +128,15 @@ One commit per task; the checkbox is ticked in the same commit.
       `null` result fails the step rather than reaching `docker run` — the same shape as the
       `--profile '*'` guard the job already carries.
       Commit: `ci(infra): derive the prometheus image from the compose file`
-- [ ] **Make the documentation copies enforceable.** Add `tests/test_docs_versions.py`: for every
+- [x] **Make the documentation copies enforceable.** Add `tests/test_docs_versions.py`: for every
       image `docker-compose.yml` pins, any `<repository>:<tag>` reference to that repository in
       `CLAUDE.md` or `README.md` must carry the same tag. Normalise `README.md:31` from a bare
       `v3.13.2` to the full reference so it falls under the rule.
+      Done: the file also carries a second test that fails if the scan matches nothing at all, so a
+      renamed repository cannot leave the drift check vacuously green. Adding a fourth
+      config-parsing test file made three sentences counting them stale — `CLAUDE.md`'s `### Infra
+      checks` command and prose, its testing-conventions bullet, and `README.md`'s project-layout
+      comment — so those are corrected in the same commit rather than left lying.
       Commit: `test(docs): fail when a documented image tag drifts from compose`
 - [ ] **Pin `httpx` in the worker image.** `RUN pip install httpx==0.28.1` — inline, no
       `worker/requirements.txt`, keeping the load generator decoupled as `CLAUDE.md` requires.

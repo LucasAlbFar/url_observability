@@ -58,7 +58,7 @@ Part of the default `envlist` (`py311, lint, safety`). It audits `base.txt` and 
 ### Infra checks
 
 ```bash
-pytest tests/test_compose_config.py tests/test_prometheus_config.py tests/test_grafana_provisioning.py
+pytest tests/test_compose_config.py tests/test_prometheus_config.py tests/test_grafana_provisioning.py tests/test_docs_versions.py
 
 docker compose --profile '*' config -q      # compose file parses and resolves
 docker run --rm --entrypoint promtool \
@@ -67,7 +67,7 @@ docker run --rm --entrypoint promtool \
   check config /etc/prometheus/prometheus.yml
 ```
 
-The three test files ride along in the normal `tox -e py311` run and need no Docker. They are **structural**: they assert the configuration files parse and carry the fields the stack depends on, and say nothing about whether a query returns data or a dashboard panel is correct. Don't read a green run as a dashboard review.
+The four test files ride along in the normal `tox -e py311` run and need no Docker. They are **structural**: they assert the configuration files parse and carry the fields the stack depends on, and say nothing about whether a query returns data or a dashboard panel is correct. Don't read a green run as a dashboard review.
 
 The two `docker` commands are what the `infra` job in `.github/workflows/python-app.yml` runs, and they reach semantics no Python test does. `config -q` exits **0** when it resolves zero services, so never run it without a profile and read success as validation.
 
@@ -106,7 +106,7 @@ Measurements and the reasoning behind each of these: `specs/CU-86bb30dec/plan.md
 
 - `tests/conftest.py` provides `client`, `test_settings` and `repo_root` — the last is session-scoped and returns the repository root, for tests that read files rather than call code.
 - One test file per module (`test_config.py`, `test_example.py`, `test_main.py`, `test_load.py`, `test_load_driver.py`), asserting exact status code + JSON body.
-- Three files break that rule on purpose: `test_compose_config.py`, `test_prometheus_config.py` and `test_grafana_provisioning.py` have no Python module behind them — they parse `docker-compose.yml`, `prometheus.yml` and the provisioned Grafana files. See "Infra checks" for what they do and do not cover.
+- Four files break that rule on purpose: `test_compose_config.py`, `test_prometheus_config.py`, `test_grafana_provisioning.py` and `test_docs_versions.py` have no Python module behind them — they parse `docker-compose.yml`, `prometheus.yml`, the provisioned Grafana files, and the image versions quoted in `CLAUDE.md` and `README.md`. See "Infra checks" for what they do and do not cover.
 - Async worker tests use `pytest-asyncio` with `unittest.mock.AsyncMock`/`patch` to mock `httpx.AsyncClient.get` (both success and exception paths) and `monkeypatch` to run `main(cycles=1)` instead of an infinite loop — follow this pattern rather than making real network calls in tests.
 
 ## Feature specs & plans

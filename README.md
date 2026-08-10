@@ -28,7 +28,7 @@ The `/load/*` endpoints each stress a different resource on purpose, so the dash
 - pip-audit (dependency vulnerability scanning)
 - markdownlint (Markdown style, via the VS Code extension bundling markdownlint 0.39+; rules in `.markdownlint.jsonc`)
 - Docker Compose, with every service behind a `core` or `load` profile
-- Prometheus `v3.13.2` and Grafana `12.4.7`, both pinned — no image tracks `latest`
+- Prometheus `prom/prometheus:v3.13.2` and Grafana `grafana/grafana:12.4.7`, both pinned — no image tracks `latest`
 
 Exact Python pins live in `requirements/base.txt` / `requirements/dev.txt`. [CLAUDE.md](CLAUDE.md) covers the conventions for working on the code.
 
@@ -211,7 +211,7 @@ worker/
 grafana/                  # provisioned datasource + "FastAPI Metrics" dashboard
 prometheus.yml            # Prometheus scrape config
 docker-compose.yml        # the four services, their profiles and named volumes
-tests/                    # pytest suite: one file per module, plus three that check config
+tests/                    # pytest suite: one file per module, plus four that check config
 requirements/             # pip-compile sources (base.in/dev.in) and lockfiles (base.txt/dev.txt)
 ```
 
