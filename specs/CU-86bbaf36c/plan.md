@@ -149,7 +149,7 @@ One commit per task; the checkbox is ticked in the same commit.
       against six shapes — the two real lines, a `\`-continuation, a chained `&&` install, the long
       `--requirement` form and `pip3` — and yields the package names expected in each.
       Commit: `test(infra): reject unpinned pip installs in dockerfiles`
-- [ ] **Give flake8 the width black uses.** Append `[flake8]` with `max-line-length = 88` to
+- [x] **Give flake8 the width black uses.** Append `[flake8]` with `max-line-length = 88` to
       `tox.ini`. No new file.
       Commit: `chore(lint): align flake8 with black at 88 columns`
 - [ ] **Delete the dead environment variables.** Remove `LOADGEN_INTERVAL` and `LOADGEN_URLS` from
