@@ -13,8 +13,8 @@ A demo/learning project showing FastAPI observability with Prometheus + Grafana.
 What those files don't tell you:
 
 - Python 3.11 — `python:3.11.15` base image, tox `py311`.
-- Prometheus `prom/prometheus:v3.13.2`, Grafana `grafana/grafana:12.4.7`. Every image reference is pinned to an exact patch version, and `tests/test_compose_config.py` rejects anything looser, including a floating minor like `python:3.11`. A Prometheus bump also has to touch the `infra` job in `.github/workflows/python-app.yml`, which runs `promtool` through the same image.
-- No mypy, no ruff, and no custom config for black, isort or flake8.
+- Prometheus `prom/prometheus:v3.13.2`, Grafana `grafana/grafana:12.4.7`. Every image reference is pinned to an exact patch version, and `tests/test_compose_config.py` rejects anything looser, including a floating minor like `python:3.11`. A Prometheus bump is one line in `docker-compose.yml` — the `infra` job derives the tag from there rather than repeating it — but every copy of a tag in this file and `README.md` has to move with it, and `tests/test_docs_versions.py` fails and names the file when one does not.
+- No mypy, no ruff, and no custom config for black or isort. flake8's only setting is `max-line-length = 88` in `tox.ini`.
 
 **`fastapi[standard-no-fastapi-cloud-cli]`, not `fastapi[standard]`**: since FastAPI 0.139, the `standard` extra pulls in `fastapi-cloud-cli` and its dependencies — deployment tooling this project has no use for. Don't switch `requirements/base.in` back to `standard` without a reason.
 
@@ -41,7 +41,7 @@ isort .          # auto-sort imports
 flake8 .         # lint only
 ```
 
-Stock defaults leave flake8 at 79 columns and black at 88. Keep lines under 79 by construction: when black wants to collapse a wrapped expression onto a line between 80 and 88 columns, `tox -e lint` fails on code black considers already formatted, and no formatting satisfies both. Shorten the expression — bind intermediate values to names — rather than wrapping harder.
+`tox.ini` sets flake8 to `max-line-length = 88`, the width black already formats to, so `tox -e lint` accepts what black produces. Left at its 79-column default, flake8 rejects lines black considers finished and no formatting satisfies both.
 
 ### Markdown lint
 
@@ -69,7 +69,7 @@ docker run --rm --entrypoint promtool \
 
 The four test files ride along in the normal `tox -e py311` run and need no Docker. They are **structural**: they assert the configuration files parse and carry the fields the stack depends on, and say nothing about whether a query returns data or a dashboard panel is correct. Don't read a green run as a dashboard review.
 
-The two `docker` commands are what the `infra` job in `.github/workflows/python-app.yml` runs, and they reach semantics no Python test does. `config -q` exits **0** when it resolves zero services, so never run it without a profile and read success as validation.
+The `docker` commands are what the `infra` job in `.github/workflows/python-app.yml` runs, and they reach semantics no Python test does. One difference: the job reads the Prometheus image out of `docker-compose.yml` instead of naming it, so the tag written above is a copy-pasteable convenience that `tests/test_docs_versions.py` keeps in step. `config -q` exits **0** when it resolves zero services, so never run it without a profile and read success as validation.
 
 ### Run everything at once
 

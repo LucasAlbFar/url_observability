@@ -183,9 +183,13 @@ One commit per task; the checkbox is ticked in the same commit.
       **v7.0.1** and `setup-python` at **v7.0.0**, and `action.yml` at each `v7` tag still declares
       `using: node24`. No literal `@v4` or `@v5` remains in the file.
       Commit: `ci: move the actions off node 20`
-- [ ] **Correct the three false sentences in `CLAUDE.md`.** The Prometheus-bump instruction, the
+- [x] **Correct the three false sentences in `CLAUDE.md`.** The Prometheus-bump instruction, the
       description of what the `infra` job runs, and the paragraph telling the reader to stay under
       79 columns. Each is made false by a task above.
+      Done: a fourth turned up in the same sweep — the stack bullet claiming "no custom config for
+      black, isort or flake8", which the `tox.ini` task falsified. Corrected here with the other
+      three. The bump instruction is replaced by the rule that supersedes it: one line in
+      `docker-compose.yml`, with `tests/test_docs_versions.py` catching any prose copy left behind.
       Commit: `docs: correct the claims this feature invalidates`
 - [ ] **Cut `### Run the app / stack locally` to sibling size.** Keep the two commands, the
       repo-root rule, `--profile` on every subcommand, both volumes surviving a `down`, and the
