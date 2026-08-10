@@ -138,7 +138,7 @@ One commit per task; the checkbox is ticked in the same commit.
       checks` command and prose, its testing-conventions bullet, and `README.md`'s project-layout
       comment — so those are corrected in the same commit rather than left lying.
       Commit: `test(docs): fail when a documented image tag drifts from compose`
-- [ ] **Pin `httpx` in the worker image.** `RUN pip install httpx==0.28.1` — inline, no
+- [x] **Pin `httpx` in the worker image.** `RUN pip install httpx==0.28.1` — inline, no
       `worker/requirements.txt`, keeping the load generator decoupled as `CLAUDE.md` requires.
       Commit: `build(worker): pin the httpx version`
 - [ ] **Teach the pinning test about installed packages.** Extend the Dockerfile test so a
