@@ -90,6 +90,15 @@ Measured 2026-08-07 on Docker 29.7.1 / Compose v5.3.1, against `prom/prometheus:
   `url_observability_prometheus_data` holds only **480 KB** — two block directories, `chunks_head`
   and the WAL — so it does not exercise the write-ahead-log replay the check was meant to test. See
   Edge cases.
+- **Remeasured 2026-08-10 from the container's own timestamps**, because the number above was read
+  off the wall clock around `up -d`, which returns only *after* `depends_on` has already waited for
+  health. Starting `prometheus` alone (`up -d --no-deps prometheus`) and reading
+  `.State.StartedAt` against the log: **`"Server is ready to receive web requests."` at 481 ms**,
+  with `total_replay_duration=4.387ms` over 4 blocks and WAL segments 14–17. The first health probe
+  runs at **5.2 s** and passes on the first attempt (`FailingStreak: 0`), so the 5-second figure is
+  the probe cadence, not the boot. Volume: **476 KB**. Readiness therefore has roughly **20×**
+  headroom inside the 10s `start_period`, and the probe schedule adds more — after `start_period`
+  expires it takes 3 consecutive failures at 10s intervals to mark the container unhealthy.
 - **The stack was down before this measurement and was returned to down afterwards**, with
   `docker compose --profile '*' down`. Both named volumes survive, as F1 established.
 
@@ -161,9 +170,13 @@ One commit per task; the checkbox is ticked in the same commit.
       variables is rewritten in the same commit — the variables are gone, so a note about them
       would have been the new stale copy.
       Commit: `chore(compose): drop environment variables nothing reads`
-- [ ] **Settle the Prometheus `start_period`.** Record the measurement and either keep 10s with the
+- [x] **Settle the Prometheus `start_period`.** Record the measurement and either keep 10s with the
       evidence attached or raise it. Do not raise it for symmetry with Grafana — the two boot for
       different reasons, and the reasoning belongs in Edge cases either way.
+      Done: **kept at 10s.** Remeasured from the container's own timestamps rather than the wall
+      clock (see Facts): ready in 481 ms, WAL replay 4.4 ms, first probe passing at 5.2 s with
+      `FailingStreak: 0`. The value is unchanged and the diff is the three-line comment recording
+      why, so the next reader does not repeat the measurement.
       Commit: `chore(compose): justify the prometheus start_period`
 - [ ] **Bump the actions.** `actions/checkout@v7` in both jobs, `actions/setup-python@v7`.
       Commit: `ci: move the actions off node 20`
@@ -201,6 +214,13 @@ One commit per task; the checkbox is ticked in the same commit.
   even though it has not been observed. Raising `start_period` on a guess would be worse than
   keeping 10s with this caveat written down — a `start_period` that is too long delays nothing but
   hides a real failure for that much longer.
+  **Settled:** the remeasurement above separates the two numbers the first one conflated. Boot is
+  481 ms; the 5–6 seconds was Docker's own first-probe delay, which no `start_period` value
+  changes. The caveat about a large WAL survives — 476 KB still proves nothing about 512 MB — but
+  it now sits against 20× headroom rather than 1.7×, and against a probe schedule that tolerates a
+  container taking tens of seconds longer before it gives up. **10s stays**, and the reason is
+  written next to the value in `docker-compose.yml` so the next reader does not have to re-derive
+  it.
 - **A short `start_period` under `service_healthy` fails the `up`, it does not merely warn.**
   `grafana` waits on `prometheus` with `condition: service_healthy`, so this value is not cosmetic.
   The same mechanism raised Grafana's own `start_period` from 10s to 90s during F1.

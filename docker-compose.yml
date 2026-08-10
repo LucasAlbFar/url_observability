@@ -35,6 +35,9 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
+      # 10s is measured, not inherited: against a populated volume
+      # Prometheus serves in ~0.5s, WAL replay included. Raising this
+      # would only delay noticing a boot that never finishes.
       start_period: 10s
 
   grafana:
