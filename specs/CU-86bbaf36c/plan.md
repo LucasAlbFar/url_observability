@@ -141,9 +141,13 @@ One commit per task; the checkbox is ticked in the same commit.
 - [x] **Pin `httpx` in the worker image.** `RUN pip install httpx==0.28.1` — inline, no
       `worker/requirements.txt`, keeping the load generator decoupled as `CLAUDE.md` requires.
       Commit: `build(worker): pin the httpx version`
-- [ ] **Teach the pinning test about installed packages.** Extend the Dockerfile test so a
+- [x] **Teach the pinning test about installed packages.** Extend the Dockerfile test so a
       `RUN pip install` naming a package without `==` fails, in any Dockerfile in the repo. The root
       `Dockerfile` installs from a requirements file and must keep passing.
+      Done: both Dockerfile tests now discover their inputs with `rglob("Dockerfile")` instead of
+      naming two paths, so F2's third image inherits both rules. The parser was probed directly
+      against six shapes — the two real lines, a `\`-continuation, a chained `&&` install, the long
+      `--requirement` form and `pip3` — and yields the package names expected in each.
       Commit: `test(infra): reject unpinned pip installs in dockerfiles`
 - [ ] **Give flake8 the width black uses.** Append `[flake8]` with `max-line-length = 88` to
       `tox.ini`. No new file.
