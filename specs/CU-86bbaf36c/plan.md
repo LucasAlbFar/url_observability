@@ -152,9 +152,14 @@ One commit per task; the checkbox is ticked in the same commit.
 - [x] **Give flake8 the width black uses.** Append `[flake8]` with `max-line-length = 88` to
       `tox.ini`. No new file.
       Commit: `chore(lint): align flake8 with black at 88 columns`
-- [ ] **Delete the dead environment variables.** Remove `LOADGEN_INTERVAL` and `LOADGEN_URLS` from
+- [x] **Delete the dead environment variables.** Remove `LOADGEN_INTERVAL` and `LOADGEN_URLS` from
       `app` and `GF_SECURITY_ADMIN_USER`, `GF_SECURITY_ADMIN_PASSWORD` and `DEBUG` from `loadgen`.
       Keep `DEBUG` on `app` and `GF_SECURITY_ADMIN_*` on `grafana`.
+      Done: `loadgen`'s `environment:` block goes entirely, since all three of its entries were
+      dead. `docker compose config` afterwards reports `DEBUG` on `app`, the `GF_SECURITY_ADMIN_*`
+      pair on `grafana` and nothing on `loadgen`. The `CLAUDE.md` sentence documenting the dead
+      variables is rewritten in the same commit — the variables are gone, so a note about them
+      would have been the new stale copy.
       Commit: `chore(compose): drop environment variables nothing reads`
 - [ ] **Settle the Prometheus `start_period`.** Record the measurement and either keep 10s with the
       evidence attached or raise it. Do not raise it for symmetry with Grafana — the two boot for

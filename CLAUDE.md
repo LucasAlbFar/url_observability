@@ -98,7 +98,7 @@ Measurements and the reasoning behind each of these: `specs/CU-86bb30dec/plan.md
 
 **Synthetic load.** The `/load/*` endpoints each exercise a different resource on purpose — async sleep, blocking busy-loops, a large allocation — so the Grafana dashboard has something to plot. To put a new one into the continuous load, add it to `URLS` in `worker/load_driver.py`; that list is the only one any code reads.
 
-**The load generator is intentionally decoupled** from the `app` package: its own `Dockerfile`, only `httpx`, no shared requirements file. Keep it that way. The `LOADGEN_INTERVAL`/`LOADGEN_URLS` env vars on the `app` service in `docker-compose.yml` are dead — no code reads them, and `LOADGEN_URLS` merely duplicates `URLS`.
+**The load generator is intentionally decoupled** from the `app` package: its own `Dockerfile`, one pinned dependency (`httpx`), no shared requirements file. Keep it that way. It reads no environment at all — `URLS` in `worker/load_driver.py` is the only list any code reads, so don't reintroduce a `LOADGEN_URLS` env var to duplicate it.
 
 **Observability wiring.** `prometheus.yml` scrapes `app:8002/metrics` every 5s under job `fastapi-app`. Grafana auto-provisions its datasource and `grafana/dashboards/fastapi_metrics.json` from `grafana/provisioning/`.
 
