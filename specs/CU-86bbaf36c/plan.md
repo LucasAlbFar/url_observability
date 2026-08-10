@@ -117,7 +117,7 @@ One commit per task; the checkbox is ticked in the same commit.
       compose `command`, keeping `--config.file` and `--storage.tsdb.path`. Values carry over
       unchanged so the move is behaviour-neutral.
       Commit: `refactor(prometheus): configure retention in the config file`
-- [ ] **Move the assertion with the setting.** Narrow `test_prometheus_command_bounds_storage` in
+- [x] **Move the assertion with the setting.** Narrow `test_prometheus_command_bounds_storage` in
       `tests/test_compose_config.py` to `--storage.tsdb.path` alone (shrinking `RETENTION_FLAGS`
       accordingly) and add a retention-presence assertion to `tests/test_prometheus_config.py`
       hanging off the existing `prometheus_config` fixture. Presence only — promtool validates the

@@ -2,7 +2,7 @@
 
 These parse the compose file and assert the invariants the stack
 hardening introduced: pinned tags, named volumes, profiles,
-healthchecks and bounded retention. Nothing here starts a container,
+healthchecks and the storage path. Nothing here starts a container,
 so they say nothing about whether the stack actually comes up.
 """
 
@@ -18,11 +18,7 @@ EXPECTED_MOUNTS = {
     "prometheus": "prometheus_data:/prometheus",
     "grafana": "grafana_data:/var/lib/grafana",
 }
-RETENTION_FLAGS = (
-    "--storage.tsdb.path",
-    "--storage.tsdb.retention.time",
-    "--storage.tsdb.retention.size",
-)
+STORAGE_FLAGS = ("--storage.tsdb.path",)
 
 
 @pytest.fixture(scope="session")
@@ -97,9 +93,13 @@ def test_loadgen_waits_for_a_healthy_app(compose):
     assert depends_on["app"]["condition"] == "service_healthy"
 
 
-def test_prometheus_command_bounds_storage(compose):
-    """Confirm the storage path and both retention limits are set."""
+def test_prometheus_command_sets_the_storage_path(compose):
+    """Confirm the TSDB is pointed at the mounted named volume.
+
+    Retention is no longer a flag: it lives in prometheus.yml, and
+    tests/test_prometheus_config.py asserts it there.
+    """
     command = compose["services"]["prometheus"]["command"]
     flags = {argument.split("=", 1)[0] for argument in command}
-    for flag in RETENTION_FLAGS:
+    for flag in STORAGE_FLAGS:
         assert flag in flags, flag

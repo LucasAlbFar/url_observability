@@ -1,7 +1,8 @@
 """Structural checks on prometheus.yml.
 
-These assert the scrape configuration parses and carries the fields
-Prometheus needs. Whether a target answers, and whether Prometheus
+These assert the file parses and carries the fields the stack depends
+on: the scrape configuration and the retention bounds that used to be
+compose flags. Whether a target answers, and whether Prometheus
 itself would accept the file, is not tested here — the CI infra job
 runs `promtool check config` for the semantics.
 """
@@ -30,6 +31,17 @@ def test_every_scrape_job_names_itself(prometheus_config):
     """Confirm each job carries the label its series are keyed by."""
     for job in prometheus_config["scrape_configs"]:
         assert job.get("job_name"), job
+
+
+def test_storage_retention_is_bounded(prometheus_config):
+    """Confirm the TSDB is capped in both time and size.
+
+    Presence only: promtool rejects a malformed duration or size, so
+    the CI infra job validates the values with the real parser.
+    """
+    retention = prometheus_config["storage"]["tsdb"]["retention"]
+    assert retention["time"]
+    assert retention["size"]
 
 
 def test_every_scrape_job_has_a_target(prometheus_config):
