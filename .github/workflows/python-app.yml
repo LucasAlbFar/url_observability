@@ -18,9 +18,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: Set up Python 3.11
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
         python-version: "3.11"
     - name: Install dependencies
@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     # Every service sits behind a profile, so a bare `config` would
     # validate an empty file and still exit 0. The wildcard is
     # load-bearing, and the second command proves it resolved.
@@ -45,9 +45,17 @@ jobs:
         docker compose --profile '*' config -q
         docker compose --profile '*' config --services | grep -q . \
           || { echo "--profile '*' resolved no services"; exit 1; }
+    # The image is read out of the compose file rather than repeated
+    # here, so a bump is one line and CI cannot end up validating
+    # prometheus.yml against a Prometheus the stack does not run.
     - name: Validate the Prometheus config
       run: |
+        image=$(docker compose --profile '*' config --format json \
+          | jq -r '.services.prometheus.image')
+        [ -n "$image" ] && [ "$image" != "null" ] \
+          || { echo "could not resolve the prometheus image"; exit 1; }
+        echo "using $image"
         docker run --rm --entrypoint promtool \
           -v "$PWD/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
-          prom/prometheus:v3.13.2 \
+          "$image" \
           check config /etc/prometheus/prometheus.yml

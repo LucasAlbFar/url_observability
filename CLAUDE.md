@@ -13,8 +13,8 @@ A demo/learning project showing FastAPI observability with Prometheus + Grafana.
 What those files don't tell you:
 
 - Python 3.11 — `python:3.11.15` base image, tox `py311`.
-- Prometheus `prom/prometheus:v3.13.2`, Grafana `grafana/grafana:12.4.7`. Every image reference is pinned to an exact patch version, and `tests/test_compose_config.py` rejects anything looser, including a floating minor like `python:3.11`. A Prometheus bump also has to touch the `infra` job in `.github/workflows/python-app.yml`, which runs `promtool` through the same image.
-- No mypy, no ruff, and no custom config for black, isort or flake8.
+- Prometheus `prom/prometheus:v3.13.2`, Grafana `grafana/grafana:12.4.7`. Every image reference is pinned to an exact patch version, and `tests/test_compose_config.py` rejects anything looser, including a floating minor like `python:3.11`. A Prometheus bump is one line in `docker-compose.yml` — the `infra` job derives the tag from there rather than repeating it — but every copy of a tag in this file and `README.md` has to move with it, and `tests/test_docs_versions.py` fails and names the file when one does not.
+- No mypy, no ruff, and no custom config for black or isort. flake8's only setting is `max-line-length = 88` in `tox.ini`.
 
 **`fastapi[standard-no-fastapi-cloud-cli]`, not `fastapi[standard]`**: since FastAPI 0.139, the `standard` extra pulls in `fastapi-cloud-cli` and its dependencies — deployment tooling this project has no use for. Don't switch `requirements/base.in` back to `standard` without a reason.
 
@@ -41,7 +41,7 @@ isort .          # auto-sort imports
 flake8 .         # lint only
 ```
 
-Stock defaults leave flake8 at 79 columns and black at 88. Keep lines under 79 by construction: when black wants to collapse a wrapped expression onto a line between 80 and 88 columns, `tox -e lint` fails on code black considers already formatted, and no formatting satisfies both. Shorten the expression — bind intermediate values to names — rather than wrapping harder.
+`tox.ini` sets flake8 to `max-line-length = 88`, the width black already formats to, so `tox -e lint` accepts what black produces. Left at its 79-column default, flake8 rejects lines black considers finished and no formatting satisfies both.
 
 ### Markdown lint
 
@@ -58,7 +58,7 @@ Part of the default `envlist` (`py311, lint, safety`). It audits `base.txt` and 
 ### Infra checks
 
 ```bash
-pytest tests/test_compose_config.py tests/test_prometheus_config.py tests/test_grafana_provisioning.py
+pytest tests/test_compose_config.py tests/test_prometheus_config.py tests/test_grafana_provisioning.py tests/test_docs_versions.py
 
 docker compose --profile '*' config -q      # compose file parses and resolves
 docker run --rm --entrypoint promtool \
@@ -67,9 +67,9 @@ docker run --rm --entrypoint promtool \
   check config /etc/prometheus/prometheus.yml
 ```
 
-The three test files ride along in the normal `tox -e py311` run and need no Docker. They are **structural**: they assert the configuration files parse and carry the fields the stack depends on, and say nothing about whether a query returns data or a dashboard panel is correct. Don't read a green run as a dashboard review.
+The four test files ride along in the normal `tox -e py311` run and need no Docker. They are **structural**: they assert the configuration files parse and carry the fields the stack depends on, and say nothing about whether a query returns data or a dashboard panel is correct. Don't read a green run as a dashboard review.
 
-The two `docker` commands are what the `infra` job in `.github/workflows/python-app.yml` runs, and they reach semantics no Python test does. `config -q` exits **0** when it resolves zero services, so never run it without a profile and read success as validation.
+The `docker` commands are what the `infra` job in `.github/workflows/python-app.yml` runs, and they reach semantics no Python test does. One difference: the job reads the Prometheus image out of `docker-compose.yml` instead of naming it, so the tag written above is a copy-pasteable convenience that `tests/test_docs_versions.py` keeps in step. `config -q` exits **0** when it resolves zero services, so never run it without a profile and read success as validation.
 
 ### Run everything at once
 
@@ -84,11 +84,11 @@ docker compose --profile core --profile load up --build   # the whole stack
 uvicorn app.main:app --host 0.0.0.0 --port 8002           # app standalone, without Docker
 ```
 
-Run from the repo root — the compose project name comes from the directory. `README.md` ("Running the stack", "Stopping and cleaning up") owns the full command set: the profile groups, the teardown variants and what each one destroys. Three things from it change how you work on the code:
+Run from the repo root. `README.md` ("Running the stack", "Stopping and cleaning up") owns the full command set; three rules change how you work on the code:
 
-- **Every service sits behind a profile**, so `--profile` belongs on every `docker compose` subcommand, teardown included. Without it most of them do nothing and still exit 0 — only `build` warns, and only `ps` ignores profiles and lists the containers anyway.
-- **`prometheus_data` and `grafana_data` survive a `down`.** Only `down --volumes` destroys them, and it destroys both.
-- **`app`, `prometheus` and `grafana` have healthchecks**, so `loadgen` waits for a healthy `app` rather than racing it. Don't lower Grafana's 90s `start_period`: a cold boot spends most of a minute on schema migrations before its HTTP port opens, and anything declaring `depends_on: grafana: {condition: service_healthy}` inherits that wait. `restart: unless-stopped` reacts to a container *exiting*, not to it going unhealthy.
+- `--profile` belongs on every `docker compose` subcommand, teardown included. Without it most do nothing and still exit 0.
+- `prometheus_data` and `grafana_data` survive a `down`. Only `down --volumes` destroys them, and it destroys both.
+- Don't lower Grafana's 90s `start_period`. It was raised from 10s against a measurement, and anything waiting on `condition: service_healthy` inherits that wait.
 
 Measurements and the reasoning behind each of these: `specs/CU-86bb30dec/plan.md`.
 
@@ -98,7 +98,7 @@ Measurements and the reasoning behind each of these: `specs/CU-86bb30dec/plan.md
 
 **Synthetic load.** The `/load/*` endpoints each exercise a different resource on purpose — async sleep, blocking busy-loops, a large allocation — so the Grafana dashboard has something to plot. To put a new one into the continuous load, add it to `URLS` in `worker/load_driver.py`; that list is the only one any code reads.
 
-**The load generator is intentionally decoupled** from the `app` package: its own `Dockerfile`, only `httpx`, no shared requirements file. Keep it that way. The `LOADGEN_INTERVAL`/`LOADGEN_URLS` env vars on the `app` service in `docker-compose.yml` are dead — no code reads them, and `LOADGEN_URLS` merely duplicates `URLS`.
+**The load generator is intentionally decoupled** from the `app` package: its own `Dockerfile`, one pinned dependency (`httpx`), no shared requirements file. Keep it that way. It reads no environment at all — `URLS` in `worker/load_driver.py` is the only list any code reads, so don't reintroduce a `LOADGEN_URLS` env var to duplicate it.
 
 **Observability wiring.** `prometheus.yml` scrapes `app:8002/metrics` every 5s under job `fastapi-app`. Grafana auto-provisions its datasource and `grafana/dashboards/fastapi_metrics.json` from `grafana/provisioning/`.
 
@@ -106,7 +106,7 @@ Measurements and the reasoning behind each of these: `specs/CU-86bb30dec/plan.md
 
 - `tests/conftest.py` provides `client`, `test_settings` and `repo_root` — the last is session-scoped and returns the repository root, for tests that read files rather than call code.
 - One test file per module (`test_config.py`, `test_example.py`, `test_main.py`, `test_load.py`, `test_load_driver.py`), asserting exact status code + JSON body.
-- Three files break that rule on purpose: `test_compose_config.py`, `test_prometheus_config.py` and `test_grafana_provisioning.py` have no Python module behind them — they parse `docker-compose.yml`, `prometheus.yml` and the provisioned Grafana files. See "Infra checks" for what they do and do not cover.
+- Four files break that rule on purpose: `test_compose_config.py`, `test_prometheus_config.py`, `test_grafana_provisioning.py` and `test_docs_versions.py` have no Python module behind them — they parse `docker-compose.yml`, `prometheus.yml`, the provisioned Grafana files, and the image versions quoted in `CLAUDE.md` and `README.md`. See "Infra checks" for what they do and do not cover.
 - Async worker tests use `pytest-asyncio` with `unittest.mock.AsyncMock`/`patch` to mock `httpx.AsyncClient.get` (both success and exception paths) and `monkeypatch` to run `main(cycles=1)` instead of an infinite loop — follow this pattern rather than making real network calls in tests.
 
 ## Feature specs & plans
