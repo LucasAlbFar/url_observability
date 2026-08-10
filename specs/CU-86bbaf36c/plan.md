@@ -178,7 +178,10 @@ One commit per task; the checkbox is ticked in the same commit.
       `FailingStreak: 0`. The value is unchanged and the diff is the three-line comment recording
       why, so the next reader does not repeat the measurement.
       Commit: `chore(compose): justify the prometheus start_period`
-- [ ] **Bump the actions.** `actions/checkout@v7` in both jobs, `actions/setup-python@v7`.
+- [x] **Bump the actions.** `actions/checkout@v7` in both jobs, `actions/setup-python@v7`.
+      Done: reconfirmed on 2026-08-10, three days after the spec amendment — `checkout` is still at
+      **v7.0.1** and `setup-python` at **v7.0.0**, and `action.yml` at each `v7` tag still declares
+      `using: node24`. No literal `@v4` or `@v5` remains in the file.
       Commit: `ci: move the actions off node 20`
 - [ ] **Correct the three false sentences in `CLAUDE.md`.** The Prometheus-bump instruction, the
       description of what the `infra` job runs, and the paragraph telling the reader to stay under
