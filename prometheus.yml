@@ -1,6 +1,12 @@
 global:
   scrape_interval: 5s
 
+storage:
+  tsdb:
+    retention:
+      time: 7d
+      size: 512MB
+
 scrape_configs:
   - job_name: "fastapi-app"
     metrics_path: /metrics

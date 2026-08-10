@@ -112,7 +112,7 @@ Measured 2026-08-07 on Docker 29.7.1 / Compose v5.3.1, against `prom/prometheus:
 
 One commit per task; the checkbox is ticked in the same commit.
 
-- [ ] **Move retention into `prometheus.yml`.** Add
+- [x] **Move retention into `prometheus.yml`.** Add
       `storage: {tsdb: {retention: {time: 7d, size: 512MB}}}` and delete the two flags from the
       compose `command`, keeping `--config.file` and `--storage.tsdb.path`. Values carry over
       unchanged so the move is behaviour-neutral.
