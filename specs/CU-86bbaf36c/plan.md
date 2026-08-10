@@ -198,15 +198,14 @@ One commit per task; the checkbox is ticked in the same commit.
       Done: **202 → 119 words**, longest line **428 → 162 characters**, 13 lines. Siblings run
       13–160 words on 2–14 lines, and three of them carry lines of 419, 446 and 466 characters, so
       the section is now inside the range on every axis instead of the outlier on two. Each dropped
-      fact was checked to survive elsewhere before it was dropped:
-
-      | Dropped from `CLAUDE.md` | Still recorded in |
-      | --- | --- |
-      | compose project name comes from the directory | `README.md` ("Run all of these from the repo root…") |
-      | which subcommands are silent without `--profile`, `build` warning, `ps` ignoring profiles | `README.md`, "Running the stack" — a fuller version, naming each subcommand |
-      | the three services have healthchecks; `loadgen` waits rather than racing | `README.md`, "The first `up` takes a while to go green…" |
-      | Grafana's cold boot spends a minute on schema migrations | `README.md` same paragraph, and `specs/CU-86bb30dec/plan.md` with the measurement |
-      | `restart: unless-stopped` does not react to `unhealthy` | `specs/CU-86bb30dec/plan.md`, Edge cases |
+      fact was checked to survive elsewhere before it was dropped — the compose project name coming
+      from the directory, in `README.md`'s "Run all of these from the repo root…"; which
+      subcommands are silent without `--profile`, plus `build` warning and `ps` ignoring profiles,
+      in `README.md`'s "Running the stack", which names each subcommand individually; the three
+      healthchecks and `loadgen` waiting rather than racing, in `README.md`'s "The first `up` takes
+      a while to go green…"; Grafana's cold boot spending a minute on schema migrations, in that
+      same `README.md` paragraph and in `specs/CU-86bb30dec/plan.md` with the measurement behind
+      it; and `restart: unless-stopped` not reacting to `unhealthy`, in that plan's Edge cases.
       Commit: `docs: trim the stack section to its conclusions`
 - [x] **Update `README.md`.** Where retention is configured, and whatever the derivation task made
       inaccurate in the infra-check snippet.
@@ -280,6 +279,11 @@ One commit per task; the checkbox is ticked in the same commit.
   panels use `type: "graph"`, whose compatibility layer has been off by default since Grafana 11.
   Nothing in this feature depends on the answer, but F2's scope does: migration and reconstruction
   are different features. It stays a verification step here rather than a task, and needs a browser.
+  **Answered, and worse than "off by default": the plugin is not there.** `graph` is absent from
+  `/usr/share/grafana/public/app/plugins/panel/` in the running 12.4.7 container, and
+  `/api/frontend/settings` reports 27 panel plugins with `graph` not among them. A disabled
+  compatibility layer could be switched back on; a plugin that does not ship cannot. **F2 rebuilds
+  the dashboard, it does not migrate it** — see the Verification steps entry for the full evidence.
 - **These are eight independent changes sharing one branch.** Nothing in the list depends on
   anything else except the `CLAUDE.md` correction depending on the derivation. If any single item
   turns out to be larger than it looks, it can be dropped from the branch without disturbing the
@@ -287,36 +291,92 @@ One commit per task; the checkbox is ticked in the same commit.
 
 ## Verification steps
 
-To be run against the finished branch; each step records its measured outcome here.
+To be run against the finished branch; each step records its measured outcome here. Run 2026-08-10
+against the thirteen commits, Docker 29.7.1 / Compose v5.3.1.
 
 - `tox` end to end — tests, lint and safety.
+  **PASS** — exit 0. `py311` 32 passed, coverage 100% against the 80% gate; `lint` clean on all
+  three tools; `safety` reports no known vulnerabilities in either lockfile.
 - `docker compose --profile '*' config -q` and `config --services | grep -q .`, the two commands the
   `infra` job runs.
+  **PASS** — exit 0, and the second resolves four services (`app prometheus grafana loadgen`), so
+  the first was not validating an empty file.
 - `promtool check config` against the new `prometheus.yml` through the pinned image — expect
   `SUCCESS`.
+  **PASS** — `SUCCESS: /etc/prometheus/prometheus.yml is valid prometheus config file syntax`,
+  exit 0, through the image derived from the compose file rather than a literal.
 - **Negative proof, retention:** set `time: 7x` in `prometheus.yml`, confirm the `infra` job's
   promtool step fails with `unknown unit "x"`, revert, confirm green.
+  **PASS** — exit **1**, `FAILED: parsing YAML file /etc/prometheus/prometheus.yml: unknown unit
+  "x" in duration "7x"`; reverting restores `SUCCESS`. The other two cases from Facts were
+  reconfirmed on this build: `size: 512XB` → `units: unknown unit XB in 512XB`, and `retentionn:`
+  → `yaml: unmarshal errors`. Note that `pytest` stays **green** throughout, which is the design:
+  promtool owns value shape, the Python test owns presence.
 - **Negative proof, docs drift:** change `prom/prometheus:v3.13.2` to `:v3.13.3` in
   `docker-compose.yml` alone; confirm `tests/test_docs_versions.py` fails and names the file, that
   the `infra` job would now pull `v3.13.3`, then revert.
+  **PASS** — `test_documented_image_tags_match_compose` fails with
+  `assert 'v3.13.2' == 'v3.13.3'` and a message naming the document, and the derivation prints
+  `prom/prometheus:v3.13.3` with no other file edited. Both halves of the bump story hold.
 - **Negative proof, unpinned install:** remove `==0.28.1` from `worker/Dockerfile`, confirm the
   pinning test fails, restore.
+  **PASS** — `test_every_dockerfile_pins_what_it_installs` fails with
+  `AssertionError: Dockerfile: httpx`; restoring the pin returns the file to 10 passed.
 - **Negative proof, retention assertion:** delete the `storage:` block, confirm exactly one Python
   test fails.
+  **PASS** — exactly one: `test_storage_retention_is_bounded`. 1 failed, 28 passed.
 - **Retention in force:** `docker compose --profile core up -d prometheus`, then
   `curl -s localhost:9090/api/v1/status/runtimeinfo | jq -r .data.storageRetention` — expect
   `1w or 512MiB`. Confirm `docker compose logs prometheus` carries `TSDB retention updated` and no
   deprecated-flag warning.
+  **PASS** — `1w or 512MiB`, byte-identical to the flag form. The log carries
+  `msg="TSDB retention updated" duration=1w size=512MiB percentage=0` and **zero** lines matching
+  `deprecat`. `docker inspect` confirms the container now runs exactly two arguments:
+  `--config.file` and `--storage.tsdb.path`.
 - **Cold `up` with a populated volume:** time `prometheus` to `healthy` and confirm `grafana` starts
   behind it without the `up` failing. Record the observed time and the volume's size, since the
   second number is what makes the first meaningful.
+  **PASS** — volume **476 KB** (4 blocks, `chunks_head`, WAL segments 14–17). Ready in **481 ms**
+  from `.State.StartedAt`, WAL replay 4.4 ms; first probe at 5.2 s passes with `FailingStreak: 0`.
+  `grafana` started behind a healthy `prometheus` and the `up` did not fail. **A first attempt at
+  this measurement was discarded:** timing the wall clock around `up -d` measures nothing, because
+  `depends_on` makes that command return only after health is already reached — it reported 0.17 s.
 - `flake8` accepts an 88-column line and rejects an 89-column one, via a throwaway probe file.
+  **PASS** — a probe carrying one 88- and one 89-column line yields exactly one finding:
+  `2:89: E501 line too long (89 > 88 characters)`. The `> 88` in the message is also the proof
+  that flake8 read the new `[flake8]` section out of `tox.ini`.
 - A CI run on the branch: both jobs green, no Node.js deprecation annotation.
+  **NOT RUN** — the branch is unpushed, so this is the one step that cannot be closed locally. The
+  two inputs it depends on were checked instead: the workflow parses as YAML, and `action.yml` at
+  `checkout@v7` (v7.0.1) and `setup-python@v7` (v7.0.0) both declare `using: node24`.
 - `git diff --stat main...HEAD` — nothing under `app/` or `grafana/`, and only `Dockerfile` under
   `worker/`.
+  **PASS** — 12 files: the workflow, `CLAUDE.md`, `README.md`, `docker-compose.yml`,
+  `prometheus.yml`, both spec documents, three test files, `tox.ini` and `worker/Dockerfile`. The
+  only path under the three restricted trees is `worker/Dockerfile`.
 - **Does the provisioned dashboard render under Grafana 12.4.7?** Bring the stack up, open the
   provisioned dashboard in a browser, and record what is actually shown — panels, empty panels, or
   an error. This produces no code. If it does not render, say so plainly here, because F2's scope
   changes from migrating the panels to rebuilding them.
+  **NO — it does not render, and the reason is stronger than the one assumed.** No browser was
+  available this session, so the question was settled from the running container instead, which
+  turns out to answer it more decisively than a screenshot would:
+  - Grafana serves the dashboard fine — `/api/dashboards/uid/fastapi-dashboard` returns all seven
+    panels — so the failure is not provisioning. Every one of the seven is `type: "graph"`.
+  - **`graph` is not among the panel plugins 12.4.7 ships.**
+    `/usr/share/grafana/public/app/plugins/panel/` contains 30 directories and none is `graph`;
+    `/api/frontend/settings` lists 27 panel plugins with `hasGraphPanel: false`; `/api/plugins`
+    matches only `timeseries`. Each panel therefore resolves to Grafana's missing-plugin
+    placeholder rather than a chart.
+  - The spec expected a *disabled compatibility layer*, which a setting could re-enable. A plugin
+    that is not in the bundle cannot be switched back on.
+  **Consequence for F2: the dashboard is rebuilt, not migrated.** That also settles the `uid`
+  question the spec deferred — reauthoring the JSON is now certain, not likely.
+  One incidental finding while reading the API: `grafana_data` also holds a hand-made dashboard
+  titled `T12 live test` (uid `adgmx4s`), left over from F1's volume-persistence proof. Harmless,
+  and evidence the volume survives a `down`, but it is not provisioned and will not reappear if
+  the volume is ever destroyed.
 - Word and line counts for the trimmed `CLAUDE.md` section against its siblings, and an item-by-item
   check that every dropped fact is present in `specs/CU-86bb30dec/plan.md` or `README.md`.
+  **PASS** — 202 → 119 words, longest line 428 → 162 characters, 13 lines against siblings of
+  13–160 words on 2–14 lines. The item-by-item table is recorded against the task itself.
