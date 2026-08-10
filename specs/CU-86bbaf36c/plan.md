@@ -346,9 +346,12 @@ against the thirteen commits, Docker 29.7.1 / Compose v5.3.1.
   `2:89: E501 line too long (89 > 88 characters)`. The `> 88` in the message is also the proof
   that flake8 read the new `[flake8]` section out of `tox.ini`.
 - A CI run on the branch: both jobs green, no Node.js deprecation annotation.
-  **NOT RUN** — the branch is unpushed, so this is the one step that cannot be closed locally. The
-  two inputs it depends on were checked instead: the workflow parses as YAML, and `action.yml` at
-  `checkout@v7` (v7.0.1) and `setup-python@v7` (v7.0.0) both declare `using: node24`.
+  **PASS** — run `31434007687` on PR #4: `build` green in 1m18s, `infra` green in 10s, and the
+  check-runs API reports **0 annotations on both jobs**, which is the whole point of the actions
+  bump — the annotation that used to appear on every run is gone, so the next one to appear means
+  something. The same run also closes the derivation end to end on a real runner: the `infra` log
+  prints `using prom/prometheus:v3.13.2` followed by `SUCCESS`, so the tag reached `docker run`
+  from the compose file and `jq` needed no install step, as predicted.
 - `git diff --stat main...HEAD` — nothing under `app/` or `grafana/`, and only `Dockerfile` under
   `worker/`.
   **PASS** — 12 files: the workflow, `CLAUDE.md`, `README.md`, `docker-compose.yml`,
