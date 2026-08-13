@@ -222,16 +222,34 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
   `logs` are silent no-ops that exit 0 while leaving the stack running; `ps` is the exception, which
   is exactly what makes the ineffective command look like a hang. Measured under Compose v5.3.1 and
   worth re-confirming on the v5.4.0 this branch runs.
-- **The collision can hide by working.** If both services label the route with the same label name,
-  the series add up with no error at all. The verification has to read the *list of series*, not the
-  chart — a chart with one line is the symptom, and it is indistinguishable from a correct chart.
+- **The collision can hide by working.** Series that merge do so with no error at all. The
+  verification has to read the *list of series*, not the chart — a chart with one line is the
+  symptom, and it is indistinguishable from a correct chart.
+- **The collision does not take the shape this plan first assumed, and the difference is the
+  feature's main finding.** Measured 2026-08-13 while writing the service: `client_golang` ships no
+  HTTP request metric, only the instrumentation helpers, so the request metric names are declared by
+  the service rather than inherited from the library. That splits the Go `/metrics` into two halves
+  with different standing, and only one of them was ever negotiable:
+  - **Inherited, and colliding unconditionally.** `process_cpu_seconds_total` and
+    `process_resident_memory_bytes` come from the process collector under exactly the names the
+    Python client uses. Nothing but `job` and `instance` separates the two services, which is
+    precisely the defect in the two resource panels.
+  - **Declared, and colliding by name but not by label.** `http_requests_total` and
+    `http_request_duration_seconds` carry `code` and `method`; the FastAPI instrumentator's carry
+    `handler` and `status`. Same metric name, different label set — so a filter on
+    `handler="/health"` returns one service, while `sum by (handler)` returns the app's named routes
+    beside one unlabelled group holding every Go request.
+  The consequence is that the `/health` route is still the collision *of paths* the feature set out
+  to create — both services serve it, both are probed on it — but it is not where the collision *of
+  series* shows up. The spec's proof was amended before the second task, rather than left to fail at
+  verification.
 - **The root `Dockerfile` will copy `service-go/` into the app image.** `COPY . .` with no
   `.dockerignore`. It already carries `worker/`, `grafana/` and `tests/`; this breaks nothing and
   creating a `.dockerignore` is a larger change than this feature.
 - **`/health` in `URLS` is asymmetric on purpose.** The list grows from four to seven — the Go
   service's three routes — and the FastAPI `/health` is deliberately left out: its own healthcheck
-  already drives it every ten seconds, so the collision has samples on both sides without the load
-  list duplicating a probe. Three of the seven now hit CPU-bound endpoints, and the first feature
+  already drives it every ten seconds, so both services have traffic on the shared path without the
+  load list duplicating a probe. Three of the seven now hit CPU-bound endpoints, and the first feature
   recorded that machine load is what makes Grafana's cold boot vary between 35 s and 55 s.
 - **Moving the probe changes what readiness means.** `/metrics` proved the instrumentator came up;
   `/health` proves the router came up. Both are adequate and symmetry between the two services is
@@ -274,14 +292,22 @@ To be run against the finished branch; each step records its measured outcome he
 - `curl -s 'localhost:9090/api/v1/label/job/values'` returns both job names, `fastapi-app` among
   them.
 - **The deliverable:** `curl -s localhost:8003/metrics` captured whole, with the request and process
-  series transcribed here — every name, every label. Specifically, whether
-  `process_cpu_seconds_total` and `process_resident_memory_bytes` appear under the same names the
-  Python client uses (which would let the dashboard rebuild keep one resource panel per resource,
-  once it adds `by (job, instance)`), and whether the route label is called `handler` (which would
-  make the merge worse, not better).
-- **Proof of the collision:** a query over the `/health` route without `by (job)` returns the two
-  services' series merged; the same query with `by (job)` separates them. Both queries and both
-  outputs recorded.
+  series transcribed here — every name, every label — and each one marked as inherited from the
+  library or declared by this service, because the dashboard rebuild can negotiate with the second
+  kind and not with the first. Already answered from the running binary on 2026-08-13, to be
+  reconfirmed against the container: `process_cpu_seconds_total` and
+  `process_resident_memory_bytes` do appear under the same names the Python client uses, so the
+  rebuild can keep one resource panel per resource once it adds `by (job, instance)`; and the route
+  label is **not** `handler`, because there is no library default to inherit and the declared metrics
+  carry `code` and `method`.
+- **Proof of the collision:** a query over `process_cpu_seconds_total` without `by (job)` returns the
+  two services' series merged; the same query with `by (job)` separates them. Both queries and both
+  outputs recorded. Amended 2026-08-13 from a query over the `/health` route — see the Edge cases
+  entry on the shape the collision actually takes.
+- **The second shape of the collision:** what `sum by (handler) (rate(http_requests_total[5m]))`
+  returns with both services under load, and whether the dashboard's
+  `label_values(http_requests_total{handler!="/metrics"}, handler)` lists anything from the Go
+  service. Both recorded as measurements, not predictions.
 - **Then on screen:** with the stack up, open the dashboard in a browser and record whether the Go
   service appeared unannounced in the existing panels and in the `handler` dropdown, and whether the
   new probe baseline is visible. This does **not** replace the series list — it is the cheapest read

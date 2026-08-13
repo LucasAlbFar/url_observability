@@ -112,11 +112,21 @@ this ordering is what avoids a third instance.
 - **The deliverable that is not code**: the Go service's `/metrics` captured whole, and its request
   and process series transcribed into `plan.md` name by name and label by label, with the command
   that produced them. This is the input the dashboard rebuild is written against.
-- **Proof of the collision, by query and on screen.** The same query over `/health` without and with
-  `by (job)` — merged, then separated. Then the dashboard opened in a browser, recording whether the
-  Go service appeared unannounced in the existing panels and in the `handler` dropdown. The screen
-  reading does not replace the series list: a chart with one line is exactly the symptom being looked
-  for, and it is indistinguishable from a correct chart.
+- **Proof of the collision, by query and on screen.** A metric both services export under the same
+  name, queried without and with `by (job)` — merged, then separated. **Amended 2026-08-13, before
+  the second task began**, from a query over the `/health` route: `client_golang` ships no HTTP
+  request metric at all, so the Go service's request metric names are declared by hand rather than
+  inherited, and the idiomatic-instrumentation decision rules out giving them the FastAPI
+  instrumentator's `handler` label. A query filtered by `handler="/health"` therefore returns one
+  service's series, not two. The collision is real in two other shapes, and those are what get
+  proved: `process_cpu_seconds_total` and `process_resident_memory_bytes`, which both client
+  libraries export under exactly those names with nothing but `job` and `instance` to separate them;
+  and `http_requests_total`, which both export under the same name with different label sets, so a
+  panel grouping `by (handler)` shows the app's named routes beside one unlabelled bucket holding
+  every Go request. Then the dashboard opened in a browser, recording whether the Go service appeared
+  unannounced in the existing panels and in the `handler` dropdown. The screen reading does not
+  replace the series list: a chart with one line is exactly the symptom being looked for, and it is
+  indistinguishable from a correct chart.
 - **`CLAUDE.md` and `README.md` updated** for a two-service stack: the new directory, the port, the
   `go` job, the architecture section, the commands, the project layout, and what the pinning test
   covers and does not cover in a Dockerfile without `pip`.
@@ -168,16 +178,20 @@ Go service answers on port 8003; `curl localhost:8003/health` returns 200, and s
 `curl localhost:8002/health`, which did not exist before.
 
 Prometheus scrapes two targets. `/api/v1/targets` reports both as `up`, and
-`/api/v1/label/job/values` returns two job names instead of one. A query over the `/health` route
-without `by (job)` returns the two services' series merged into one value; the same query with
-`by (job)` separates them. That pair of queries is the demonstration this feature exists to produce
-— the before and after that the dashboard rebuild is aimed at.
+`/api/v1/label/job/values` returns two job names instead of one. A query over a metric both services
+export — `process_cpu_seconds_total` — without `by (job)` returns their series merged; the same
+query with `by (job)` separates them. That pair of queries is the demonstration this feature exists
+to produce, the before and after that the dashboard rebuild is aimed at.
 
-The Go service's `/metrics` answers in its library's own vocabulary, not FastAPI's. Whether its
-process metrics happen to share names with the Python client's, and whether its route label happens
-to be called `handler`, is settled by reading the endpoint and is written into `plan.md` with the
-command that produced it. If the route label does collide, the merge gets worse rather than better,
-and that is the point of finding out here.
+The Go service's `/metrics` answers in its library's own vocabulary, not FastAPI's, and the two
+halves of that vocabulary have different standing. The process and runtime metrics come from the
+library with no say in the matter, and they land on exactly the names the Python client uses. The
+request metrics have no library default at all, so their names are a choice the service makes; this
+one names them `http_requests_total` and `http_request_duration_seconds` — the same names the
+FastAPI app uses — and labels them `code` and `method` rather than the instrumentator's `handler`
+and `status`. Every name and label is read off the endpoint and written into `plan.md` with the
+command that produced it. The disagreement that survives is the input the dashboard rebuild works
+from.
 
 The dashboard keeps every defect it has today, now with a second service feeding it. It draws, the
 same five panels as before show data, and it makes no distinction between the two services — plus a
@@ -209,9 +223,14 @@ its scrape job is named uniquely, and that its module checksums are committed.
       is still `fastapi-app`.
 - [ ] The Go service's `/metrics` is captured whole, and its request and process series are
       transcribed into `plan.md` with their labels and the command that produced them.
-- [ ] A query over the `/health` route without `by (job)` returns the two services' series merged,
-      and the same query with `by (job)` returns them separated; both queries and both outputs are
-      recorded.
+- [ ] A query over `process_cpu_seconds_total` without `by (job)` returns the two services' series
+      merged, and the same query with `by (job)` returns them separated; both queries and both
+      outputs are recorded. **Amended 2026-08-13** from a query over the `/health` route — see
+      `### In` for why that filter does not return two services once the Go request metrics carry no
+      `handler` label.
+- [ ] What `sum by (handler) (rate(http_requests_total[5m]))` returns with both services under load
+      is recorded: whether the Go service's requests land in a single unlabelled group beside the
+      app's named routes, and whether the dashboard's `handler` variable query lists them.
 - [ ] The dashboard is opened in a browser with both services under load, and whether the Go service
       appears in the existing panels and in the `handler` dropdown is recorded in `plan.md` as an
       observation, not as an inference from an API response.
