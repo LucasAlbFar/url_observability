@@ -51,3 +51,7 @@ test-report.xml
 pylint-out.txt
 .vscode/
 pytest.ini
+
+# Go build output: `go build` inside service-go/ writes a binary named
+# after the directory.
+/service-go/service-go

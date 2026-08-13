@@ -121,10 +121,29 @@ One commit per task; the checkbox is ticked in the same commit. Any sentence in 
 `README.md` that a task makes false is corrected inside that task's commit — the two documentation
 tasks at the end add what is new, they do not repair what earlier tasks broke.
 
-- [ ] **Write the Go service.** `go.mod`, `go.sum`, and `main.go` with `/health`,
+- [x] **Write the Go service.** `go.mod`, `go.sum`, and `main.go` with `/health`,
       `/load/io-bound` (a sleep), `/load/cpu-bound` (a busy loop) and `/metrics` from
       `promhttp.Handler()`, listening on 8003 against the default registry. No `cmd/`, no layers, no
       environment variables read.
+      Done: **`client_golang` ships no HTTP request metric**, so the request metric names are a
+      choice this task had to make rather than inherit — the default registry carries only the
+      process and Go runtime collectors plus `promhttp_metric_handler_requests_total`, which measures
+      the `/metrics` handler itself. Chosen: `http_requests_total` and
+      `http_request_duration_seconds`, labelled `code` and `method` — the labels `promhttp`'s own
+      instrumentation helpers fill in. **No `handler` label**, because adding one would be copying
+      the FastAPI instrumentator's choice, which is what the idiomatic-instrumentation decision
+      forbids. The consequence is measured rather than assumed: the metric *name* collides with the
+      FastAPI one while the label set does not, so the dashboard's `by (handler)` panels will
+      collapse every Go route into one unlabelled bucket beside the app's named ones. Also
+      measured: `process_cpu_seconds_total` and `process_resident_memory_bytes` come out under
+      exactly the names the Python client uses, so the two resource panels collide unconditionally.
+      `client_golang` is **v1.24.1** and requires `go 1.25.0`, which `go mod tidy` wrote into
+      `go.mod`; the local Go 1.23.2 fetched the 1.25.0 toolchain by itself, as `GOTOOLCHAIN=auto`
+      predicted, and the build image at 1.26.5 is comfortably above it. The CPU loop runs two billion
+      iterations, not the FastAPI equivalent's ten million: measured here, Python takes 0.79s for ten
+      million and Go 0.62s for two billion, so the two routes cost about the same wall time.
+      `.gitignore` gains one line — `go build` inside the directory writes a 12 MB binary named after
+      it, and that came within one `git add` of being committed.
       Commit: `feat(service-go): add a minimal instrumented go service`
 - [ ] **Test the handlers.** `main_test.go` covering the three application routes' status and body
       and that `/metrics` responds, using `net/http/httptest`.
