@@ -145,8 +145,23 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       `.gitignore` gains one line — `go build` inside the directory writes a 12 MB binary named after
       it, and that came within one `git add` of being committed.
       Commit: `feat(service-go): add a minimal instrumented go service`
-- [ ] **Test the handlers.** `main_test.go` covering the three application routes' status and body
+- [x] **Test the handlers.** `main_test.go` covering the three application routes' status and body
       and that `/metrics` responds, using `net/http/httptest`.
+      Done: the three application routes run as **parallel subtests**, because two of them cost real
+      time by design — `/load/io-bound` sleeps two seconds and `/load/cpu-bound` spins. Run end to
+      end they would cost 2.6 s; overlapped they cost 2.010 s, the sleep alone. The subtests assert
+      status, exact body and `Content-Type`, matching what the Python suite asserts. Measured while
+      running them: the CPU route takes **0.64 s**, against the 0.62 s the previous task recorded —
+      close enough that the two-billion-iteration count still buys roughly the FastAPI route's wall
+      time. `/metrics` is asserted to respond and to carry `go_goroutines`, a collector the default
+      registry supplies; the names it exports are **not** pinned here, because they are the
+      deliverable this feature measures against the running service rather than against a test. One
+      test beyond the task's letter: the request metrics are declared by this service rather than
+      inherited, so `http_requests_total` is read off `/metrics` before and after a request to prove
+      the middleware feeds it — without that, a broken `instrument` wrapper would leave every other
+      assertion green. Counting through the endpoint rather than the collector keeps the assertion on
+      what a scrape would see; `prometheus/testutil` would read the collector directly and pull a new
+      dependency for it.
       Commit: `test(service-go): cover the handlers`
 - [ ] **Build it reproducibly.** `service-go/Dockerfile`, two stages, bare tags, `CGO_ENABLED=0`,
       dependencies through `go mod download` and never `go install`.
