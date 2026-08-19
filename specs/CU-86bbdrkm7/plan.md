@@ -185,10 +185,27 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       listening within the same second. That is a `docker run` without health probes or a compose
       dependency graph, so task 5 still measures under compose from Docker's own health timestamps.
       Commit: `build(service-go): add a pinned multi-stage image`
-- [ ] **Cover what the pip parser cannot.** In `tests/test_compose_config.py`, assert that every
+- [x] **Cover what the pip parser cannot.** In `tests/test_compose_config.py`, assert that every
       directory holding a Dockerfile whose `FROM` names `golang` carries a non-empty `go.mod` and
       `go.sum`; and rewrite `installed_packages`' docstring to say it recognises `pip` only, that a
       Dockerfile in another language passes it vacuously, and what stands in for the guarantee.
+      Done: the suite goes from 32 to **33 passing**. The new test carries a guard the task did not
+      ask for and needs: after the loop it asserts it checked at least one Dockerfile. Without it the
+      test passes by finding nothing to check — which is the exact failure mode it was written to
+      close, so it would have been a vacuous test policing a vacuous test. Proved by pointing the
+      build stage at `rust:1.90.0`: `AssertionError: no Go Dockerfile found`. The other two negative
+      proofs the acceptance criteria call for were run here rather than left to the end, because both
+      are about this file. **`go.sum` removed:** exactly one test fails,
+      `test_every_go_dockerfile_commits_its_module_checksums`, at 1 failed / 32 passed; restoring it
+      returns 33. **Suffixed tag:** `alpine:3.24.1-slim` in the final stage fails exactly
+      `test_every_dockerfile_base_image_is_pinned`; reverting returns green. Two cleanups inside the
+      file, both consequences of this feature rather than drive-by tidying: the `^FROM\s+(\S+)`
+      matcher was compiled inside the base-image test and is now a module-level `FROM_IMAGE` shared
+      with the new one, so the two tests cannot drift apart on what counts as a base image; and that
+      test's docstring said it confirms "**both** built images", which the previous task falsified by
+      adding a third Dockerfile. It should have been corrected in that commit and was not — it is
+      corrected here, and reworded to say multi-stage counts, since a build stage floating while the
+      final stage is pinned is now a reachable mistake.
       Commit: `test(infra): require committed go module checksums`
 - [ ] **Add the service to the compose file.** Profiles `["core", "load"]`, port 8003,
       `restart: unless-stopped`, healthcheck `wget --spider -q http://localhost:8003/health`, and a
