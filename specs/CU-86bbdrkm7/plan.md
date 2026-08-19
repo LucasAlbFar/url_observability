@@ -163,8 +163,27 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       what a scrape would see; `prometheus/testutil` would read the collector directly and pull a new
       dependency for it.
       Commit: `test(service-go): cover the handlers`
-- [ ] **Build it reproducibly.** `service-go/Dockerfile`, two stages, bare tags, `CGO_ENABLED=0`,
+- [x] **Build it reproducibly.** `service-go/Dockerfile`, two stages, bare tags, `CGO_ENABLED=0`,
       dependencies through `go mod download` and never `go install`.
+      Done: built and run, because `go build` succeeding proves nothing about the stage the binary
+      actually lands in. **Both tags still resolve** — `golang:1.26.5` and `alpine:3.24.1`, first
+      confirmed 2026-08-11 and re-confirmed here by the build itself, so the planned tag-bump exit
+      was not needed. The layer order is `go.mod`/`go.sum` → `go mod download` → `main.go`, so
+      editing the source does not re-resolve dependencies; `main_test.go` is deliberately not copied,
+      since the image has no reason to carry it and CI runs the tests itself. Measured against the
+      predictions in Facts verified: `installed_packages` returns `[]` on this file, so
+      `test_every_dockerfile_pins_what_it_installs` passes **vacuously** exactly as recorded; the
+      `FROM` regex returns `['golang:1.26.5', 'alpine:3.24.1']`, with `AS build` uncaptured and
+      `COPY --from=build` unmatched, so no test needed changing. `tests/test_compose_config.py` and
+      `tests/test_docs_versions.py` stay green at 12 passed. The `CGO_ENABLED=0` edge case was not
+      exercised as a failure: the flag was written in from the start and the container runs, logging
+      `service-go listening on :8003` and answering `/health` with 200. Confirmed in the final stage
+      rather than assumed: `wget --spider -q http://localhost:8003/health` exits **0** from inside
+      the container, which is the probe the next task's healthcheck will run. Final image is
+      **23.6 MB**. One data point for the `start_period` task, and explicitly *not* the measurement
+      it requires: run bare, `.State.StartedAt` was `21:13:04.003Z` and the service logged itself
+      listening within the same second. That is a `docker run` without health probes or a compose
+      dependency graph, so task 5 still measures under compose from Docker's own health timestamps.
       Commit: `build(service-go): add a pinned multi-stage image`
 - [ ] **Cover what the pip parser cannot.** In `tests/test_compose_config.py`, assert that every
       directory holding a Dockerfile whose `FROM` names `golang` carries a non-empty `go.mod` and
