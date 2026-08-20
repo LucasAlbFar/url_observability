@@ -460,24 +460,50 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
 
 ## Verification steps
 
-To be run against the finished branch; each step records its measured outcome here.
+To be run against the finished branch; each step records its measured outcome here. All run
+2026-08-20 on Docker 29.7.2 / Compose v5.4.0.
 
 - `tox` end to end — `py311` with the new tests, `lint`, `safety`.
+  **Green in 70.5 s**: 37 passed at **100.00%** coverage against the 80% gate, `black`/`isort`/
+  `flake8` clean over 21 files, and `pip-audit` reporting no known vulnerabilities for `base.txt`
+  and `dev.txt` in the two separate invocations.
 - `gofmt -l service-go` prints nothing; `go vet ./...` and `go test ./...` pass from inside
   `service-go/`.
+  **All three clean.** `gofmt -l .` prints nothing, `go vet ./...` is silent, `go test ./...` is
+  `ok`.
 - `docker compose --profile '*' config -q` exits clean and `config --services` resolves **five**
   services, so the first command was not validating an empty file.
+  **Both hold**: `config -q` exits 0 and `config --services` lists exactly `app`, `grafana`,
+  `loadgen`, `prometheus`, `service-go` — five. The v5.4.0 profile behaviour matches what v5.3.1
+  recorded, so the caution in Edge cases found nothing to correct.
 - `promtool check config` reports `SUCCESS`, through the image derived from the compose file the way
   the `infra` job derives it.
+  **SUCCESS**, with the image read out of `docker-compose.yml` (`prom/prometheus:v3.13.2`) rather
+  than named.
 - `docker compose --profile core --profile load up --build -d`; `docker compose ps` shows `app`,
   `service-go`, `prometheus` and `grafana` as `healthy`, and the `up` does not fail on a dependency
   condition.
+  **All four healthy, no dependency failure.** The `up` log shows the ordering the file asks for:
+  `app` and `service-go` started together, `prometheus` healthy → `grafana` starting, then both
+  application services healthy → `loadgen` starting. Grafana reached healthy in ~11 s against a
+  populated `grafana_data`, well inside its 90 s `start_period`; the seven-URL load list did not
+  push it near the 35–55 s cold-boot range the first feature measured.
 - **`start_period` measured for the Go service** from `.State.StartedAt` against the readiness log
   line or `.State.Health.Log[].Start` — never from wall-clock around `up -d`. Record the observed
   readiness time, the time of the first probe, and the value chosen in `docker-compose.yml`.
+  **Three runs, all from Docker's timestamps.** Alone: ready 0.19 s / 0.18 s after `StartedAt`,
+  first probe at 5.21 s / 5.19 s, passing in <0.1 s. Under the full five-service `up`:
+  `StartedAt` `20:06:08.813Z`, readiness log line `20:06:09.211Z` — **0.40 s**, twice the isolated
+  figure and still two orders below the value — first probe at 5.41 s, exit 0. Chosen and written
+  in `docker-compose.yml` with its reasoning beside it: **10 s**, the smallest round value that
+  keeps the first probe inside the start period.
 - `curl -s localhost:9090/api/v1/targets` shows both targets with `health: "up"`.
+  **Both up**: `fastapi-app` → `http://app:8002/metrics`, `service-go` →
+  `http://service-go:8003/metrics`, neither with a `lastError`.
 - `curl -s 'localhost:9090/api/v1/label/job/values'` returns both job names, `fastapi-app` among
   them.
+  **`["fastapi-app","service-go"]`** — the existing job kept its name, so nothing in
+  `prometheus_data` was split.
 - **The deliverable:** `curl -s localhost:8003/metrics` captured whole, with the request and process
   series transcribed here — every name, every label — and each one marked as inherited from the
   library or declared by this service, because the dashboard rebuild can negotiate with the second
@@ -487,23 +513,60 @@ To be run against the finished branch; each step records its measured outcome he
   rebuild can keep one resource panel per resource once it adds `by (job, instance)`; and the route
   label is **not** `handler`, because there is no library default to inherit and the declared metrics
   carry `code` and `method`.
+  **Reconfirmed against the container** and transcribed under the "Record the series" task: 147
+  lines, 46 metric names, and both predictions hold. Ten names are exported by both services. One
+  disagreement was not predicted and is recorded there: the shared `method` label differs in case,
+  `get` from `promhttp` against `GET` from the instrumentator.
 - **Proof of the collision:** a query over `process_cpu_seconds_total` without `by (job)` returns the
   two services' series merged; the same query with `by (job)` separates them. Both queries and both
   outputs recorded. Amended 2026-08-13 from a query over the `/health` route — see the Edge cases
   entry on the shape the collision actually takes.
+  **Merged, then separated**, both through `/api/v1/query`:
+  `sum(process_cpu_seconds_total)` → **one** series, `{} 347.72`.
+  `sum by (job) (process_cpu_seconds_total)` → **two**, `{job="service-go"} 140.05` and
+  `{job="fastapi-app"} 207.67`. The raw selector returns the same two, distinguished only by
+  `job` and `instance` (`service-go:8003`, `app:8002`) — nothing else in the label set separates
+  them, which is exactly why the dashboard's two resource panels, grouping by nothing, draw one
+  service's line on top of the other's.
 - **The second shape of the collision:** what `sum by (handler) (rate(http_requests_total[5m]))`
   returns with both services under load, and whether the dashboard's
   `label_values(http_requests_total{handler!="/metrics"}, handler)` lists anything from the Go
   service. Both recorded as measurements, not predictions.
+  **Seven groups, one of them unlabelled** — `{} 0.525`, the Go service's entire traffic in a
+  single bucket, larger than any of the app's six named ones (`/health` 0.098, `/metrics` 0.200,
+  and ~0.139 each for the four `/load` routes). The `/health` figure is the probe baseline arriving
+  as predicted: one request per ten seconds is 0.1/s. The variable query, run as
+  `/api/v1/label/handler/values` with `match[]=http_requests_total{handler!="/metrics"}`, returns
+  **only the app's five routes** — the Go service contributes nothing to it, because it carries no
+  `handler` label at all.
 - **Then on screen:** with the stack up, open the dashboard in a browser and record whether the Go
   service appeared unannounced in the existing panels and in the `handler` dropdown, and whether the
   new probe baseline is visible. This does **not** replace the series list — it is the cheapest read
   of the defect and it costs an `up` that already happened.
+  **Read in Chrome against Grafana 12.4.7**, both services under load. The defect is visible
+  without a query: **CPU Usage shows two legend entries both named `CPU seconds`, and Memory Usage
+  two both named `Memory`** — the Go service is on the chart, indistinguishable from the app, and
+  nothing on the panel says which line is which. That is the failure mode the spec described as "a
+  chart that looks right", seen. The `handler` dropdown lists exactly the app's five routes and no
+  Go entry, matching the API reading. The probe baseline is visible: `/health` is now a series in
+  the latency, throughput and status-code panels, where the old `/metrics` probe was filtered out
+  by design. `HTTP Status Codes per Endpoint` draws the same five app handlers and no Go traffic;
+  `5xx Error Rate by Handler` still reads `No data`.
 - **Negative proof, pinning:** replace the final-stage tag with a suffixed variant, confirm
   `tests/test_compose_config.py` fails, revert, confirm green.
+  **`alpine:3.24.1-slim` fails exactly `test_every_dockerfile_base_image_is_pinned`** (1 failed /
+  10 passed); reverting returns 11 passed.
 - **Negative proof, `go.sum`:** delete `service-go/go.sum`, confirm **exactly one** test fails
   against the 32-test baseline plus this feature's additions, restore.
+  **Exactly one**: `test_every_go_dockerfile_commits_its_module_checksums`, at 1 failed / 36 passed
+  against the branch's 37; restoring the file returns 37 passed.
 - A CI run on the branch with all three jobs green and no Node deprecation annotation.
+  **Outstanding** — the branch is not pushed yet, so this is the one verification step no local
+  command can answer.
 - `git diff --stat main...HEAD` names only the files in Affected files, plus this ticket's two
   documents.
 - `git show --stat HEAD` at each commit names only that task's files.
+  **Both hold.** The diff names 20 files: the 18 in Affected files, the two ticket documents, and
+  `.gitignore` — the one-line addition the first task recorded and the only file in the diff that
+  the table does not list. Per commit, fifteen commits each name their own task's files plus
+  `plan.md`, with no cross-task leakage.
