@@ -1,0 +1,578 @@
+# CU-86bbdrkm7 — 02a build second service (plan)
+
+Spec: [./spec.md](./spec.md)
+
+## Context
+
+This lands as one new top-level directory plus edits spread thin across everything that already
+describes the stack. `service-go/` is new — five files, no package layout. `docker-compose.yml`
+gains a fifth service and both existing healthchecks change their probe. `prometheus.yml` gains a
+second scrape job. `app/` gains one endpoint module and one router registration.
+`worker/load_driver.py` gains three URLs and `loadgen` a second dependency. Three test files that
+already exist grow assertions, one new test file appears for the new FastAPI route, the CI workflow
+gains a third job, and both Markdown documents stop describing a four-service stack.
+
+The design comes from `~/.claude/plans/url-observability/02a_segundo-servico-go.md`, written
+2026-08-11 against the repository, which is where the roadmap's F2 was split into F2.1 (this
+feature) and F2.2 (the dashboard rebuild). Three earlier consequences come due here, because this is
+the first feature to add a service: readiness is measured from Docker's own timestamps and never
+from wall-clock around `up -d`; every documented lifecycle command carries `--profile`, teardown
+included; and anything declaring `depends_on: grafana` inherits its ninety-second wait, which is why
+the new service declares no such thing.
+
+The deliverable that decides whether this feature succeeded is not code. It is the list of series
+the Go service actually exports — names and labels — recorded below under Verification steps, and
+read by the dashboard rebuild that follows.
+
+Each task below is its own commit, and the task's checkbox is ticked in that same commit.
+
+## Facts verified against the repo
+
+Measured 2026-08-13 on this branch, unless marked otherwise. Docker **29.7.2** / Compose **v5.4.0**
+— both newer than the 29.7.1 / v5.3.1 the previous two features measured on, so any behaviour those
+plans recorded about profiles is worth watching rather than assuming.
+
+- **`assert_pinned` rejects every suffixed tag, re-run against nine candidates.** Passing:
+  `golang:1.26.5`, `alpine:3.24.1`. Failing: `golang:1.26.5-alpine3.22`, `golang:1.25-alpine`,
+  `golang:1.26.5-bookworm`, `alpine:3.24` (two components), `debian:12.9` (two components),
+  `gcr.io/distroless/static:nonroot`, and a bare `scratch` (no `:` at all). The multi-stage build is
+  therefore limited to bare `major.minor.patch` tags, and the final stage cannot be distroless or
+  scratch without rewriting the test.
+- **The `FROM` regex already handles multi-stage.** `^FROM\s+(\S+)` over a two-stage Dockerfile
+  returns `['golang:1.26.5', 'alpine:3.24.1']` — `AS build` is not captured and `COPY --from=build`
+  does not match. No change to `test_every_dockerfile_base_image_is_pinned` is needed.
+- **Dockerfile discovery is `rglob("Dockerfile")`** in `tests/test_compose_config.py:44`, so
+  `service-go/Dockerfile` inherits both pinning rules without anyone listing it.
+- **`installed_packages` yields nothing for a Go Dockerfile.** Run against the exact two-stage file
+  this feature will write, it returns `[]` — `PIP_INSTALL` is `\bpip\d?\s+install\b` and matches
+  nothing there. `test_every_dockerfile_pins_what_it_installs` therefore passes **vacuously**, which
+  is the hole the roadmap assigned to this feature.
+- **`tests/test_docs_versions.py` cannot reach this service.** Its `compose_images` fixture is built
+  from services declaring `image:`; a locally built service declares `build:`. What covers the Go
+  image is the `FROM` test, and only that.
+- **`prometheus.yml` has exactly one job**, `job_name: "fastapi-app"`, `metrics_path: /metrics`,
+  target `app:8002`, with `global.scrape_interval: 5s` and the `storage.tsdb.retention` block the
+  previous feature moved in. Nothing asserts job-name uniqueness today.
+- **`docker-compose.yml` has four services.** `app` probes `/metrics` through
+  `python -c "import urllib.request; urllib.request.urlopen(...)"`; `prometheus` and `grafana` probe
+  with `wget --spider -q`. `loadgen` depends only on `app` with `condition: service_healthy`.
+  `grafana` carries `start_period: 90s`, `prometheus` `10s` with its justification written beside it.
+- **The app has no `/health`.** `app/main.py` registers `/`, the `example` router and the `load`
+  router under the `/load` prefix; `Instrumentator().instrument(app).expose(app)` provides
+  `/metrics`.
+- **`worker/load_driver.py` has four URLs**, all `http://app:8002`, fired together every 5 s.
+- **The dashboard confirms the collision surface.** Seven panels, all `type: "graph"`; the panels
+  `5xx Error Rate by Handler` and `4xx Error Rate by Handler` share `gridPos {x:0, y:24, w:24, h:8}`;
+  and one template variable, `handler`, querying
+  `label_values(http_requests_total{handler!="/metrics"}, handler)`. If the Go library labels its
+  route `handler` on a metric of that name, the new routes join that dropdown unannounced.
+- **The suite is at 32 passing tests** (`pytest -q tests/`, 1 warning), which is the baseline the
+  negative proofs below are counted against.
+- **Adding a fifth service falsifies more prose than the `02a` plan listed.** That plan tracked the
+  three sentences counting *four test files* — `README.md:140`, `CLAUDE.md:70` and `CLAUDE.md:109` —
+  which stay true as long as new assertions land in existing files. Found today, and about *services*
+  rather than test files: `README.md:55` says a full `up` brings up "all four"; `README.md:57-58`
+  enumerate what each profile brings up; `README.md:59` names `app`, `prometheus` and `grafana` as
+  the three that report `healthy`; `README.md:215` calls `docker-compose.yml` "the four services";
+  and `README.md:210` describes `api/endpoints/` as "one module per route group (example, load)".
+  Each is made false by a specific task, and is corrected in that task's commit.
+- **The local Go is 1.23.2**, older than the build image. With `GOTOOLCHAIN=auto` — the default
+  since 1.21 — a `go.mod` requiring a newer toolchain downloads it on first use, so a version error
+  locally is a toolchain fetch, not a code problem.
+- **`jq` is available on the CI runner** and already used by the `infra` job, so the `go` job needs
+  no extra installation step for anything it reads.
+
+Carried from `02a_segundo-servico-go.md`, measured 2026-08-11 and **not** re-measured today:
+
+- Docker Hub carries `golang:1.26.5` and `alpine:3.24.1`. The first `docker compose build` is what
+  confirms this; if either tag has moved, the fix is a tag bump inside this feature, not a redesign.
+- `alpine:3.24.1` ships `wget` at `/usr/bin/wget` (BusyBox v1.37.0) whose `--help` lists
+  `--spider  Only check URL existence: $? is 0 if exists` — the same probe form the Prometheus and
+  Grafana healthchecks already use.
+- `actions/setup-go@v7` is the current major (v7.0.0, 2026-07-16) and declares `using: node24`, so
+  the new job does not reintroduce the deprecation annotation the previous feature removed.
+- The provisioned dashboard renders under Grafana 12.4.7 and five of its seven panels draw data —
+  read in a browser, which is the only instrument that answers that question.
+
+## Affected files
+
+| File | Change |
+| --- | --- |
+| `service-go/go.mod`, `go.sum` | new — module definition and committed checksums |
+| `service-go/main.go` | new — four routes, default registry, port 8003 |
+| `service-go/main_test.go` | new — the three application routes plus `/metrics` responding |
+| `service-go/Dockerfile` | new — multi-stage `golang:1.26.5` → `alpine:3.24.1`, `CGO_ENABLED=0` |
+| `app/api/endpoints/health.py` | new — `/health` route with its own `router` |
+| `app/main.py` | registers the health router |
+| `docker-compose.yml` | the `service-go` block; both healthchecks move to `/health`; `loadgen` waits on both services |
+| `prometheus.yml` | second scrape job, `service-go` → `service-go:8003` |
+| `worker/load_driver.py` | three Go routes added to `URLS` |
+| `tests/test_health.py` | new — the FastAPI `/health` route |
+| `tests/test_compose_config.py` | `CORE_SERVICES` grows; Go modules must be committed; the pip parser's docstring states its limit |
+| `tests/test_prometheus_config.py` | `job_name` asserted unique across jobs |
+| `tests/test_load_driver.py` | follows the longer `URLS` |
+| `.github/workflows/python-app.yml` | new `go` job — `gofmt -l`, `go vet`, `go test` |
+| `CLAUDE.md` | architecture, commands, the new directory and port, what the pinning tests cover without `pip` |
+| `README.md` | stack, ports, profile table, project layout, the endpoints the Go service serves |
+
+## Tasks
+
+One commit per task; the checkbox is ticked in the same commit. Any sentence in `CLAUDE.md` or
+`README.md` that a task makes false is corrected inside that task's commit — the two documentation
+tasks at the end add what is new, they do not repair what earlier tasks broke.
+
+- [x] **Write the Go service.** `go.mod`, `go.sum`, and `main.go` with `/health`,
+      `/load/io-bound` (a sleep), `/load/cpu-bound` (a busy loop) and `/metrics` from
+      `promhttp.Handler()`, listening on 8003 against the default registry. No `cmd/`, no layers, no
+      environment variables read.
+      Done: **`client_golang` ships no HTTP request metric**, so the request metric names are a
+      choice this task had to make rather than inherit — the default registry carries only the
+      process and Go runtime collectors plus `promhttp_metric_handler_requests_total`, which measures
+      the `/metrics` handler itself. Chosen: `http_requests_total` and
+      `http_request_duration_seconds`, labelled `code` and `method` — the labels `promhttp`'s own
+      instrumentation helpers fill in. **No `handler` label**, because adding one would be copying
+      the FastAPI instrumentator's choice, which is what the idiomatic-instrumentation decision
+      forbids. The consequence is measured rather than assumed: the metric *name* collides with the
+      FastAPI one while the label set does not, so the dashboard's `by (handler)` panels will
+      collapse every Go route into one unlabelled bucket beside the app's named ones. Also
+      measured: `process_cpu_seconds_total` and `process_resident_memory_bytes` come out under
+      exactly the names the Python client uses, so the two resource panels collide unconditionally.
+      `client_golang` is **v1.24.1** and requires `go 1.25.0`, which `go mod tidy` wrote into
+      `go.mod`; the local Go 1.23.2 fetched the 1.25.0 toolchain by itself, as `GOTOOLCHAIN=auto`
+      predicted, and the build image at 1.26.5 is comfortably above it. The CPU loop runs two billion
+      iterations, not the FastAPI equivalent's ten million: measured here, Python takes 0.79s for ten
+      million and Go 0.62s for two billion, so the two routes cost about the same wall time.
+      `.gitignore` gains one line — `go build` inside the directory writes a 12 MB binary named after
+      it, and that came within one `git add` of being committed.
+      Commit: `feat(service-go): add a minimal instrumented go service`
+- [x] **Test the handlers.** `main_test.go` covering the three application routes' status and body
+      and that `/metrics` responds, using `net/http/httptest`.
+      Done: the three application routes run as **parallel subtests**, because two of them cost real
+      time by design — `/load/io-bound` sleeps two seconds and `/load/cpu-bound` spins. Run end to
+      end they would cost 2.6 s; overlapped they cost 2.010 s, the sleep alone. The subtests assert
+      status, exact body and `Content-Type`, matching what the Python suite asserts. Measured while
+      running them: the CPU route takes **0.64 s**, against the 0.62 s the previous task recorded —
+      close enough that the two-billion-iteration count still buys roughly the FastAPI route's wall
+      time. `/metrics` is asserted to respond and to carry `go_goroutines`, a collector the default
+      registry supplies; the names it exports are **not** pinned here, because they are the
+      deliverable this feature measures against the running service rather than against a test. One
+      test beyond the task's letter: the request metrics are declared by this service rather than
+      inherited, so `http_requests_total` is read off `/metrics` before and after a request to prove
+      the middleware feeds it — without that, a broken `instrument` wrapper would leave every other
+      assertion green. Counting through the endpoint rather than the collector keeps the assertion on
+      what a scrape would see; `prometheus/testutil` would read the collector directly and pull a new
+      dependency for it.
+      Commit: `test(service-go): cover the handlers`
+- [x] **Build it reproducibly.** `service-go/Dockerfile`, two stages, bare tags, `CGO_ENABLED=0`,
+      dependencies through `go mod download` and never `go install`.
+      Done: built and run, because `go build` succeeding proves nothing about the stage the binary
+      actually lands in. **Both tags still resolve** — `golang:1.26.5` and `alpine:3.24.1`, first
+      confirmed 2026-08-11 and re-confirmed here by the build itself, so the planned tag-bump exit
+      was not needed. The layer order is `go.mod`/`go.sum` → `go mod download` → `main.go`, so
+      editing the source does not re-resolve dependencies; `main_test.go` is deliberately not copied,
+      since the image has no reason to carry it and CI runs the tests itself. Measured against the
+      predictions in Facts verified: `installed_packages` returns `[]` on this file, so
+      `test_every_dockerfile_pins_what_it_installs` passes **vacuously** exactly as recorded; the
+      `FROM` regex returns `['golang:1.26.5', 'alpine:3.24.1']`, with `AS build` uncaptured and
+      `COPY --from=build` unmatched, so no test needed changing. `tests/test_compose_config.py` and
+      `tests/test_docs_versions.py` stay green at 12 passed. The `CGO_ENABLED=0` edge case was not
+      exercised as a failure: the flag was written in from the start and the container runs, logging
+      `service-go listening on :8003` and answering `/health` with 200. Confirmed in the final stage
+      rather than assumed: `wget --spider -q http://localhost:8003/health` exits **0** from inside
+      the container, which is the probe the next task's healthcheck will run. Final image is
+      **23.6 MB**. One data point for the `start_period` task, and explicitly *not* the measurement
+      it requires: run bare, `.State.StartedAt` was `21:13:04.003Z` and the service logged itself
+      listening within the same second. That is a `docker run` without health probes or a compose
+      dependency graph, so task 5 still measures under compose from Docker's own health timestamps.
+      Commit: `build(service-go): add a pinned multi-stage image`
+- [x] **Cover what the pip parser cannot.** In `tests/test_compose_config.py`, assert that every
+      directory holding a Dockerfile whose `FROM` names `golang` carries a non-empty `go.mod` and
+      `go.sum`; and rewrite `installed_packages`' docstring to say it recognises `pip` only, that a
+      Dockerfile in another language passes it vacuously, and what stands in for the guarantee.
+      Done: the suite goes from 32 to **33 passing**. The new test carries a guard the task did not
+      ask for and needs: after the loop it asserts it checked at least one Dockerfile. Without it the
+      test passes by finding nothing to check — which is the exact failure mode it was written to
+      close, so it would have been a vacuous test policing a vacuous test. Proved by pointing the
+      build stage at `rust:1.90.0`: `AssertionError: no Go Dockerfile found`. The other two negative
+      proofs the acceptance criteria call for were run here rather than left to the end, because both
+      are about this file. **`go.sum` removed:** exactly one test fails,
+      `test_every_go_dockerfile_commits_its_module_checksums`, at 1 failed / 32 passed; restoring it
+      returns 33. **Suffixed tag:** `alpine:3.24.1-slim` in the final stage fails exactly
+      `test_every_dockerfile_base_image_is_pinned`; reverting returns green. Two cleanups inside the
+      file, both consequences of this feature rather than drive-by tidying: the `^FROM\s+(\S+)`
+      matcher was compiled inside the base-image test and is now a module-level `FROM_IMAGE` shared
+      with the new one, so the two tests cannot drift apart on what counts as a base image; and that
+      test's docstring said it confirms "**both** built images", which the previous task falsified by
+      adding a third Dockerfile. It should have been corrected in that commit and was not — it is
+      corrected here, and reworded to say multi-stage counts, since a build stage floating while the
+      final stage is pinned is now a reachable mistake.
+      Commit: `test(infra): require committed go module checksums`
+- [x] **Add the service to the compose file.** Profiles `["core", "load"]`, port 8003,
+      `restart: unless-stopped`, healthcheck `wget --spider -q http://localhost:8003/health`, and a
+      `start_period` taken from the measurement described in Verification steps, with the reasoning
+      written beside the value the way the Prometheus one is. No `depends_on: grafana`. Correct
+      `README.md`'s profile table, its "all four", its list of services reporting `healthy` and its
+      project-layout comment in this same commit.
+      Done: **`start_period: 10s`, measured from Docker's own timestamps** over two cold
+      `up -d` runs of the service alone, never from wall-clock. Run 1: `.State.StartedAt`
+      `19:46:11.969Z`, the readiness log line `19:46:12.158Z` — **0.19s** — and
+      `.State.Health.Log[0].Start` `19:46:17.175Z`, i.e. the first probe **5.21s** in, passing in
+      0.09s. Run 2 reproduces it: 0.18s to ready, first probe 5.19s in, 0.07s to pass. So readiness
+      is not what the value has to cover; the ~5.2s before the first probe is Docker's start-interval
+      cadence, exactly as the Edge cases entry predicted, and no `start_period` shortens it. 10s is
+      chosen because it is the smallest round value that keeps that first probe **inside** the start
+      period: a cold start on a loaded machine is then retried at the start cadence instead of
+      counting against `retries`, which is the failure that aborts an `up` under `service_healthy`.
+      A 5s value — tried first — would sit *below* the first probe and be inert. Not measured here
+      and left to the verification step: readiness under the full five-service `up`, where the build
+      and three other containers compete for the same machine. `docker compose --profile '*' config
+      --services` resolves **five** services and the suite stays at 33 passed — `CORE_SERVICES` does
+      not yet name `service-go`, which is task 7's commit, so nothing here was made green by
+      loosening a test.
+      Commit: `feat(compose): add the go service`
+- [x] **Scrape it.** A second job in `prometheus.yml` — `job_name: "service-go"`,
+      `metrics_path: /metrics`, target `service-go:8003`. `fastapi-app` keeps its name.
+      Done: `promtool check config` reports **SUCCESS**, run through the image read out of
+      `docker-compose.yml` (`prom/prometheus:v3.13.2`) the way the `infra` job derives it rather than
+      through a named tag. `fastapi-app` is untouched, so the series already in `prometheus_data`
+      keep their `job` label. Nothing yet forbids a duplicate `job_name` — that assertion is task 7,
+      and promtool does not supply it: it validated this file while the uniqueness rule did not
+      exist. The existing infra tests stay green at 16 passed.
+      Commit: `feat(prometheus): scrape the go service`
+- [x] **Assert both.** `CORE_SERVICES` in `tests/test_compose_config.py` grows to include
+      `service-go`; `tests/test_prometheus_config.py` gains a test that job names are unique across
+      `scrape_configs`.
+      Done: the suite goes from 33 to **34 passing**. Both assertions were proved to bite rather
+      than assumed to: renaming the new job to `fastapi-app` fails exactly
+      `test_scrape_job_names_are_unique` (1 failed / 5 passed), and deleting the `service-go`
+      healthcheck block fails exactly `test_core_services_declare_a_healthcheck` (1 failed / 10
+      passed); both revert to green. The uniqueness test earns its place precisely because promtool
+      does **not** supply it — the previous task's `promtool check config` returned SUCCESS on a file
+      with no such rule, and Prometheus accepts a duplicated `job_name` by folding the second job's
+      series under the first one's label, which is the only thing separating two services exporting
+      identical metric names. One docstring corrected in passing, as a consequence of this change
+      rather than tidying: `test_core_services_declare_a_healthcheck` said "the three serving
+      containers", and there are now four.
+      Commit: `test(infra): assert the second service and scrape job`
+- [x] **Give the app a health route.** `app/api/endpoints/health.py` exporting `router`, registered
+      in `app/main.py`, with `tests/test_health.py` asserting the exact status code and JSON body.
+      Correct `README.md`'s "one module per route group (example, load)" here.
+      Done: 34 → **35 passing**, `tox -e lint` green. The router is registered without a prefix, so
+      the path is `/health` rather than under a group — which is what the compose probe and the Go
+      service both expect. The body is `{"status": "ok"}`, chosen to be **byte-for-byte the Go
+      service's** rather than an independent shape: the point of this route is that two services
+      answer the same path the same way, and a body that differed would make the paths collide while
+      the responses did not. This closes the reservation the compose-hardening feature wrote down;
+      the probes still point at `/metrics` until the next task moves them.
+      Commit: `feat(app): add a health route`
+- [x] **Move both probes onto it.** The `app` healthcheck stops requesting `/metrics` and both
+      services probe `/health`.
+      Done: only the URL changed in the `app` probe — the `python -c urlopen(...)` form is kept,
+      because rewriting a working check buys nothing and the two services already probe the same
+      path. Proved against the rebuilt container rather than against the file: `app` reaches
+      `healthy` with two passing probes and `curl localhost:8002/health` and
+      `curl localhost:8003/health` both return `{"status":"ok"}` — the same bytes from both
+      services. One assumption of this task's first draft was wrong and is recorded so it is not
+      re-derived: the app image **does** ship `wget` at `/usr/bin/wget` (Debian-based
+      `python:3.11.15`), so the two probe forms differ by history, not by necessity; unifying them
+      is a change this task has no reason to make. From here the ten-second probe traffic on both
+      services lands on an unfiltered handler, which is the dashboard baseline the spec accepted.
+      Commit: `refactor(compose): probe readiness through the health route`
+- [x] **Drive the new service.** Add the Go service's three routes to `URLS`, make `loadgen` depend
+      on both services with `condition: service_healthy`, and extend `tests/test_load_driver.py`.
+      Done: `URLS` goes from four to **seven** and the suite from 35 to **37 passing**. The two new
+      tests assert the count, that the two hosts present are exactly `app:8002` and
+      `service-go:8003`, and — the asymmetry this feature chose — that `http://app:8002/health` is
+      **absent** while the Go one is present. One change beyond the task's list, and it belongs
+      here rather than in a later commit: `test_loadgen_waits_for_a_healthy_app` in
+      `tests/test_compose_config.py` asserted only the `app` dependency, so it would have stayed
+      green if the `service-go` one were dropped — exactly the condition that aborts an `up`. It is
+      now `test_loadgen_waits_for_every_service_it_drives` and loops over both. Not proved here and
+      left to verification: that seven routes fired every 5s, three of them CPU-bound, do not push
+      the machine hard enough to change Grafana's cold boot — the first feature recorded 35–55s
+      depending on load.
+      Commit: `feat(loadgen): drive the go service too`
+- [x] **Check the Go code in CI.** A `go` job parallel to `build` and `infra`, on
+      `actions/checkout@v7` and `actions/setup-go@v7`, running `gofmt -l .` (failing if it prints
+      anything), `go vet ./...` and `go test ./...` from `service-go/`.
+      Done: three jobs now — `build`, `go`, `infra` — with `defaults.run.working-directory:
+      service-go` so each step is the bare command. **`gofmt` exits 0 even when it has complaints**;
+      it reports by printing filenames, so the step captures the output and fails on it being
+      non-empty rather than on the exit status. That is the one place this job could have been
+      silently vacuous. The toolchain comes from `go-version-file: service-go/go.mod`, not from a
+      version written into the workflow — the same reason the `infra` job reads the Prometheus image
+      out of the compose file: `go.mod` already says `go 1.25.0`, and a second copy is a second
+      thing to bump. All three commands were run locally against the branch first: `gofmt -l .`
+      prints nothing, `go vet ./...` is clean, `go test ./...` is `ok`. Not proved here: that the
+      job is green on the runner and raises no Node deprecation annotation — both jobs' actions are
+      the Node 24 majors, and the CI run is a verification step.
+      Commit: `ci: vet, format-check and test the go service`
+- [x] **Record the series.** Capture the Go service's `/metrics` whole and transcribe its request
+      and process series into this file — name, labels, and the command that produced them. No code.
+      Done: captured from the **container**, with the full stack up and `loadgen` driving both
+      services, by `curl -s localhost:8003/metrics` — 147 lines, 46 metric names. Transcribed below
+      are the request and process series only; the `go_*` runtime family (31 names) and
+      `promhttp_metric_handler_*` are inherited untouched and are not what the dashboard rebuild
+      queries.
+
+      ```text
+      # Declared by this service (no client_golang default exists for them)
+      http_requests_total{code="200",method="get"}
+      http_request_duration_seconds_bucket{code="200",method="get",le="0.005|0.01|0.025|0.05|0.1|
+                                           0.25|0.5|1|2.5|5|10|+Inf"}
+      http_request_duration_seconds_count{code="200",method="get"}
+      http_request_duration_seconds_sum{code="200",method="get"}
+
+      # Inherited from the process collector, no labels at all
+      process_cpu_seconds_total
+      process_max_fds
+      process_open_fds
+      process_resident_memory_bytes
+      process_start_time_seconds
+      process_virtual_memory_bytes
+      process_virtual_memory_max_bytes
+      process_network_receive_bytes_total
+      process_network_transmit_bytes_total
+      ```
+
+      **Ten names are exported by both services**, listed by
+      `comm -12` over the two `/metrics` scraped at the same moment:
+      `http_requests_total`, `http_request_duration_seconds_{bucket,count,sum}`,
+      `process_cpu_seconds_total`, `process_max_fds`, `process_open_fds`,
+      `process_resident_memory_bytes`, `process_start_time_seconds`,
+      `process_virtual_memory_bytes`. The last two of the Go process list —
+      `process_virtual_memory_max_bytes` and the two `process_network_*` — are Go-only, and the
+      Python client's `*_created` gauges are Python-only.
+
+      Three findings the earlier tasks predicted, now read off the wire rather than off the source:
+      **six** `process_*` names collide with nothing but `job` and `instance` to separate them, and
+      the two the dashboard's resource panels query — `process_cpu_seconds_total` and
+      `process_resident_memory_bytes` — are among them; the request metrics collide **by name only**, since
+      this service labels `code`/`method` where the instrumentator labels `handler`/`status`; and
+      one that was not predicted — the shared `method` label disagrees on **case**:
+      `method="get"` from `promhttp`, `method="GET"` from the instrumentator. Even the one label
+      both services do carry cannot be joined on without normalising it, which is a fourth thing
+      the dashboard rebuild inherits.
+      Commit: `docs(specs): record the series the go service exports`
+- [x] **Document it in `CLAUDE.md`.** Two-service architecture, the `service-go/` directory and its
+      port, the `go` job and how to run it locally, and what the pinning tests do and do not cover
+      for a Dockerfile without `pip`. Conclusions only — the derivation stays here.
+      Done: six edits — the opening paragraph (two services in two languages), a Go line in Stack &
+      versions, a new `### Go service` command block, a paragraph in Infra checks on what the
+      pinning tests reach and what `go.sum` stands in for, two new Architecture paragraphs (**The
+      second service** and **Readiness**) plus the rewritten **Observability wiring**, and two lines
+      in Testing conventions. Conclusions only: every measurement stays in this file, and the
+      Architecture paragraph points here for the series list rather than repeating it. The three
+      sentences counting *four* infrastructure test files are still true and were left alone — this
+      feature added no fifth one. Suite still 37 passed, which also confirms
+      `tests/test_docs_versions.py` does not object to `golang:1.26.5` and `alpine:3.24.1` being
+      quoted in prose: it maps compose services declaring `image:`, and neither tag is one.
+      Commit: `docs: document the go service`
+- [x] **Update `README.md`.** Stack list, the service/URL table, the endpoint table, and whatever the
+      earlier tasks left approximate rather than false.
+      Done: the opening line stops calling the project "a small FastAPI service"; `service-go` and
+      the two scrape jobs join "How it works"; the stack list gains Go 1.25 and both image tags; the
+      service/URL table gains `localhost:8003`; the endpoint table gains `/health` and is followed
+      by a second table for the Go routes, kept separate because the Go service has no
+      `/load/stress/{seconds}` or `/load/memory-spike` and a merged table would have to say so in
+      every cell; "Development" gains the three Go commands with the note that `tox` never looks at
+      `service-go/`; and the project layout gains the directory. One sentence the earlier tasks left
+      **approximate rather than false** and this task was written to catch: the first-`up` paragraph
+      still said `loadgen` waits for a healthy `app`, which stayed true while ceasing to be the
+      whole truth once it waited for both. Tables are in the compact `| --- | --- |` style `MD060`
+      requires.
+      Commit: `docs: update the readme for the second service`
+- [x] **Run the verification script and record every outcome below.** No commit beyond the tick.
+
+## Edge cases
+
+- **`CGO_ENABLED=0` is not an optimisation, it is what makes the binary run.** `golang:1.26.5` is
+  Debian with glibc and `alpine:3.24.1` is musl. A binary built with cgo enabled dies in the final
+  stage with a loader error, and the symptom appears at `docker compose up`, not at `go build`. The
+  obvious alternative — a Debian final stage — is blocked by `assert_pinned`, which rejects
+  `debian:12.9` for having two version components.
+- **The suffixed tags are forbidden by the test, not by taste.** Measured above against nine
+  candidates. Whoever later swaps the runtime image for an `-alpine` variant will see the test fail
+  and may read it as a bug; it is written here that it is not.
+- **The pip pinning test passes vacuously on the Go Dockerfile, and that is accepted in writing.**
+  What replaces the guarantee is `go.sum` — a cryptographic hash per module, stronger than pip's
+  `==` — plus the new assertion that it exists and is committed. A `go install pkg@latest` in the
+  Dockerfile would escape both, which is why the design uses `go mod download` and the task says so.
+- **`start_period` is measured from Docker's own timestamps.** Read `.State.StartedAt` against the
+  readiness log line or `.State.Health.Log[].Start`. Timing the wall clock around `up -d` measures
+  nothing: under `depends_on: condition: service_healthy` that command returns only after health has
+  already been reached. And the ~5 s before the first probe is Docker's `--health-start-interval`
+  cadence, not initialisation — no value of `start_period` changes that number.
+- **Under `service_healthy`, a short `start_period` fails the whole `up`.** `loadgen` will wait on
+  two services; if the Go one is set too tight, the failure is not a misleading `ps` line, it is the
+  `up` aborting. This is what raised Grafana from 10 s to 90 s in the first feature.
+- **`--profile` belongs on every subcommand, teardown included.** Without it `down`, `stop` and
+  `logs` are silent no-ops that exit 0 while leaving the stack running; `ps` is the exception, which
+  is exactly what makes the ineffective command look like a hang. Measured under Compose v5.3.1 and
+  worth re-confirming on the v5.4.0 this branch runs.
+- **The collision can hide by working.** Series that merge do so with no error at all. The
+  verification has to read the *list of series*, not the chart — a chart with one line is the
+  symptom, and it is indistinguishable from a correct chart.
+- **The collision does not take the shape this plan first assumed, and the difference is the
+  feature's main finding.** Measured 2026-08-13 while writing the service: `client_golang` ships no
+  HTTP request metric, only the instrumentation helpers, so the request metric names are declared by
+  the service rather than inherited from the library. That splits the Go `/metrics` into two halves
+  with different standing, and only one of them was ever negotiable:
+  - **Inherited, and colliding unconditionally.** `process_cpu_seconds_total` and
+    `process_resident_memory_bytes` come from the process collector under exactly the names the
+    Python client uses. Nothing but `job` and `instance` separates the two services, which is
+    precisely the defect in the two resource panels.
+  - **Declared, and colliding by name but not by label.** `http_requests_total` and
+    `http_request_duration_seconds` carry `code` and `method`; the FastAPI instrumentator's carry
+    `handler` and `status`. Same metric name, different label set — so a filter on
+    `handler="/health"` returns one service, while `sum by (handler)` returns the app's named routes
+    beside one unlabelled group holding every Go request.
+  The consequence is that the `/health` route is still the collision *of paths* the feature set out
+  to create — both services serve it, both are probed on it — but it is not where the collision *of
+  series* shows up. The spec's proof was amended before the second task, rather than left to fail at
+  verification.
+- **The root `Dockerfile` will copy `service-go/` into the app image.** `COPY . .` with no
+  `.dockerignore`. It already carries `worker/`, `grafana/` and `tests/`; this breaks nothing and
+  creating a `.dockerignore` is a larger change than this feature.
+- **`/health` in `URLS` is asymmetric on purpose.** The list grows from four to seven — the Go
+  service's three routes — and the FastAPI `/health` is deliberately left out: its own healthcheck
+  already drives it every ten seconds, so both services have traffic on the shared path without the
+  load list duplicating a probe. Three of the seven now hit CPU-bound endpoints, and the first feature
+  recorded that machine load is what makes Grafana's cold boot vary between 35 s and 55 s.
+- **Moving the probe changes what readiness means.** `/metrics` proved the instrumentator came up;
+  `/health` proves the router came up. Both are adequate and symmetry between the two services is
+  what decides — but it is a trade, not a detail.
+- **Moving the probe also changes what the dashboard draws.** Every query and the template variable
+  filter `handler!="/metrics"`, so the old probe traffic was invisible by design. Probing `/health`
+  moves that traffic onto an unfiltered handler, on both services, every ten seconds: five panels
+  gain a constant baseline that comes from a probe rather than from load. Accepted in the spec, and
+  repeated here because whoever sees the new flat line will not otherwise know where it came from.
+- **The local Go is 1.23.2 and the image is 1.26.5.** `GOTOOLCHAIN=auto` downloads what `go.mod`
+  requires on first use. Worth knowing before reading a version error as a code problem.
+- **Compose is v5.4.0 here, not the v5.3.1 the profile behaviour was measured on.** Nothing in this
+  feature depends on that behaviour changing, but the verification script exercises `--profile '*'`
+  on the new service anyway, so a regression would surface rather than be assumed away.
+- **The tag bump is the planned exit if an image tag has moved.** `golang:1.26.5` and
+  `alpine:3.24.1` were confirmed on Docker Hub on 2026-08-11 and not re-checked today. If the first
+  build fails to pull, the fix is a newer bare `major.minor.patch` tag inside this feature — not a
+  change of base image family, which would re-open the `wget` decision.
+- **Markdownlint.** The `CLAUDE.md` and `README.md` edits go through the VS Code Problems panel:
+  compact tables (`MD060`), blank lines around lists and fences.
+
+## Verification steps
+
+To be run against the finished branch; each step records its measured outcome here. All run
+2026-08-20 on Docker 29.7.2 / Compose v5.4.0.
+
+- `tox` end to end — `py311` with the new tests, `lint`, `safety`.
+  **Green in 70.5 s**: 37 passed at **100.00%** coverage against the 80% gate, `black`/`isort`/
+  `flake8` clean over 21 files, and `pip-audit` reporting no known vulnerabilities for `base.txt`
+  and `dev.txt` in the two separate invocations.
+- `gofmt -l service-go` prints nothing; `go vet ./...` and `go test ./...` pass from inside
+  `service-go/`.
+  **All three clean.** `gofmt -l .` prints nothing, `go vet ./...` is silent, `go test ./...` is
+  `ok`.
+- `docker compose --profile '*' config -q` exits clean and `config --services` resolves **five**
+  services, so the first command was not validating an empty file.
+  **Both hold**: `config -q` exits 0 and `config --services` lists exactly `app`, `grafana`,
+  `loadgen`, `prometheus`, `service-go` — five. The v5.4.0 profile behaviour matches what v5.3.1
+  recorded, so the caution in Edge cases found nothing to correct.
+- `promtool check config` reports `SUCCESS`, through the image derived from the compose file the way
+  the `infra` job derives it.
+  **SUCCESS**, with the image read out of `docker-compose.yml` (`prom/prometheus:v3.13.2`) rather
+  than named.
+- `docker compose --profile core --profile load up --build -d`; `docker compose ps` shows `app`,
+  `service-go`, `prometheus` and `grafana` as `healthy`, and the `up` does not fail on a dependency
+  condition.
+  **All four healthy, no dependency failure.** The `up` log shows the ordering the file asks for:
+  `app` and `service-go` started together, `prometheus` healthy → `grafana` starting, then both
+  application services healthy → `loadgen` starting. Grafana reached healthy in ~11 s against a
+  populated `grafana_data`, well inside its 90 s `start_period`; the seven-URL load list did not
+  push it near the 35–55 s cold-boot range the first feature measured.
+- **`start_period` measured for the Go service** from `.State.StartedAt` against the readiness log
+  line or `.State.Health.Log[].Start` — never from wall-clock around `up -d`. Record the observed
+  readiness time, the time of the first probe, and the value chosen in `docker-compose.yml`.
+  **Three runs, all from Docker's timestamps.** Alone: ready 0.19 s / 0.18 s after `StartedAt`,
+  first probe at 5.21 s / 5.19 s, passing in <0.1 s. Under the full five-service `up`:
+  `StartedAt` `20:06:08.813Z`, readiness log line `20:06:09.211Z` — **0.40 s**, twice the isolated
+  figure and still two orders below the value — first probe at 5.41 s, exit 0. Chosen and written
+  in `docker-compose.yml` with its reasoning beside it: **10 s**, the smallest round value that
+  keeps the first probe inside the start period.
+- `curl -s localhost:9090/api/v1/targets` shows both targets with `health: "up"`.
+  **Both up**: `fastapi-app` → `http://app:8002/metrics`, `service-go` →
+  `http://service-go:8003/metrics`, neither with a `lastError`.
+- `curl -s 'localhost:9090/api/v1/label/job/values'` returns both job names, `fastapi-app` among
+  them.
+  **`["fastapi-app","service-go"]`** — the existing job kept its name, so nothing in
+  `prometheus_data` was split.
+- **The deliverable:** `curl -s localhost:8003/metrics` captured whole, with the request and process
+  series transcribed here — every name, every label — and each one marked as inherited from the
+  library or declared by this service, because the dashboard rebuild can negotiate with the second
+  kind and not with the first. Already answered from the running binary on 2026-08-13, to be
+  reconfirmed against the container: `process_cpu_seconds_total` and
+  `process_resident_memory_bytes` do appear under the same names the Python client uses, so the
+  rebuild can keep one resource panel per resource once it adds `by (job, instance)`; and the route
+  label is **not** `handler`, because there is no library default to inherit and the declared metrics
+  carry `code` and `method`.
+  **Reconfirmed against the container** and transcribed under the "Record the series" task: 147
+  lines, 46 metric names, and both predictions hold. Ten names are exported by both services. One
+  disagreement was not predicted and is recorded there: the shared `method` label differs in case,
+  `get` from `promhttp` against `GET` from the instrumentator.
+- **Proof of the collision:** a query over `process_cpu_seconds_total` without `by (job)` returns the
+  two services' series merged; the same query with `by (job)` separates them. Both queries and both
+  outputs recorded. Amended 2026-08-13 from a query over the `/health` route — see the Edge cases
+  entry on the shape the collision actually takes.
+  **Merged, then separated**, both through `/api/v1/query`:
+  `sum(process_cpu_seconds_total)` → **one** series, `{} 347.72`.
+  `sum by (job) (process_cpu_seconds_total)` → **two**, `{job="service-go"} 140.05` and
+  `{job="fastapi-app"} 207.67`. The raw selector returns the same two, distinguished only by
+  `job` and `instance` (`service-go:8003`, `app:8002`) — nothing else in the label set separates
+  them, which is exactly why the dashboard's two resource panels, grouping by nothing, draw one
+  service's line on top of the other's.
+- **The second shape of the collision:** what `sum by (handler) (rate(http_requests_total[5m]))`
+  returns with both services under load, and whether the dashboard's
+  `label_values(http_requests_total{handler!="/metrics"}, handler)` lists anything from the Go
+  service. Both recorded as measurements, not predictions.
+  **Seven groups, one of them unlabelled** — `{} 0.525`, the Go service's entire traffic in a
+  single bucket, larger than any of the app's six named ones (`/health` 0.098, `/metrics` 0.200,
+  and ~0.139 each for the four `/load` routes). The `/health` figure is the probe baseline arriving
+  as predicted: one request per ten seconds is 0.1/s. The variable query, run as
+  `/api/v1/label/handler/values` with `match[]=http_requests_total{handler!="/metrics"}`, returns
+  **only the app's five routes** — the Go service contributes nothing to it, because it carries no
+  `handler` label at all.
+- **Then on screen:** with the stack up, open the dashboard in a browser and record whether the Go
+  service appeared unannounced in the existing panels and in the `handler` dropdown, and whether the
+  new probe baseline is visible. This does **not** replace the series list — it is the cheapest read
+  of the defect and it costs an `up` that already happened.
+  **Read in Chrome against Grafana 12.4.7**, both services under load. The defect is visible
+  without a query: **CPU Usage shows two legend entries both named `CPU seconds`, and Memory Usage
+  two both named `Memory`** — the Go service is on the chart, indistinguishable from the app, and
+  nothing on the panel says which line is which. That is the failure mode the spec described as "a
+  chart that looks right", seen. The `handler` dropdown lists exactly the app's five routes and no
+  Go entry, matching the API reading. The probe baseline is visible: `/health` is now a series in
+  the latency, throughput and status-code panels, where the old `/metrics` probe was filtered out
+  by design. `HTTP Status Codes per Endpoint` draws the same five app handlers and no Go traffic;
+  `5xx Error Rate by Handler` still reads `No data`.
+- **Negative proof, pinning:** replace the final-stage tag with a suffixed variant, confirm
+  `tests/test_compose_config.py` fails, revert, confirm green.
+  **`alpine:3.24.1-slim` fails exactly `test_every_dockerfile_base_image_is_pinned`** (1 failed /
+  10 passed); reverting returns 11 passed.
+- **Negative proof, `go.sum`:** delete `service-go/go.sum`, confirm **exactly one** test fails
+  against the 32-test baseline plus this feature's additions, restore.
+  **Exactly one**: `test_every_go_dockerfile_commits_its_module_checksums`, at 1 failed / 36 passed
+  against the branch's 37; restoring the file returns 37 passed.
+- A CI run on the branch with all three jobs green and no Node deprecation annotation.
+  **All three green** on PR #5 — `go` 29 s, `infra` 8 s, `build` 58 s — and **no Node deprecation
+  annotation**, so `actions/setup-go@v7` did not reintroduce what the previous feature removed.
+  One annotation did appear, and it is the reason this step is worth running rather than assuming:
+  a warning that `setup-go` could not restore its cache because it looks for `go.mod` at the
+  **repo root**, where this repo has none. Nothing failed, but the module cache was silently never
+  used. Fixed here with `cache-dependency-path: service-go/go.sum`, and the following run is
+  annotation-free.
+- `git diff --stat main...HEAD` names only the files in Affected files, plus this ticket's two
+  documents.
+- `git show --stat HEAD` at each commit names only that task's files.
+  **Both hold.** The diff names 20 files: the 18 in Affected files, the two ticket documents, and
+  `.gitignore` — the one-line addition the first task recorded and the only file in the diff that
+  the table does not list. Per commit, fifteen commits each name their own task's files plus
+  `plan.md`, with no cross-task leakage.
