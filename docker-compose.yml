@@ -18,6 +18,26 @@ services:
       retries: 3
       start_period: 30s
 
+  service-go:
+    build:
+      context: ./service-go
+      dockerfile: Dockerfile
+    profiles: ["core", "load"]
+    ports:
+      - "8003:8003"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8003/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      # 10s is measured, not copied from a neighbour: the binary logs
+      # itself listening 0.18s after .State.StartedAt, and Docker's first
+      # probe lands 5.2s in and passes in under 0.1s. 10s keeps that first
+      # probe inside the start period, so a cold start on a loaded machine
+      # is retried instead of counting against `retries`.
+      start_period: 10s
+
   prometheus:
     image: prom/prometheus:v3.13.2
     profiles: ["core"]

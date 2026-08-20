@@ -50,13 +50,13 @@ Pick the group you need:
 
 | Command | Brings up | Use it for |
 | --- | --- | --- |
-| `docker compose --profile core up -d` | `app`, `prometheus`, `grafana` | dashboards, without synthetic traffic |
-| `docker compose --profile load up -d` | `app`, `loadgen` | exercising the API, without the observability side |
-| `docker compose --profile core --profile load up -d` | all four | the full demo |
+| `docker compose --profile core up -d` | `app`, `service-go`, `prometheus`, `grafana` | dashboards, without synthetic traffic |
+| `docker compose --profile load up -d` | `app`, `service-go`, `loadgen` | exercising both APIs, without the observability side |
+| `docker compose --profile core --profile load up -d` | all five | the full demo |
 
-`app` belongs to both profiles on purpose, so `--profile load` boots something worth hitting instead of a generator retrying against nothing.
+`app` and `service-go` belong to both profiles on purpose, so `--profile load` boots something worth hitting instead of a generator retrying against nothing.
 
-The first `up` takes a while to go green: Grafana runs its schema migrations against an empty database before opening its HTTP port, so `docker compose ps` can show it as `starting` for the better part of a minute. `app`, `prometheus` and `grafana` all report `healthy` once ready, and `loadgen` waits for a healthy `app` before it starts generating traffic.
+The first `up` takes a while to go green: Grafana runs its schema migrations against an empty database before opening its HTTP port, so `docker compose ps` can show it as `starting` for the better part of a minute. `app`, `service-go`, `prometheus` and `grafana` all report `healthy` once ready, and `loadgen` waits for a healthy `app` before it starts generating traffic.
 
 The app also runs standalone, without Docker. Use a virtualenv — these requirements are pinned and installing them into your system Python is a bad trade:
 
@@ -212,7 +212,7 @@ worker/
   load_driver.py          # standalone async load generator (calls app's /load/* endpoints)
 grafana/                  # provisioned datasource + "FastAPI Metrics" dashboard
 prometheus.yml            # Prometheus scrape config
-docker-compose.yml        # the four services, their profiles and named volumes
+docker-compose.yml        # the five services, their profiles and named volumes
 tests/                    # pytest suite: one file per module, plus four that check config
 requirements/             # pip-compile sources (base.in/dev.in) and lockfiles (base.txt/dev.txt)
 ```

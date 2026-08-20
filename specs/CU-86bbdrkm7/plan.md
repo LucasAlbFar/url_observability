@@ -207,12 +207,28 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       corrected here, and reworded to say multi-stage counts, since a build stage floating while the
       final stage is pinned is now a reachable mistake.
       Commit: `test(infra): require committed go module checksums`
-- [ ] **Add the service to the compose file.** Profiles `["core", "load"]`, port 8003,
+- [x] **Add the service to the compose file.** Profiles `["core", "load"]`, port 8003,
       `restart: unless-stopped`, healthcheck `wget --spider -q http://localhost:8003/health`, and a
       `start_period` taken from the measurement described in Verification steps, with the reasoning
       written beside the value the way the Prometheus one is. No `depends_on: grafana`. Correct
       `README.md`'s profile table, its "all four", its list of services reporting `healthy` and its
       project-layout comment in this same commit.
+      Done: **`start_period: 10s`, measured from Docker's own timestamps** over two cold
+      `up -d` runs of the service alone, never from wall-clock. Run 1: `.State.StartedAt`
+      `19:46:11.969Z`, the readiness log line `19:46:12.158Z` — **0.19s** — and
+      `.State.Health.Log[0].Start` `19:46:17.175Z`, i.e. the first probe **5.21s** in, passing in
+      0.09s. Run 2 reproduces it: 0.18s to ready, first probe 5.19s in, 0.07s to pass. So readiness
+      is not what the value has to cover; the ~5.2s before the first probe is Docker's start-interval
+      cadence, exactly as the Edge cases entry predicted, and no `start_period` shortens it. 10s is
+      chosen because it is the smallest round value that keeps that first probe **inside** the start
+      period: a cold start on a loaded machine is then retried at the start cadence instead of
+      counting against `retries`, which is the failure that aborts an `up` under `service_healthy`.
+      A 5s value — tried first — would sit *below* the first probe and be inert. Not measured here
+      and left to the verification step: readiness under the full five-service `up`, where the build
+      and three other containers compete for the same machine. `docker compose --profile '*' config
+      --services` resolves **five** services and the suite stays at 33 passed — `CORE_SERVICES` does
+      not yet name `service-go`, which is task 7's commit, so nothing here was made green by
+      loosening a test.
       Commit: `feat(compose): add the go service`
 - [ ] **Scrape it.** A second job in `prometheus.yml` — `job_name: "service-go"`,
       `metrics_path: /metrics`, target `service-go:8003`. `fastapi-app` keeps its name.
