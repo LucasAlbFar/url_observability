@@ -204,51 +204,51 @@ its scrape job is named uniquely, and that its module checksums are committed.
 
 ## Acceptance criteria
 
-- [ ] `tox` passes end to end — `py311` with the new tests, `lint`, and `safety`.
-- [ ] `gofmt -l service-go` prints nothing, and `go vet ./...` and `go test ./...` pass from inside
+- [x] `tox` passes end to end — `py311` with the new tests, `lint`, and `safety`.
+- [x] `gofmt -l service-go` prints nothing, and `go vet ./...` and `go test ./...` pass from inside
       `service-go/`.
-- [ ] `docker compose --profile '*' config -q` exits without error and
+- [x] `docker compose --profile '*' config -q` exits without error and
       `docker compose --profile '*' config --services` resolves five services.
-- [ ] `promtool check config` reports `SUCCESS` for `prometheus.yml`, run through the image derived
+- [x] `promtool check config` reports `SUCCESS` for `prometheus.yml`, run through the image derived
       from `docker-compose.yml` the way the `infra` job derives it.
-- [ ] A cold `docker compose --profile core --profile load up --build -d` reaches `healthy` for
+- [x] A cold `docker compose --profile core --profile load up --build -d` reaches `healthy` for
       `app`, `service-go`, `prometheus` and `grafana`, without the `up` failing on a dependency
       condition.
-- [ ] The Go service's `start_period` is measured from Docker's own timestamps — `.State.StartedAt`
+- [x] The Go service's `start_period` is measured from Docker's own timestamps — `.State.StartedAt`
       against the readiness log line or `.State.Health.Log[].Start`, never wall-clock around
       `up -d` — the observed time is recorded in `plan.md`, and the value in `docker-compose.yml`
       carries its justification beside it.
-- [ ] `curl -s localhost:9090/api/v1/targets` shows both targets with `health: "up"`.
-- [ ] `curl -s 'localhost:9090/api/v1/label/job/values'` returns both job names, and the existing one
+- [x] `curl -s localhost:9090/api/v1/targets` shows both targets with `health: "up"`.
+- [x] `curl -s 'localhost:9090/api/v1/label/job/values'` returns both job names, and the existing one
       is still `fastapi-app`.
-- [ ] The Go service's `/metrics` is captured whole, and its request and process series are
+- [x] The Go service's `/metrics` is captured whole, and its request and process series are
       transcribed into `plan.md` with their labels and the command that produced them.
-- [ ] A query over `process_cpu_seconds_total` without `by (job)` returns the two services' series
+- [x] A query over `process_cpu_seconds_total` without `by (job)` returns the two services' series
       merged, and the same query with `by (job)` returns them separated; both queries and both
       outputs are recorded. **Amended 2026-08-13** from a query over the `/health` route — see
       `### In` for why that filter does not return two services once the Go request metrics carry no
       `handler` label.
-- [ ] What `sum by (handler) (rate(http_requests_total[5m]))` returns with both services under load
+- [x] What `sum by (handler) (rate(http_requests_total[5m]))` returns with both services under load
       is recorded: whether the Go service's requests land in a single unlabelled group beside the
       app's named routes, and whether the dashboard's `handler` variable query lists them.
-- [ ] The dashboard is opened in a browser with both services under load, and whether the Go service
+- [x] The dashboard is opened in a browser with both services under load, and whether the Go service
       appears in the existing panels and in the `handler` dropdown is recorded in `plan.md` as an
       observation, not as an inference from an API response.
-- [ ] `curl -s localhost:8002/health` and `curl -s localhost:8003/health` both return 200, and
+- [x] `curl -s localhost:8002/health` and `curl -s localhost:8003/health` both return 200, and
       `tests/test_health.py` asserts the FastAPI route's exact status code and body.
-- [ ] Both healthchecks in `docker-compose.yml` probe `/health`, and neither probes `/metrics`.
-- [ ] `worker/load_driver.py` drives the Go service's routes, `loadgen` depends on both services with
+- [x] Both healthchecks in `docker-compose.yml` probe `/health`, and neither probes `/metrics`.
+- [x] `worker/load_driver.py` drives the Go service's routes, `loadgen` depends on both services with
       `condition: service_healthy`, and `tests/test_load_driver.py` covers the longer list.
-- [ ] Replacing the runtime image tag with a suffixed variant makes `tests/test_compose_config.py`
+- [x] Replacing the runtime image tag with a suffixed variant makes `tests/test_compose_config.py`
       fail; reverting makes it pass.
-- [ ] Removing `service-go/go.sum` makes exactly one test fail; restoring it makes the suite green.
-- [ ] `installed_packages` in `tests/test_compose_config.py` documents in its docstring that it
+- [x] Removing `service-go/go.sum` makes exactly one test fail; restoring it makes the suite green.
+- [x] `installed_packages` in `tests/test_compose_config.py` documents in its docstring that it
       recognises `pip` only, and why a Go Dockerfile passing it vacuously is accepted here.
-- [ ] `service-go/Dockerfile` resolves dependencies through `go mod download` and contains no
+- [x] `service-go/Dockerfile` resolves dependencies through `go mod download` and contains no
       `go install`.
-- [ ] A CI run on the branch is green on all three jobs and raises no Node deprecation annotation.
-- [ ] `README.md` and `CLAUDE.md` describe a two-service stack — the new directory, port 8003, the
+- [x] A CI run on the branch is green on all three jobs and raises no Node deprecation annotation.
+- [x] `README.md` and `CLAUDE.md` describe a two-service stack — the new directory, port 8003, the
       `go` job, and the pinning coverage a Dockerfile without `pip` does and does not get — and the
       three sentences counting four infrastructure test files are still true.
-- [ ] `git diff --stat main...HEAD` names only the files this feature's plan lists, plus the two
+- [x] `git diff --stat main...HEAD` names only the files this feature's plan lists, plus the two
       documents of this ticket.
