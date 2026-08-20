@@ -96,6 +96,8 @@ services:
     depends_on:
       app:
         condition: service_healthy
+      service-go:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

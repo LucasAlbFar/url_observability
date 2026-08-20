@@ -278,8 +278,19 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       is a change this task has no reason to make. From here the ten-second probe traffic on both
       services lands on an unfiltered handler, which is the dashboard baseline the spec accepted.
       Commit: `refactor(compose): probe readiness through the health route`
-- [ ] **Drive the new service.** Add the Go service's three routes to `URLS`, make `loadgen` depend
+- [x] **Drive the new service.** Add the Go service's three routes to `URLS`, make `loadgen` depend
       on both services with `condition: service_healthy`, and extend `tests/test_load_driver.py`.
+      Done: `URLS` goes from four to **seven** and the suite from 35 to **37 passing**. The two new
+      tests assert the count, that the two hosts present are exactly `app:8002` and
+      `service-go:8003`, and — the asymmetry this feature chose — that `http://app:8002/health` is
+      **absent** while the Go one is present. One change beyond the task's list, and it belongs
+      here rather than in a later commit: `test_loadgen_waits_for_a_healthy_app` in
+      `tests/test_compose_config.py` asserted only the `app` dependency, so it would have stayed
+      green if the `service-go` one were dropped — exactly the condition that aborts an `up`. It is
+      now `test_loadgen_waits_for_every_service_it_drives` and loops over both. Not proved here and
+      left to verification: that seven routes fired every 5s, three of them CPU-bound, do not push
+      the machine hard enough to change Grafana's cold boot — the first feature recorded 35–55s
+      depending on load.
       Commit: `feat(loadgen): drive the go service too`
 - [ ] **Check the Go code in CI.** A `go` job parallel to `build` and `infra`, on
       `actions/checkout@v7` and `actions/setup-go@v7`, running `gofmt -l .` (failing if it prints

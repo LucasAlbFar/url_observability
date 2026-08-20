@@ -176,10 +176,11 @@ def test_core_services_declare_a_healthcheck(compose):
         assert "healthcheck" in compose["services"][name], name
 
 
-def test_loadgen_waits_for_a_healthy_app(compose):
-    """Confirm the generator no longer races the app it hits."""
+def test_loadgen_waits_for_every_service_it_drives(compose):
+    """Confirm the generator races neither of the services it hits."""
     depends_on = compose["services"]["loadgen"]["depends_on"]
-    assert depends_on["app"]["condition"] == "service_healthy"
+    for name in ("app", "service-go"):
+        assert depends_on[name]["condition"] == "service_healthy", name
 
 
 def test_prometheus_command_sets_the_storage_path(compose):
