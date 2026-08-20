@@ -292,9 +292,20 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       the machine hard enough to change Grafana's cold boot — the first feature recorded 35–55s
       depending on load.
       Commit: `feat(loadgen): drive the go service too`
-- [ ] **Check the Go code in CI.** A `go` job parallel to `build` and `infra`, on
+- [x] **Check the Go code in CI.** A `go` job parallel to `build` and `infra`, on
       `actions/checkout@v7` and `actions/setup-go@v7`, running `gofmt -l .` (failing if it prints
       anything), `go vet ./...` and `go test ./...` from `service-go/`.
+      Done: three jobs now — `build`, `go`, `infra` — with `defaults.run.working-directory:
+      service-go` so each step is the bare command. **`gofmt` exits 0 even when it has complaints**;
+      it reports by printing filenames, so the step captures the output and fails on it being
+      non-empty rather than on the exit status. That is the one place this job could have been
+      silently vacuous. The toolchain comes from `go-version-file: service-go/go.mod`, not from a
+      version written into the workflow — the same reason the `infra` job reads the Prometheus image
+      out of the compose file: `go.mod` already says `go 1.25.0`, and a second copy is a second
+      thing to bump. All three commands were run locally against the branch first: `gofmt -l .`
+      prints nothing, `go vet ./...` is clean, `go test ./...` is `ok`. Not proved here: that the
+      job is green on the runner and raises no Node deprecation annotation — both jobs' actions are
+      the Node 24 majors, and the CI run is a verification step.
       Commit: `ci: vet, format-check and test the go service`
 - [ ] **Record the series.** Capture the Go service's `/metrics` whole and transcribe its request
       and process series into this file — name, labels, and the command that produced them. No code.
