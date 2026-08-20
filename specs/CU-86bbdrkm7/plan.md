@@ -381,7 +381,7 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       whole truth once it waited for both. Tables are in the compact `| --- | --- |` style `MD060`
       requires.
       Commit: `docs: update the readme for the second service`
-- [ ] **Run the verification script and record every outcome below.** No commit beyond the tick.
+- [x] **Run the verification script and record every outcome below.** No commit beyond the tick.
 
 ## Edge cases
 
@@ -561,8 +561,13 @@ To be run against the finished branch; each step records its measured outcome he
   **Exactly one**: `test_every_go_dockerfile_commits_its_module_checksums`, at 1 failed / 36 passed
   against the branch's 37; restoring the file returns 37 passed.
 - A CI run on the branch with all three jobs green and no Node deprecation annotation.
-  **Outstanding** — the branch is not pushed yet, so this is the one verification step no local
-  command can answer.
+  **All three green** on PR #5 — `go` 29 s, `infra` 8 s, `build` 58 s — and **no Node deprecation
+  annotation**, so `actions/setup-go@v7` did not reintroduce what the previous feature removed.
+  One annotation did appear, and it is the reason this step is worth running rather than assuming:
+  a warning that `setup-go` could not restore its cache because it looks for `go.mod` at the
+  **repo root**, where this repo has none. Nothing failed, but the module cache was silently never
+  used. Fixed here with `cache-dependency-path: service-go/go.sum`, and the following run is
+  annotation-free.
 - `git diff --stat main...HEAD` names only the files in Affected files, plus this ticket's two
   documents.
 - `git show --stat HEAD` at each commit names only that task's files.

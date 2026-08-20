@@ -48,6 +48,9 @@ jobs:
       uses: actions/setup-go@v7
       with:
         go-version-file: service-go/go.mod
+        # Without this the action looks for go.sum at the repo root,
+        # misses it, and warns that the cache could not be restored.
+        cache-dependency-path: service-go/go.sum
     # gofmt reports by printing filenames and still exits 0, so the
     # check is on its output, not on its status.
     - name: Check formatting
