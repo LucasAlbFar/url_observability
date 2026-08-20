@@ -307,8 +307,51 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       job is green on the runner and raises no Node deprecation annotation — both jobs' actions are
       the Node 24 majors, and the CI run is a verification step.
       Commit: `ci: vet, format-check and test the go service`
-- [ ] **Record the series.** Capture the Go service's `/metrics` whole and transcribe its request
+- [x] **Record the series.** Capture the Go service's `/metrics` whole and transcribe its request
       and process series into this file — name, labels, and the command that produced them. No code.
+      Done: captured from the **container**, with the full stack up and `loadgen` driving both
+      services, by `curl -s localhost:8003/metrics` — 147 lines, 46 metric names. Transcribed below
+      are the request and process series only; the `go_*` runtime family (31 names) and
+      `promhttp_metric_handler_*` are inherited untouched and are not what the dashboard rebuild
+      queries.
+
+      ```text
+      # Declared by this service (no client_golang default exists for them)
+      http_requests_total{code="200",method="get"}
+      http_request_duration_seconds_bucket{code="200",method="get",le="0.005|0.01|0.025|0.05|0.1|
+                                           0.25|0.5|1|2.5|5|10|+Inf"}
+      http_request_duration_seconds_count{code="200",method="get"}
+      http_request_duration_seconds_sum{code="200",method="get"}
+
+      # Inherited from the process collector, no labels at all
+      process_cpu_seconds_total
+      process_max_fds
+      process_open_fds
+      process_resident_memory_bytes
+      process_start_time_seconds
+      process_virtual_memory_bytes
+      process_virtual_memory_max_bytes
+      process_network_receive_bytes_total
+      process_network_transmit_bytes_total
+      ```
+
+      **Ten names are exported by both services**, listed by
+      `comm -12` over the two `/metrics` scraped at the same moment:
+      `http_requests_total`, `http_request_duration_seconds_{bucket,count,sum}`,
+      `process_cpu_seconds_total`, `process_max_fds`, `process_open_fds`,
+      `process_resident_memory_bytes`, `process_start_time_seconds`,
+      `process_virtual_memory_bytes`. The last two of the Go process list —
+      `process_virtual_memory_max_bytes` and the two `process_network_*` — are Go-only, and the
+      Python client's `*_created` gauges are Python-only.
+
+      Three findings the earlier tasks predicted, now read off the wire rather than off the source:
+      the four **process** names the dashboard's resource panels query collide with nothing but
+      `job` and `instance` to separate them; the request metrics collide **by name only**, since
+      this service labels `code`/`method` where the instrumentator labels `handler`/`status`; and
+      one that was not predicted — the shared `method` label disagrees on **case**:
+      `method="get"` from `promhttp`, `method="GET"` from the instrumentator. Even the one label
+      both services do carry cannot be joined on without normalising it, which is a fourth thing
+      the dashboard rebuild inherits.
       Commit: `docs(specs): record the series the go service exports`
 - [ ] **Document it in `CLAUDE.md`.** Two-service architecture, the `service-go/` directory and its
       port, the `go` job and how to run it locally, and what the pinning tests do and do not cover
