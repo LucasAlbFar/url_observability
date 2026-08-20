@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-A demo/learning project showing FastAPI observability with Prometheus + Grafana. The `app` service is a small FastAPI API instrumented via `prometheus-fastapi-instrumentator`; the `loadgen` service is a standalone async script that continuously hits the app's `/load/*` endpoints purely to generate metrics traffic for the Grafana dashboards. There is no database and no task queue (Celery/RQ) — "worker" here means load generator, not background job processor.
+A demo/learning project showing observability with Prometheus + Grafana across **two** services in different languages. The `app` service is a small FastAPI API instrumented via `prometheus-fastapi-instrumentator`; `service-go` is a small Go program instrumented via `prometheus/client_golang`, and it exists to test the claim that the stack attaches to something that is not the FastAPI app. The `loadgen` service is a standalone async script that continuously hits both services' `/load/*` endpoints purely to generate metrics traffic for the Grafana dashboards. There is no database and no task queue (Celery/RQ) — "worker" here means load generator, not background job processor.
 
 ## Stack & versions
 
@@ -14,6 +14,7 @@ What those files don't tell you:
 
 - Python 3.11 — `python:3.11.15` base image, tox `py311`.
 - Prometheus `prom/prometheus:v3.13.2`, Grafana `grafana/grafana:12.4.7`. Every image reference is pinned to an exact patch version, and `tests/test_compose_config.py` rejects anything looser, including a floating minor like `python:3.11`. A Prometheus bump is one line in `docker-compose.yml` — the `infra` job derives the tag from there rather than repeating it — but every copy of a tag in this file and `README.md` has to move with it, and `tests/test_docs_versions.py` fails and names the file when one does not.
+- Go 1.25 (`service-go/go.mod`) with `prometheus/client_golang`, built by `golang:1.26.5` and run on `alpine:3.24.1` — Alpine because its BusyBox `wget --spider` is the healthcheck probe. Nothing in `tox.ini` sees Go: `--cov=app --cov=worker` does not reach it and black/isort/flake8 only read Python, so its checks are a CI job of their own.
 - No mypy, no ruff, and no custom config for black or isort. flake8's only setting is `max-line-length = 88` in `tox.ini`.
 
 **`fastapi[standard-no-fastapi-cloud-cli]`, not `fastapi[standard]`**: since FastAPI 0.139, the `standard` extra pulls in `fastapi-cloud-cli` and its dependencies — deployment tooling this project has no use for. Don't switch `requirements/base.in` back to `standard` without a reason.
@@ -43,6 +44,17 @@ flake8 .         # lint only
 
 `tox.ini` sets flake8 to `max-line-length = 88`, the width black already formats to, so `tox -e lint` accepts what black produces. Left at its 79-column default, flake8 rejects lines black considers finished and no formatting satisfies both.
 
+### Go service
+
+```bash
+cd service-go
+gofmt -l .       # prints the files it would rewrite — and still exits 0
+go vet ./...
+go test ./...    # ~2s: two of the routes cost real time by design
+```
+
+These three are the `go` job in CI, which reads its toolchain from `service-go/go.mod` rather than naming a version. `gofmt` reporting through stdout while exiting 0 is why the job tests its *output*; do the same in any script that calls it.
+
 ### Markdown lint
 
 No command: Markdown is checked live by the `markdownlint` VS Code extension, not by `tox` or CI, so check the editor's Problems panel after editing any `.md`. `.markdownlint.jsonc` is the rule set — stock rules, with `MD013` (line-length) disabled and `MD060` (`table-column-style`) pinned to `compact`, so write tables in the compact style (`| --- | --- |`). Needs an extension bundling markdownlint v0.39.0 or newer.
@@ -68,6 +80,8 @@ docker run --rm --entrypoint promtool \
 ```
 
 The four test files ride along in the normal `tox -e py311` run and need no Docker. They are **structural**: they assert the configuration files parse and carry the fields the stack depends on, and say nothing about whether a query returns data or a dashboard panel is correct. Don't read a green run as a dashboard review.
+
+`tests/test_compose_config.py` reaches every Dockerfile in the repo through `rglob`, but not equally: the base-image pinning rule applies to all of them (bare `major.minor.patch` only — every suffixed tag such as `golang:1.26.5-alpine` is rejected, and so are `scratch` and distroless), while the rule that installed packages are pinned only understands `pip`, so a Dockerfile in another language passes it **vacuously**. For `service-go` what stands in for it is `go.sum` — a hash per module, stronger than pip's `==` — plus the assertion that both `go.mod` and `go.sum` exist and are non-empty. That guarantee is why the image resolves dependencies through `go mod download`; a `go install pkg@latest` would escape every check here. `tests/test_docs_versions.py` does not see this service at all: it maps services declaring `image:`, and a locally built one declares `build:`.
 
 The `docker` commands are what the `infra` job in `.github/workflows/python-app.yml` runs, and they reach semantics no Python test does. One difference: the job reads the Prometheus image out of `docker-compose.yml` instead of naming it, so the tag written above is a copy-pasteable convenience that `tests/test_docs_versions.py` keeps in step. `config -q` exits **0** when it resolves zero services, so never run it without a profile and read success as validation.
 
@@ -100,12 +114,17 @@ Measurements and the reasoning behind each of these: `specs/CU-86bb30dec/plan.md
 
 **The load generator is intentionally decoupled** from the `app` package: its own `Dockerfile`, one pinned dependency (`httpx`), no shared requirements file. Keep it that way. It reads no environment at all — `URLS` in `worker/load_driver.py` is the only list any code reads, so don't reintroduce a `LOADGEN_URLS` env var to duplicate it.
 
-**Observability wiring.** `prometheus.yml` scrapes `app:8002/metrics` every 5s under job `fastapi-app`. Grafana auto-provisions its datasource and `grafana/dashboards/fastapi_metrics.json` from `grafana/provisioning/`.
+**The second service.** `service-go/` is flat on purpose — `main.go`, `main_test.go`, `go.mod`, `go.sum`, `Dockerfile`, no `cmd/` and no packages — and listens on **8003**. It serves `/health`, `/load/io-bound`, `/load/cpu-bound` and `/metrics`, reads no environment, and is called by nothing but the load generator. It deliberately mirrors the app's paths and deliberately does **not** mirror its metric labels: it exports what `client_golang` gives it (`code`/`method`, lowercase verb) rather than the instrumentator's `handler`/`status`. Ten metric names are now exported by both services — the four `process_*` ones the dashboard's resource panels query among them — separated only by `job` and `instance`. That collision is the point of the service, not a defect to fix here; the full series list is in `specs/CU-86bbdrkm7/plan.md`.
+
+**Readiness.** Both services answer `/health` with `{"status": "ok"}` and both healthchecks probe it. Keep the two bodies identical: a route that exists on both services is what makes the merge observable. The probe traffic lands on an unfiltered handler every ten seconds, so a flat baseline in the dashboard panels comes from the healthchecks rather than from load.
+
+**Observability wiring.** `prometheus.yml` scrapes `app:8002/metrics` under job `fastapi-app` and `service-go:8003/metrics` under job `service-go`, both every 5s. Job names must stay unique — a test asserts it, because Prometheus itself accepts a duplicate and silently folds the second job's series under the first one's label. Don't rename `fastapi-app`: the series already in `prometheus_data` are keyed by it. Grafana auto-provisions its datasource and `grafana/dashboards/fastapi_metrics.json` from `grafana/provisioning/`.
 
 ## Testing conventions
 
 - `tests/conftest.py` provides `client`, `test_settings` and `repo_root` — the last is session-scoped and returns the repository root, for tests that read files rather than call code.
-- One test file per module (`test_config.py`, `test_example.py`, `test_main.py`, `test_load.py`, `test_load_driver.py`), asserting exact status code + JSON body.
+- One test file per module (`test_config.py`, `test_example.py`, `test_health.py`, `test_main.py`, `test_load.py`, `test_load_driver.py`), asserting exact status code + JSON body.
+- The Go tests live beside the source in `service-go/main_test.go`, not under `tests/`, and run from `go test` rather than from pytest — the coverage gate never sees them.
 - Four files break that rule on purpose: `test_compose_config.py`, `test_prometheus_config.py`, `test_grafana_provisioning.py` and `test_docs_versions.py` have no Python module behind them — they parse `docker-compose.yml`, `prometheus.yml`, the provisioned Grafana files, and the image versions quoted in `CLAUDE.md` and `README.md`. See "Infra checks" for what they do and do not cover.
 - Async worker tests use `pytest-asyncio` with `unittest.mock.AsyncMock`/`patch` to mock `httpx.AsyncClient.get` (both success and exception paths) and `monkeypatch` to run `main(cycles=1)` instead of an infinite loop — follow this pattern rather than making real network calls in tests.
 

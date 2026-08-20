@@ -353,9 +353,19 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       both services do carry cannot be joined on without normalising it, which is a fourth thing
       the dashboard rebuild inherits.
       Commit: `docs(specs): record the series the go service exports`
-- [ ] **Document it in `CLAUDE.md`.** Two-service architecture, the `service-go/` directory and its
+- [x] **Document it in `CLAUDE.md`.** Two-service architecture, the `service-go/` directory and its
       port, the `go` job and how to run it locally, and what the pinning tests do and do not cover
       for a Dockerfile without `pip`. Conclusions only — the derivation stays here.
+      Done: six edits — the opening paragraph (two services in two languages), a Go line in Stack &
+      versions, a new `### Go service` command block, a paragraph in Infra checks on what the
+      pinning tests reach and what `go.sum` stands in for, two new Architecture paragraphs (**The
+      second service** and **Readiness**) plus the rewritten **Observability wiring**, and two lines
+      in Testing conventions. Conclusions only: every measurement stays in this file, and the
+      Architecture paragraph points here for the series list rather than repeating it. The three
+      sentences counting *four* infrastructure test files are still true and were left alone — this
+      feature added no fifth one. Suite still 37 passed, which also confirms
+      `tests/test_docs_versions.py` does not object to `golang:1.26.5` and `alpine:3.24.1` being
+      quoted in prose: it maps compose services declaring `image:`, and neither tag is one.
       Commit: `docs: document the go service`
 - [ ] **Update `README.md`.** Stack list, the service/URL table, the endpoint table, and whatever the
       earlier tasks left approximate rather than false.
