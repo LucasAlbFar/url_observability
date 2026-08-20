@@ -1,26 +1,37 @@
 # FastAPI Observability Demo
 
-A small FastAPI service instrumented end-to-end with **Prometheus** and **Grafana**, paired with a synthetic load generator so the dashboards always have real traffic to show. No database, no task queue — this project is purely a hands-on observability playground.
+Two small services — one FastAPI, one Go — instrumented end-to-end with **Prometheus** and **Grafana**, paired with a synthetic load generator so the dashboards always have real traffic to show. No database, no task queue — this project is purely a hands-on observability playground.
 
 ## How it works
 
 - **`app`** — a FastAPI service (`app/main.py`) instrumented via `prometheus-fastapi-instrumentator`, which exposes a `/metrics` endpoint.
-- **`loadgen`** — a standalone async script (`worker/load_driver.py`) that continuously calls the app's `/load/*` endpoints over HTTP, purely to generate traffic for the metrics/dashboards.
-- **`prometheus`** — scrapes `app:8002/metrics` every 5s. Both the scrape interval and the retention window (7 days, capped at 512 MB) live in `prometheus.yml`; the container's command line only points it at that file and at the volume its TSDB writes to.
+- **`service-go`** — a small Go service (`service-go/main.go`) instrumented via `prometheus/client_golang`. It exists to test the claim the stack is language-agnostic, so it mirrors the app's paths and keeps its own library's metric labels (`code`/`method`, not `handler`/`status`) instead of imitating them. Ten metric names end up exported by both services, separated only by the `job` label.
+- **`loadgen`** — a standalone async script (`worker/load_driver.py`) that continuously calls both services' `/load/*` endpoints over HTTP, purely to generate traffic for the metrics/dashboards.
+- **`prometheus`** — scrapes `app:8002/metrics` and `service-go:8003/metrics` every 5s, under the jobs `fastapi-app` and `service-go`. Both the scrape interval and the retention window (7 days, capped at 512 MB) live in `prometheus.yml`; the container's command line only points it at that file and at the volume its TSDB writes to.
 - **`grafana`** — auto-provisioned with a Prometheus datasource and a ready-made "FastAPI Metrics" dashboard (request latency p95, throughput, CPU, memory, status codes, 4xx/5xx error rate).
 
-The `/load/*` endpoints each stress a different resource on purpose, so the dashboard has something to plot:
+The `/load/*` endpoints each stress a different resource on purpose, so the dashboard has something to plot. On the FastAPI app (`:8002`):
 
 | Endpoint | What it does | Dashboard panel it feeds |
 | --- | --- | --- |
+| `GET /health` | Returns `{"status": "ok"}` — what the healthcheck probes | — |
 | `GET /load/io-bound` | `asyncio.sleep(2)` | Request latency |
 | `GET /load/cpu-bound` | Blocking CPU-heavy loop | CPU usage |
 | `GET /load/stress/{seconds}` | Blocking busy-wait for N seconds | CPU usage |
 | `GET /load/memory-spike` | Allocates a large in-memory list | Memory usage |
 
+The Go service (`:8003`) serves the same three paths, deliberately — a route that exists on both services is what makes their series merge visible:
+
+| Endpoint | What it does |
+| --- | --- |
+| `GET /health` | Returns the same `{"status": "ok"}` body the app does |
+| `GET /load/io-bound` | Sleeps 2s |
+| `GET /load/cpu-bound` | Spins for roughly as long as the FastAPI one takes |
+
 ## Stack
 
 - Python 3.11
+- Go 1.25 with `prometheus/client_golang`, built by `golang:1.26.5` and run on `alpine:3.24.1`
 - FastAPI 0.139 (Uvicorn), Pydantic 2 / pydantic-settings
 - prometheus-fastapi-instrumentator
 - pytest, pytest-asyncio, pytest-cov (80% coverage gate)
@@ -41,6 +52,7 @@ docker compose --profile core --profile load up --build
 | Service | URL |
 | --- | --- |
 | FastAPI app | <http://localhost:8002> |
+| Go service | <http://localhost:8003> |
 | Prometheus | <http://localhost:9090> |
 | Grafana | <http://localhost:3000> (login: `admin` / `admin`) |
 
@@ -56,7 +68,7 @@ Pick the group you need:
 
 `app` and `service-go` belong to both profiles on purpose, so `--profile load` boots something worth hitting instead of a generator retrying against nothing.
 
-The first `up` takes a while to go green: Grafana runs its schema migrations against an empty database before opening its HTTP port, so `docker compose ps` can show it as `starting` for the better part of a minute. `app`, `service-go`, `prometheus` and `grafana` all report `healthy` once ready, and `loadgen` waits for a healthy `app` before it starts generating traffic.
+The first `up` takes a while to go green: Grafana runs its schema migrations against an empty database before opening its HTTP port, so `docker compose ps` can show it as `starting` for the better part of a minute. `app`, `service-go`, `prometheus` and `grafana` all report `healthy` once ready, and `loadgen` waits for both `app` and `service-go` to be healthy before it starts generating traffic.
 
 The app also runs standalone, without Docker. Use a virtualenv — these requirements are pinned and installing them into your system Python is a bad trade:
 
@@ -135,6 +147,15 @@ Run everything (tests + lint + dependency audit) at once:
 tox
 ```
 
+`tox` covers the Python side only — the coverage gate, black, isort and flake8 never look at `service-go/`. The Go checks are their own CI job, and locally:
+
+```bash
+cd service-go
+gofmt -l .       # prints the files it would rewrite, and still exits 0
+go vet ./...
+go test ./...
+```
+
 ### Infra checks
 
 Four test files validate the stack's configuration rather than any Python module — `docker-compose.yml`, `prometheus.yml`, the provisioned Grafana files, and the image versions this README and `CLAUDE.md` quote. They run inside the normal `tox` and need no Docker. CI additionally validates the same files with the tools that own them:
@@ -208,8 +229,12 @@ app/
   main.py                 # FastAPI app, instrumentation, router registration
   api/endpoints/          # one module per route group (example, health, load)
   core/config.py          # pydantic-settings Settings singleton
+service-go/
+  main.go                 # the Go service: /health, /load/*, /metrics on :8003
+  main_test.go            # its tests — run by `go test`, not by pytest
+  go.mod / go.sum         # module definition and committed checksums
 worker/
-  load_driver.py          # standalone async load generator (calls app's /load/* endpoints)
+  load_driver.py          # standalone async load generator (calls both services' endpoints)
 grafana/                  # provisioned datasource + "FastAPI Metrics" dashboard
 prometheus.yml            # Prometheus scrape config
 docker-compose.yml        # the five services, their profiles and named volumes

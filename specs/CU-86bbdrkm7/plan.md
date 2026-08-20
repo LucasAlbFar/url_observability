@@ -367,8 +367,19 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       `tests/test_docs_versions.py` does not object to `golang:1.26.5` and `alpine:3.24.1` being
       quoted in prose: it maps compose services declaring `image:`, and neither tag is one.
       Commit: `docs: document the go service`
-- [ ] **Update `README.md`.** Stack list, the service/URL table, the endpoint table, and whatever the
+- [x] **Update `README.md`.** Stack list, the service/URL table, the endpoint table, and whatever the
       earlier tasks left approximate rather than false.
+      Done: the opening line stops calling the project "a small FastAPI service"; `service-go` and
+      the two scrape jobs join "How it works"; the stack list gains Go 1.25 and both image tags; the
+      service/URL table gains `localhost:8003`; the endpoint table gains `/health` and is followed
+      by a second table for the Go routes, kept separate because the Go service has no
+      `/load/stress/{seconds}` or `/load/memory-spike` and a merged table would have to say so in
+      every cell; "Development" gains the three Go commands with the note that `tox` never looks at
+      `service-go/`; and the project layout gains the directory. One sentence the earlier tasks left
+      **approximate rather than false** and this task was written to catch: the first-`up` paragraph
+      still said `loadgen` waits for a healthy `app`, which stayed true while ceasing to be the
+      whole truth once it waited for both. Tables are in the compact `| --- | --- |` style `MD060`
+      requires.
       Commit: `docs: update the readme for the second service`
 - [ ] **Run the verification script and record every outcome below.** No commit beyond the tick.
 
