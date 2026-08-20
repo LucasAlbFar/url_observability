@@ -265,8 +265,18 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       the responses did not. This closes the reservation the compose-hardening feature wrote down;
       the probes still point at `/metrics` until the next task moves them.
       Commit: `feat(app): add a health route`
-- [ ] **Move both probes onto it.** The `app` healthcheck stops requesting `/metrics` and both
+- [x] **Move both probes onto it.** The `app` healthcheck stops requesting `/metrics` and both
       services probe `/health`.
+      Done: only the URL changed in the `app` probe — the `python -c urlopen(...)` form is kept,
+      because rewriting a working check buys nothing and the two services already probe the same
+      path. Proved against the rebuilt container rather than against the file: `app` reaches
+      `healthy` with two passing probes and `curl localhost:8002/health` and
+      `curl localhost:8003/health` both return `{"status":"ok"}` — the same bytes from both
+      services. One assumption of this task's first draft was wrong and is recorded so it is not
+      re-derived: the app image **does** ship `wget` at `/usr/bin/wget` (Debian-based
+      `python:3.11.15`), so the two probe forms differ by history, not by necessity; unifying them
+      is a change this task has no reason to make. From here the ten-second probe traffic on both
+      services lands on an unfiltered handler, which is the dashboard baseline the spec accepted.
       Commit: `refactor(compose): probe readiness through the health route`
 - [ ] **Drive the new service.** Add the Go service's three routes to `URLS`, make `loadgen` depend
       on both services with `condition: service_healthy`, and extend `tests/test_load_driver.py`.
