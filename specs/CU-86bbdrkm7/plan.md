@@ -345,8 +345,9 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       Python client's `*_created` gauges are Python-only.
 
       Three findings the earlier tasks predicted, now read off the wire rather than off the source:
-      the four **process** names the dashboard's resource panels query collide with nothing but
-      `job` and `instance` to separate them; the request metrics collide **by name only**, since
+      **six** `process_*` names collide with nothing but `job` and `instance` to separate them, and
+      the two the dashboard's resource panels query — `process_cpu_seconds_total` and
+      `process_resident_memory_bytes` — are among them; the request metrics collide **by name only**, since
       this service labels `code`/`method` where the instrumentator labels `handler`/`status`; and
       one that was not predicted — the shared `method` label disagrees on **case**:
       `method="get"` from `promhttp`, `method="GET"` from the instrumentator. Even the one label
