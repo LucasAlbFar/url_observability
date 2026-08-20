@@ -13,7 +13,7 @@ import yaml
 
 PINNED_TAG = re.compile(r"^v?\d+\.\d+\.\d+$")
 FROM_IMAGE = re.compile(r"^FROM\s+(\S+)", re.MULTILINE)
-CORE_SERVICES = ("app", "prometheus", "grafana")
+CORE_SERVICES = ("app", "service-go", "prometheus", "grafana")
 # The base image name that marks a Dockerfile as Go-built.
 GO_BASE = "golang"
 GO_MODULE_FILES = ("go.mod", "go.sum")
@@ -171,7 +171,7 @@ def test_every_service_declares_a_profile(compose):
 
 
 def test_core_services_declare_a_healthcheck(compose):
-    """Confirm the three serving containers report their readiness."""
+    """Confirm the four serving containers report their readiness."""
     for name in CORE_SERVICES:
         assert "healthcheck" in compose["services"][name], name
 

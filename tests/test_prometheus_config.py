@@ -33,6 +33,18 @@ def test_every_scrape_job_names_itself(prometheus_config):
         assert job.get("job_name"), job
 
 
+def test_scrape_job_names_are_unique(prometheus_config):
+    """Confirm no two jobs claim the same `job` label.
+
+    Prometheus accepts a duplicated job_name, so promtool does not
+    catch this: the second job's series simply land under the first
+    one's label, which is the only thing separating two services that
+    export the same metric names.
+    """
+    names = [job["job_name"] for job in prometheus_config["scrape_configs"]]
+    assert len(names) == len(set(names)), names
+
+
 def test_storage_retention_is_bounded(prometheus_config):
     """Confirm the TSDB is capped in both time and size.
 

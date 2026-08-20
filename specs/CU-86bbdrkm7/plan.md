@@ -239,9 +239,20 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       and promtool does not supply it: it validated this file while the uniqueness rule did not
       exist. The existing infra tests stay green at 16 passed.
       Commit: `feat(prometheus): scrape the go service`
-- [ ] **Assert both.** `CORE_SERVICES` in `tests/test_compose_config.py` grows to include
+- [x] **Assert both.** `CORE_SERVICES` in `tests/test_compose_config.py` grows to include
       `service-go`; `tests/test_prometheus_config.py` gains a test that job names are unique across
       `scrape_configs`.
+      Done: the suite goes from 33 to **34 passing**. Both assertions were proved to bite rather
+      than assumed to: renaming the new job to `fastapi-app` fails exactly
+      `test_scrape_job_names_are_unique` (1 failed / 5 passed), and deleting the `service-go`
+      healthcheck block fails exactly `test_core_services_declare_a_healthcheck` (1 failed / 10
+      passed); both revert to green. The uniqueness test earns its place precisely because promtool
+      does **not** supply it — the previous task's `promtool check config` returned SUCCESS on a file
+      with no such rule, and Prometheus accepts a duplicated `job_name` by folding the second job's
+      series under the first one's label, which is the only thing separating two services exporting
+      identical metric names. One docstring corrected in passing, as a consequence of this change
+      rather than tidying: `test_core_services_declare_a_healthcheck` said "the three serving
+      containers", and there are now four.
       Commit: `test(infra): assert the second service and scrape job`
 - [ ] **Give the app a health route.** `app/api/endpoints/health.py` exporting `router`, registered
       in `app/main.py`, with `tests/test_health.py` asserting the exact status code and JSON body.
