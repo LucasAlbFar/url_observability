@@ -206,7 +206,7 @@ Notes:
 ```text
 app/
   main.py                 # FastAPI app, instrumentation, router registration
-  api/endpoints/          # one module per route group (example, load)
+  api/endpoints/          # one module per route group (example, health, load)
   core/config.py          # pydantic-settings Settings singleton
 worker/
   load_driver.py          # standalone async load generator (calls app's /load/* endpoints)

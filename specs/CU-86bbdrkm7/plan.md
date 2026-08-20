@@ -254,9 +254,16 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       rather than tidying: `test_core_services_declare_a_healthcheck` said "the three serving
       containers", and there are now four.
       Commit: `test(infra): assert the second service and scrape job`
-- [ ] **Give the app a health route.** `app/api/endpoints/health.py` exporting `router`, registered
+- [x] **Give the app a health route.** `app/api/endpoints/health.py` exporting `router`, registered
       in `app/main.py`, with `tests/test_health.py` asserting the exact status code and JSON body.
       Correct `README.md`'s "one module per route group (example, load)" here.
+      Done: 34 → **35 passing**, `tox -e lint` green. The router is registered without a prefix, so
+      the path is `/health` rather than under a group — which is what the compose probe and the Go
+      service both expect. The body is `{"status": "ok"}`, chosen to be **byte-for-byte the Go
+      service's** rather than an independent shape: the point of this route is that two services
+      answer the same path the same way, and a body that differed would make the paths collide while
+      the responses did not. This closes the reservation the compose-hardening feature wrote down;
+      the probes still point at `/metrics` until the next task moves them.
       Commit: `feat(app): add a health route`
 - [ ] **Move both probes onto it.** The `app` healthcheck stops requesting `/metrics` and both
       services probe `/health`.
