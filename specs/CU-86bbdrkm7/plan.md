@@ -230,8 +230,14 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       not yet name `service-go`, which is task 7's commit, so nothing here was made green by
       loosening a test.
       Commit: `feat(compose): add the go service`
-- [ ] **Scrape it.** A second job in `prometheus.yml` — `job_name: "service-go"`,
+- [x] **Scrape it.** A second job in `prometheus.yml` — `job_name: "service-go"`,
       `metrics_path: /metrics`, target `service-go:8003`. `fastapi-app` keeps its name.
+      Done: `promtool check config` reports **SUCCESS**, run through the image read out of
+      `docker-compose.yml` (`prom/prometheus:v3.13.2`) the way the `infra` job derives it rather than
+      through a named tag. `fastapi-app` is untouched, so the series already in `prometheus_data`
+      keep their `job` label. Nothing yet forbids a duplicate `job_name` — that assertion is task 7,
+      and promtool does not supply it: it validated this file while the uniqueness rule did not
+      exist. The existing infra tests stay green at 16 passed.
       Commit: `feat(prometheus): scrape the go service`
 - [ ] **Assert both.** `CORE_SERVICES` in `tests/test_compose_config.py` grows to include
       `service-go`; `tests/test_prometheus_config.py` gains a test that job names are unique across
