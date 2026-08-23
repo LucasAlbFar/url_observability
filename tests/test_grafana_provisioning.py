@@ -132,24 +132,39 @@ def test_no_two_panels_share_grid_space(dashboards):
     an assertion.
     """
     for name, dashboard in dashboards:
-        rects = [
-            (
-                panel["gridPos"]["x"],
-                panel["gridPos"]["y"],
-                panel["gridPos"]["x"] + panel["gridPos"]["w"],
-                panel["gridPos"]["y"] + panel["gridPos"]["h"],
-                panel.get("title"),
-            )
-            for panel in dashboard["panels"]
+        groups = [dashboard["panels"]]
+        groups += [
+            panel["panels"] for panel in dashboard["panels"] if panel.get("panels")
         ]
-        for left, right in itertools.combinations(rects, 2):
-            apart = (
-                left[2] <= right[0]
-                or right[2] <= left[0]
-                or left[3] <= right[1]
-                or right[3] <= left[1]
-            )
-            assert apart, (name, left[4], right[4])
+        for group in groups:
+            check_no_overlap(name, group)
+
+
+def check_no_overlap(name, panels):
+    """Assert no two panels in one layout group overlap.
+
+    Groups are compared separately: a collapsed row holds its children
+    in its own list, and their coordinates only mean anything next to
+    each other.
+    """
+    rects = [
+        (
+            panel["gridPos"]["x"],
+            panel["gridPos"]["y"],
+            panel["gridPos"]["x"] + panel["gridPos"]["w"],
+            panel["gridPos"]["y"] + panel["gridPos"]["h"],
+            panel.get("title"),
+        )
+        for panel in panels
+    ]
+    for left, right in itertools.combinations(rects, 2):
+        apart = (
+            left[2] <= right[0]
+            or right[2] <= left[0]
+            or left[3] <= right[1]
+            or right[3] <= left[1]
+        )
+        assert apart, (name, left[4], right[4])
 
 
 def test_every_query_references_a_declared_datasource_uid(dashboards, datasource_uids):
@@ -198,8 +213,16 @@ def queries(dashboard):
         for target in panel.get("targets", []):
             yield target["expr"]
     for variable in dashboard.get("templating", {}).get("list", []):
-        if "query" in variable:
-            yield variable["query"]
+        query = variable.get("query")
+        # Grafana writes a Prometheus query variable as a string or, once
+        # it has been edited in the UI, as an object holding the same text
+        # under its own "query" key. Reading only the first form would let
+        # this test pass over the second without looking at it.
+        if isinstance(query, dict):
+            query = query.get("query")
+        for text in (query, variable.get("definition")):
+            if isinstance(text, str):
+                yield text
 
 
 def test_no_query_names_a_scrape_job(dashboards, scrape_job_names):
@@ -215,6 +238,22 @@ def test_no_query_names_a_scrape_job(dashboards, scrape_job_names):
         for query in queries(dashboard):
             for job in scrape_job_names:
                 assert job not in query, (name, job, query)
+
+
+def test_datasource_time_interval_matches_the_scrape_interval(repo_root):
+    """Confirm Grafana is told how often Prometheus actually scrapes.
+
+    `$__rate_interval` is derived from this value, not from
+    prometheus.yml, and Grafana falls back to its own 15s default when
+    the datasource stays quiet — which silently floors every rate
+    window in every dashboard at 60s.
+    """
+    datasources = yaml.safe_load((repo_root / DATASOURCE_CONFIG).read_text())
+    prometheus = yaml.safe_load((repo_root / PROMETHEUS_CONFIG).read_text())
+    scrape = prometheus["global"]["scrape_interval"]
+    for datasource in datasources["datasources"]:
+        declared = datasource.get("jsonData", {}).get("timeInterval")
+        assert declared == scrape, (datasource["name"], declared, scrape)
 
 
 def test_provider_path_matches_the_compose_mount(repo_root):
