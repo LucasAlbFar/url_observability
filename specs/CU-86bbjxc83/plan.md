@@ -361,9 +361,22 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       because it had read it from the scrape configuration a moment earlier. The next feature adds
       that service for real and inherits the guard without touching this file.
       Commit: `test(grafana): forbid literal job names in panel queries`
-- [ ] **Document it in `CLAUDE.md`.** The new path, the three panel rows and what separates them,
+- [x] **Document it in `CLAUDE.md`.** The new path, the three panel rows and what separates them,
       the rule that `job` belongs inside every bucket grouping, and why a convention row never names
       a job. Conclusions only — the derivation stays in this plan.
+      Done: one new `**The dashboard.**` block in the architecture section, plus two sentences
+      elsewhere that this feature made false. `**Observability wiring.**` named
+      `fastapi_metrics.json`; the `### Infra checks` paragraph said the four infra test files "say
+      nothing about whether a query returns data or a dashboard panel is correct", which stopped
+      being true in task 5 — it now separates the three that stayed purely structural from
+      `test_grafana_provisioning.py`, which does read panel types, ids, positions, datasource
+      references and queries, and keeps the part that still holds: none of them proves a panel drew.
+      **Written twice, because the first draft was 243 words** against 45, 53, 124 and 58 for its
+      neighbours in the same section — the shape the earlier debt-closing feature flagged as out of
+      proportion. Trimmed to 170 with no fact dropped: what went was restatement, not content. The
+      three coexistence rules, the presence-test trap, the p95 cap and the `deleteDatasources:`
+      requirement are all still there, one clause of reasoning each; the measurements behind them
+      stay here.
       Commit: `docs: document the multi-service dashboard`
 - [ ] **Update `README.md`.** The three sentences naming *FastAPI Metrics*, including the project
       layout line, and a description of what the rebuilt dashboard shows.
