@@ -242,14 +242,14 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       disk made `/api/dashboards/uid/fastapi-dashboard` return `Dashboard not found` within ~5 s,
       with no restart. `disableDeletion: false` behaves as the plan read it.
       Commit: `feat(grafana): rebuild the dashboard for multiple services`
-- [ ] **Add the per-convention rows.** Two `row` panels and the five panels under them, selected by
+- [x] **Add the per-convention rows.** Two `row` panels and the five panels under them, selected by
       label presence and never by job name, with `job` inside every bucket grouping:
 
       | Row | Panel | Expression |
       | --- | --- | --- |
-      | Routes (`handler`) | p95 by route | `histogram_quantile(0.95, sum by (le, job, handler) (rate(http_request_duration_seconds_bucket{job=~"$job", handler=~"$handler", handler!="/metrics"}[$__rate_interval])))` |
-      | Routes (`handler`) | Throughput by route | `sum by (job, handler) (rate(http_requests_total{job=~"$job", handler=~"$handler", handler!="/metrics"}[$__rate_interval]))` |
-      | Routes (`handler`) | Status codes by route | `sum by (job, handler, status) (rate(http_requests_total{job=~"$job", handler=~"$handler", handler!="/metrics"}[$__rate_interval]))` |
+      | Routes (`handler`) | p95 by route | `histogram_quantile(0.95, sum by (le, job, handler) (rate(http_request_duration_seconds_bucket{job=~"$job", handler!="", handler=~"$handler", handler!="/metrics"}[$__rate_interval])))` |
+      | Routes (`handler`) | Throughput by route | `sum by (job, handler) (rate(http_requests_total{job=~"$job", handler!="", handler=~"$handler", handler!="/metrics"}[$__rate_interval]))` |
+      | Routes (`handler`) | Status codes by route | `sum by (job, handler, status) (rate(http_requests_total{job=~"$job", handler!="", handler=~"$handler", handler!="/metrics"}[$__rate_interval]))` |
       | Requests (`code`) | p95 by code | `histogram_quantile(0.95, sum by (le, job, code) (rate(http_request_duration_seconds_bucket{job=~"$job", code!=""}[$__rate_interval])))` |
       | Requests (`code`) | Throughput by code and method | `sum by (job, code, method) (rate(http_requests_total{job=~"$job", code!=""}[$__rate_interval]))` |
 
@@ -258,6 +258,43 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       `+Inf` — so any route slower than one second falls in `+Inf` and this panel reads a flat 1s
       for it. The text has to stand on its own, because it is read inside Grafana by someone with no
       access to this repository. Re-export and re-adopt as in the previous task.
+      Done: **the query table above was wrong when this plan was written, and the error was the one
+      this feature exists to fix.** The route panels selected with `handler=~"$handler"` and no
+      presence test. With the variable on `All`, Grafana substitutes `.*`, and `.*` matches a series
+      that carries no `handler` label at all — so measured 2026-08-23, that grouping returned six
+      series: the app's five named routes plus `('service-go', <no label>)`, the whole Go service
+      collapsed into one unlabelled group. That is verbatim the defect the baseline recorded in the
+      old dashboard. `handler!=""` is required in every route panel, not only in the variable's own
+      query; with it the same grouping returns five, all `fastapi-app`. The table is corrected
+      above. The spec never had this wrong — it says the convention rows select by label presence —
+      so this was the plan's transcription, and worth stating because the query reads correct.
+      **The two conventions on screen, side by side, with no job name anywhere in the file:**
+
+      | Panel | Series | Legend |
+      | --- | --- | --- |
+      | p95 by route | 5 | `fastapi-app — /health`, and the four `/load/*` |
+      | Throughput by route | 5 | the same five |
+      | Status codes by route | 5 | `fastapi-app — /load/io-bound — 2xx`, and so on |
+      | p95 by code | 1 | `service-go — 200` |
+      | Throughput by code and method | 1 | `service-go — get 200` |
+
+      `2xx` on one row and `200` on the other, `get` in lowercase — the divergence is legible on
+      screen and in the file, which is what the later feature needs from it. Each service appears in
+      exactly the row that fits its instrumentation, and neither query names a job.
+      **The bucket debt turned out to be visible without reading anything.** The two p95 panels sit
+      one above the other, and both services run a 2-second `/load/io-bound`: the route row reads a
+      flat **1s** for the app, the code row reads **~2.2s** for the Go service. The same latency,
+      one measured and one capped. That comparison is a better argument for widening the app's
+      buckets than the sentence in the panel description, and it exists only because the dashboard
+      now puts the two conventions on one page.
+      **Byte-identity held on the first pass this time** — 11344 characters both ways, fourteen
+      panels, ids `1..14`. The three convergence passes task 3 needed bought this: panels of the
+      same shape inherit the defaults that were already discovered.
+      **One trap worth writing down, and it is not the file's fault.** After a forced navigation
+      that discarded a "Leave site?" dialog, the dashboard rendered with its row titles and no
+      panels at all — which reads exactly like a broken JSON. A plain reload rendered everything.
+      The scene state was stale, not the file; check with a clean load before believing a blank
+      dashboard.
       Commit: `feat(grafana): add the per-convention panel rows`
 - [ ] **Assert the dashboard declares what it renders.** In `tests/test_grafana_provisioning.py`:
       no panel of type `graph`; every panel carries an `id` and the ids are unique; `refId` unique

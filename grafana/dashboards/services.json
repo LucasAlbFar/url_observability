@@ -374,6 +374,302 @@
       ],
       "title": "Resident memory",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "id": 8,
+      "panels": [],
+      "title": "Routes (handler)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "The FastAPI app exposes four latency buckets — 0.1, 0.5, 1.0 and +Inf — so any route slower than one second lands in +Inf and this panel reads a flat 1s for it. Measured 2026-08-23: /load/io-bound takes 2s and reads 1s here. Widening the buckets is an instrumentation change and is deliberately outside this dashboard. Grouped by job so that bucket sets from different services are never summed: the two here share only the 1s and +Inf bounds.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "min": 0,
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 18
+      },
+      "id": 9,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, job, handler) (rate(http_request_duration_seconds_bucket{job=~\"$job\", handler!=\"\", handler=~\"$handler\", handler!=\"/metrics\"}[$__rate_interval])))",
+          "legendFormat": "{{job}} — {{handler}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "p95 by route",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Selected by the presence of the handler label, never by job name, so any service that labels its routes appears here on its own. Without handler!=\"\" the regex would also match services that carry no handler label at all, collapsing them into one unlabelled group — measured 2026-08-23.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "min": 0,
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 18
+      },
+      "id": 10,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (job, handler) (rate(http_requests_total{job=~\"$job\", handler!=\"\", handler=~\"$handler\", handler!=\"/metrics\"}[$__rate_interval]))",
+          "legendFormat": "{{job}} — {{handler}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Throughput by route",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "The app labels status by class, so these read 2xx and 4xx, not 200 and 404.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "min": 0,
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 18
+      },
+      "id": 11,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (job, handler, status) (rate(http_requests_total{job=~\"$job\", handler!=\"\", handler=~\"$handler\", handler!=\"/metrics\"}[$__rate_interval]))",
+          "legendFormat": "{{job}} — {{handler}} — {{status}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Status codes by route",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "id": 12,
+      "panels": [],
+      "title": "Requests (code)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Selected by the presence of the code label. Grouped by job so that bucket sets from different services are never summed: the two here share only the 1s and +Inf bounds.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "min": 0,
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 27
+      },
+      "id": 13,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, job, code) (rate(http_request_duration_seconds_bucket{job=~\"$job\", code!=\"\"}[$__rate_interval])))",
+          "legendFormat": "{{job}} — {{code}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "p95 by code",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "The Go service labels code by exact code and method in lowercase, which is what its client library emits. No attempt is made to reconcile that with the app's classes.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "min": 0,
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 27
+      },
+      "id": 14,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (job, code, method) (rate(http_requests_total{job=~\"$job\", code!=\"\"}[$__rate_interval]))",
+          "legendFormat": "{{job}} — {{method}} {{code}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Throughput by code and method",
+      "type": "timeseries"
     }
   ],
   "preload": false,
