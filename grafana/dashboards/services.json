@@ -90,6 +90,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "Excludes the app's own /metrics route, which it instruments and the Go service does not: counting it would put a fifth of one service's traffic on a panel whose job is to compare the two. The negative matcher is safe here because it keeps series that carry no handler label at all, which is every service that does not label routes.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -129,7 +130,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (job) (rate(http_requests_total{job=~\"$job\"}[$__rate_interval]))",
+          "expr": "sum by (job) (rate(http_requests_total{job=~\"$job\", handler!=\"/metrics\"}[$__rate_interval]))",
           "legendFormat": "{{job}}",
           "range": true,
           "refId": "A"
@@ -393,7 +394,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "The FastAPI app exposes four latency buckets — 0.1, 0.5, 1.0 and +Inf — so any route slower than one second lands in +Inf and this panel reads a flat 1s for it. Measured 2026-08-23: /load/io-bound takes 2s and reads 1s here. Widening the buckets is an instrumentation change and is deliberately outside this dashboard. Grouped by job so that bucket sets from different services are never summed: the two here share only the 1s and +Inf bounds.",
+      "description": "The FastAPI app exposes four latency buckets — 0.1, 0.5, 1.0 and +Inf — so any route slower than one second lands in +Inf and this panel reads a flat 1s for it. Measured 2026-08-23: /load/io-bound takes 2s and reads 1s here. Widening the buckets is an instrumentation change and is deliberately outside this dashboard. Grouped by job so that bucket sets from different services are never summed. The app publishes four bounds and the Go service twelve, and the app's four are a subset of them — so a merged sum would carry bounds the app never reports, every bucket below 0.1 would count one service only, and the quantile would describe neither.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -568,7 +569,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Selected by the presence of the code label. Grouped by job so that bucket sets from different services are never summed: the two here share only the 1s and +Inf bounds.",
+      "description": "Selected by the presence of the code label. Grouped by job so that bucket sets from different services are never summed. The app publishes four bounds and the Go service twelve, and the app's four are a subset of them — so a merged sum would carry bounds the app never reports, every bucket below 0.1 would count one service only, and the quantile would describe neither.",
       "fieldConfig": {
         "defaults": {
           "custom": {
