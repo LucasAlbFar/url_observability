@@ -36,11 +36,15 @@ Measured 2026-08-23 against the running stack — five containers, all four heal
   returns exactly three series, all on `service-go:8003`, one per code — `client_golang` registers
   that collector by default and it measures the `/metrics` handler itself. A variable built on `code`
   would list failures that never happened.
-- **The `le` sets diverge and share almost nothing.** From
+- **The `le` sets differ in resolution, and one contains the other.** From
   `match[]=http_request_duration_seconds_bucket`: `fastapi-app` has `0.1, 0.5, 1.0, +Inf`;
-  `service-go` has the twelve `client_golang` defaults, `0.005` through `10` plus `+Inf`. Common
-  bounds: `1.0` and `+Inf`. Summing across jobs is meaningless, which is what forces `job` into
-  every bucket grouping.
+  `service-go` has the twelve `client_golang` defaults, `0.005` through `10` plus `+Inf`. **Corrected
+  2026-08-23, in review** — this first read "common bounds: `1.0` and `+Inf`", and that is wrong:
+  all four of the app's bounds appear in the Go service's set, so the app's is a strict subset.
+  Summing across jobs is still meaningless, for a reason the wrong version got right by accident —
+  the merged histogram carries eight bounds the app never reports, so every bucket below `0.1`
+  counts the Go service alone and the quantile describes neither service. That is what forces `job`
+  into every bucket grouping.
 - **A negative matcher matches the series that lack the label — measured, not reasoned.**
   `match[]=http_requests_total{code!="200"}` returns 8 series, **all of them `fastapi-app`**, and
   zero from `service-go`. The app carries no `code` label at all, so the matcher returned exactly
@@ -425,8 +429,10 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
 - **A negative matcher matches series without the label.** Measured above: `code!="200"` returned
   only `fastapi-app`. Every convention row selects with `!=""`, and no cross-service panel uses a
   negative form on a convention label.
-- **Summing buckets across jobs produces a meaningless number.** The two `le` sets share `1.0` and
-  `+Inf`. Any `by (le, …)` without `job` inside is a defect, not a style choice.
+- **Summing buckets across jobs produces a meaningless number.** Not because the `le` sets are
+  disjoint — the app's four bounds are all present in the Go service's twelve — but because the
+  merged histogram then carries bounds only one service reports. Any `by (le, …)` without `job`
+  inside is a defect, not a style choice.
 - **The app's p95 is capped at one second** by its own bucket resolution — its four buckets end at
   `1.0` before `+Inf`, and widening them is instrumentation work this feature excludes. Measured
   2026-08-23, and stated in full in the panel description by task 4. Without that note, a line that
@@ -447,6 +453,22 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
   same metric differently. Behaviour, not defect.
 - **The API cannot answer "does it render?".** It returns the stored model. Every panel-level
   verification is done in a browser.
+- **`$__rate_interval` is derived from the datasource, not from `prometheus.yml`.** Found in review,
+  2026-08-23: the provisioned datasource declared no `jsonData.timeInterval`, so Grafana assumed its
+  own 15s default against a 5s scrape and floored every rate window in the dashboard at 60s —
+  invisible until someone zooms in expecting to see a burst. Declaring `timeInterval: 5s` duplicates
+  a value that lives in `prometheus.yml`, which is the drift shape this project has been bitten by
+  before, so `test_datasource_time_interval_matches_the_scrape_interval` holds the two together.
+- **The app instruments its own `/metrics` route and the Go service does not.** Measured in review:
+  0.200 req/s of the app's 0.857, against 0.514 for the Go service — a fifth of one side of the
+  panel that exists to compare them, and none of the other. The cross-service throughput panel
+  filters it out. This is the one place a negative matcher on a convention label is correct rather
+  than a trap: `handler!="/metrics"` keeps every series that carries no `handler` at all, which is
+  exactly the services the filter must not touch.
+- **`deleteDatasources:` runs on every boot, so it orphans hand-made dashboards once.** The
+  `T12 live test` dashboard in `grafana_data` points at `{"uid": "P1809F7CD0C75ACF3"}`, the uid this
+  feature deleted, and its panels come back without a datasource. `README.md` promised that
+  hand-made dashboards survive a `down`; it now carries the one-off exception beside that promise.
 - **New test code is Python and goes through `tox -e lint`** — black at 88 columns and flake8
   configured to match. The JSON file is not linted by anything except the tests written here.
 - **Markdownlint** on the `CLAUDE.md` and `README.md` edits: compact tables (MD060), blank lines
@@ -456,7 +478,7 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
 
 Run 2026-08-23, against the volumes that already existed. Every step carries what it returned.
 
-1. `tox` — **green end to end.** `py311` 45 passed, coverage 100% against the 80% gate; `lint`
+1. `tox` — **green end to end.** `py311` 46 passed after the review round (45 before it), coverage 100% against the 80% gate; `lint`
    clean on black, isort and flake8; `safety` reports no known vulnerabilities in either
    `requirements/base.txt` or `requirements/dev.txt`, audited separately as the convention requires.
    43.6 s total.

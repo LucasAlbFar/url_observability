@@ -118,11 +118,11 @@ Measurements and the reasoning behind each of these: `specs/CU-86bb30dec/plan.md
 
 **The dashboard.** `grafana/dashboards/services.json` — `Services Overview`, uid `services-overview` — is fourteen panels in three rows: *Services* groups by `job`; *Routes (`handler`)* and *Requests (`code`)* each hold whichever services carry that label. Three rules, all asserted by `tests/test_grafana_provisioning.py`:
 
-- **`job` goes inside every bucket grouping.** The two `le` sets share only `1` and `+Inf`, so a `by (le, …)` without it sums incompatible histograms.
+- **`job` goes inside every bucket grouping.** The app publishes four `le` bounds and the Go service twelve, the app's four being a subset — so a `by (le, …)` without `job` produces bounds the app never reports, and every bucket below `0.1` counts one service only.
 - **A convention row selects on label presence — `handler!=""`, `code!=""` — never on a job name.** Not cosmetic: `handler=~".*"` also matches series carrying no `handler`, collapsing a whole service into one unlabelled group.
 - **An error panel carries one target per convention**, `status=~"5.."` beside `code=~"5.."`. No single selector covers both, and a negative form matches the series that lack the label.
 
-Two traps: the app's p95 reads a flat **1s** for anything slower, having four buckets against the Go service's twelve; and the `deleteDatasources:` block in `datasource.yaml` is **required, not leftover** — giving a uid to an already-provisioned datasource makes Grafana abort provisioning and never start.
+Three traps. The app's p95 reads a flat **1s** for anything slower, having four buckets against the Go service's twelve. The `deleteDatasources:` block in `datasource.yaml` is **required, not leftover** — giving a uid to an already-provisioned datasource makes Grafana abort provisioning and never start — and it runs on every boot, so a hand-made dashboard predating the uid loses its datasource. And `jsonData.timeInterval` must track `global.scrape_interval`: `$__rate_interval` is derived from it, not from `prometheus.yml`, and Grafana's silent 15s default floors every rate window at 60s. A test asserts the two agree.
 
 **Readiness.** Both services answer `/health` with `{"status": "ok"}` and both healthchecks probe it. Keep the two bodies identical: a route that exists on both services is what makes the merge observable. The probe traffic lands on an unfiltered handler every ten seconds, so a flat baseline in the dashboard panels comes from the healthchecks rather than from load.
 

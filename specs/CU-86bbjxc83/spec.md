@@ -102,11 +102,14 @@ file is replaced, because it exists only while that file is on disk.
   a rate on the CPU panel, which is requirement 2.
 - **Three rules for how the two conventions coexist**, written into the spec because rediscovering
   them panel by panel is how they get broken:
-  - **`job` goes inside every bucket grouping.** Not a legend preference. The two services' `le`
-    sets share only `1` and `+Inf` — the app has four buckets, the Go service has the twelve
-    `client_golang` defaults — so a grouping that omits `job` sums buckets from incompatible
-    histograms and produces a number with no meaning. The rule survives the day two services agree
-    on their buckets, because the third one will not.
+  - **`job` goes inside every bucket grouping.** Not a legend preference. The app publishes four
+    `le` bounds and the Go service the twelve `client_golang` defaults, and the app's four are a
+    subset of them — so a grouping that omits `job` produces a histogram carrying bounds the app
+    never reports, in which every bucket below `0.1` counts one service only, and a quantile drawn
+    from it describes neither. **Amended 2026-08-23, in review**: this said the two sets "share only
+    `1` and `+Inf`", which is wrong — all four of the app's bounds are shared. The rule is
+    unaffected; only the evidence for it was. The rule survives the day two services agree on their
+    buckets, because the third one will not.
   - **An error panel carries two targets, one per convention.** A single selector cannot do it:
     naming both labels is an `AND` no service satisfies, and any negative form silently matches the
     series that lack the label — verified in 2026-08-23, a `code!="200"` matcher returns the app's
