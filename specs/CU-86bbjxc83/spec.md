@@ -31,9 +31,14 @@ plugin is ever resolved. Measured on screen in 2026-08-11, correcting a reading 
 in 2026-08-10 that had called the dashboard broken. Both readings matter here: the dashboard works
 today, and what keeps it working is a compatibility path that is invisible to every endpoint and
 that nobody in this project controls. The day it is dropped, the dashboard goes with it and no file
-in the repository will have changed. The same migration is why opening `Settings → JSON Model`
-marks the dashboard as having unsaved changes — the runtime model already differs from the stored
-one, which is the symptom of the file describing something other than what is on screen.
+in the repository will have changed. The divergence is measurable in one page: the settings editor
+holds `schemaVersion: 42` with all seven panels `timeseries` and ids `1..7`, while the API returns
+`schemaVersion: 36` with all seven `graph` and every id absent. **Amended 2026-08-23, during the
+first task**, from a claim that opening `Settings → JSON Model` marks the dashboard as having
+unsaved changes: that symptom was recorded against CU-86bbaf36c and does not reproduce on Grafana
+`12.4.7`, which migrates on load and then runs its dirty check against the migrated model on both
+sides — so the divergence is invisible to it by construction. The divergence is real; that
+particular symptom of it is not.
 
 **A second service turned a latent defect into a live one.** No panel filters by service. The
 request panels group by route and the two resource panels group by nothing at all, with static
@@ -183,9 +188,9 @@ codes. Response classes on one side and exact codes on the other are not reconci
 meant to be; the disagreement is legible on screen, which is the point. The two error panels stay
 at `No data`, as they do today, because the load generator provokes no errors.
 
-What stops happening is as important as what starts. Opening `Settings → JSON Model` no longer
-marks the dashboard as having unsaved changes, because the stored model and the runtime model no
-longer differ. No panel depends on a plugin the image does not ship. And `tox` fails if a future
+What stops happening is as important as what starts. The model Grafana holds in memory and the file
+on disk stop disagreeing: same `schemaVersion`, same panel types, same ids, where today they differ
+on all three. No panel depends on a plugin the image does not ship. And `tox` fails if a future
 edit reintroduces a `graph` panel, an overlapping `gridPos`, a duplicated `refId` inside a panel, a
 datasource referenced by name, or a service name written into a query.
 
@@ -199,9 +204,13 @@ datasource referenced by name, or a service name written into a query.
 - [ ] **Requirement 3 — determined layout.** No two panels' `gridPos` rectangles overlap, asserted
       by a test; giving two panels the same position makes that test fail, and reverting makes it
       pass.
-- [ ] **Requirement 4 — the file declares what it renders.** No panel is `type: "graph"`, every
-      panel carries a unique `id`, and opening `Settings → JSON Model` in the browser does not mark
-      the dashboard as having unsaved changes.
+- [ ] **Requirement 4 — the file declares what it renders.** No panel is `type: "graph"` and every
+      panel carries a unique `id`, in the file itself; and the model the settings editor shows in
+      the browser agrees with what `/api/dashboards/uid/services-overview` returns on
+      `schemaVersion`, on every panel type and on every id. **Amended 2026-08-23** from a check that
+      `Settings → JSON Model` does not mark the dashboard as having unsaved changes: measured during
+      the first task, Grafana `12.4.7` does not raise that prompt for the current dashboard either,
+      so the check could not tell the before state from the after one.
 - [ ] **Requirement 5 — datasource by uid.** `datasource.yaml` declares `uid: prometheus`; the
       Grafana datasource API returns that uid and exactly one datasource; every target and every
       panel references the datasource by uid, asserted against the uid read from the yaml. Changing
