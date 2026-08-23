@@ -101,12 +101,52 @@ One commit per task; the checkbox is ticked in the same commit. Any sentence in 
 `README.md` that a task makes false is corrected inside that task's commit — the two documentation
 tasks at the end add what is new, they do not repair what earlier tasks broke.
 
-- [ ] **Capture the baseline.** With the stack up and the current file still on disk, open the
+- [x] **Capture the baseline.** With the stack up and the current file still on disk, open the
       dashboard in a browser and record, panel by panel: what it draws, how many series, and what
       the legend reads. Seven panels; the two error panels are expected at `No data`. Also record
       that `Settings → JSON Model` currently marks the dashboard as having unsaved changes, since
       that is the before half of requirement 4's proof. No code, and **before** any edit — the
       baseline exists only while `fastapi_metrics.json` is the provisioned file.
+      Done: captured 2026-08-23 at 17:01 local, on a 5-minute window with `loadgen` running,
+      against the existing volumes. **All seven panels render**, series counts read off the legend
+      buttons in the DOM rather than eyeballed:
+
+      | # | Panel | Series drawn | Distinct legend labels | Legend |
+      | --- | --- | --- | --- | --- |
+      | 1 | Request Latency (p95) | 5 | 5 | the four `/load/*` routes plus `/health` |
+      | 2 | Request Throughput (req/s) | 5 | 5 | same five |
+      | 3 | CPU Usage | 2 | **1** | `CPU seconds`, `CPU seconds` |
+      | 4 | Memory Usage (bytes) | 2 | **1** | `Memory`, `Memory` |
+      | 5 | HTTP Status Codes per Endpoint | 5 | 5 | `<route> - 2xx` |
+      | 6 | 5xx Error Rate by Handler | 0 | 0 | `No data` |
+      | 7 | 4xx Error Rate by Handler | 0 | 0 | `No data` |
+
+      Panels 3 and 4 are requirement 7's before-state with a number on it: two series, one label.
+      Panel 1 shows `/load/stress/{seconds}` pinned flat at exactly **1.0** for the whole window —
+      the bucket cap, visible on screen. Panel 3 climbs monotonically 0 → 27 with no relation to
+      load, which is requirement 2's before-state.
+      **The `gridPos` collision does not overlap on screen.** Panels 6 and 7 both declare
+      `{x:0, y:24}` and the layout engine stacks them: measured page offsets 1057 px and 1361 px,
+      296 px tall each. The earlier reading that the file does not determine the layout is
+      reconfirmed, and "overlap" remains the wrong word for it.
+      **The runtime model against the stored model, read side by side in the same page:** the
+      settings editor holds `schemaVersion: 42`, all seven panels `timeseries`, ids `1..7`; the API
+      returns `schemaVersion: 36`, all seven `graph`, every id absent. That answers the question
+      this plan left open — **42 is the migration target of Grafana `12.4.7`, measured rather than
+      inferred from the bundle.** Two defects survive the migration untouched: panels 6 and 7 keep
+      `{x:0, y:24}` and both keep `refId: "F"`. One more does too, and it was not predicted:
+      the migrated model still carries `"datasource": "prometheus"` as a bare string, so nothing in
+      the migration path would ever have fixed requirement 5.
+      **The unsaved-changes symptom did not reproduce, and the task's own premise is what fell.**
+      Opening `Settings → JSON Model`, then `Back to dashboard`, then `Exit edit` returned to the
+      read-only view with **no unsaved-changes prompt**. The dashboard enters edit mode and a
+      `Save dashboard` button appears, but leaving costs nothing. The likely mechanism: Grafana
+      migrates the stored JSON on load and keeps the *migrated* model as its baseline for the dirty
+      check, so a stored-versus-runtime divergence is invisible to that comparison by construction.
+      Consequence for requirement 4: the criterion as approved cannot distinguish before from after,
+      because its "before" is already clean. The proof that does work is the one measured above —
+      the stored file and the runtime model agreeing on `schemaVersion`, panel type and ids — and
+      the verification step is rewritten to that.
       Commit: `docs(specs): record the dashboard baseline before the rebuild`
 - [ ] **Give the datasource an explicit uid.** Add `uid: prometheus` to
       `grafana/provisioning/datasources/datasource.yaml`, and assert in
@@ -255,8 +295,13 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
 6. **Panel by panel in a browser**, against the baseline captured in task 1: does it draw, how many
    series, does the legend distinguish the services. The two error panels at `No data` remain
    expected.
-7. **Requirement 4:** `Settings → JSON Model` does not mark the dashboard as having unsaved
-   changes, where the baseline recorded that it did. Plus `grep -c '__inputs' services.json` → 0.
+7. **Requirement 4:** the stored file and the runtime model agree. Read the settings editor's model
+   in the browser and the API's `/api/dashboards/uid/services-overview` side by side: same
+   `schemaVersion`, same panel types, same ids. The baseline recorded them disagreeing — `42` /
+   `timeseries` / `1..7` against `36` / `graph` / absent — and the rebuilt file must close that gap.
+   The unsaved-changes symptom is **not** used as the proof: measured in task 1, Grafana `12.4.7`
+   does not raise it, because its dirty check compares against the migrated model on both sides.
+   Plus `grep -c '__inputs' services.json` → 0.
 8. **Requirement 1:** unselecting a service in `$job` removes it from every cross-service panel,
    the two resource panels included.
 9. **Requirement 7:** the CPU and memory panels show two series with distinct legends, not two
