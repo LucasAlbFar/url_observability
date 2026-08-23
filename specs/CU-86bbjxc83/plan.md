@@ -178,7 +178,7 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       `up` through the datasource proxy returns both jobs. That is why the assertion linking the
       dashboard's targets to this uid belongs to the assertions task and not to this one.
       Commit: `feat(grafana): give the provisioned datasource an explicit uid`
-- [ ] **Rebuild the dashboard.** Create `grafana/dashboards/services.json` with `uid:
+- [x] **Rebuild the dashboard.** Create `grafana/dashboards/services.json` with `uid:
       services-overview`, title `Services Overview`, every target and every panel referencing the
       datasource as `{"type": "prometheus", "uid": "prometheus"}`, explicit unique `id`, explicit
       non-overlapping `gridPos`, and `$__rate_interval` on every rate. Delete `fastapi_metrics.json`
@@ -189,33 +189,69 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       | `job` | `label_values(up, job)` | multi, `includeAll`, default `All`. `up` is synthesised for every target whatever it exports, so it is the one series a future service is guaranteed to have |
       | `handler` | `label_values(http_requests_total{job=~"$job", handler!="", handler!="/metrics"}, handler)` | chained on `$job`, so the dropdown stops listing two services' routes as one set. `handler!=""` is what empties it when only services without that label are selected |
 
-      One `row` panel, *Serviços*, and the six cross-service panels under it:
+      One `row` panel, *Services*, and the six cross-service panels under it:
 
       | Panel | Expression | Legend |
       | --- | --- | --- |
-      | Alvos no ar | `up{job=~"$job"}` | `{{job}} — {{instance}}` |
-      | Throughput por serviço | `sum by (job) (rate(http_requests_total{job=~"$job"}[$__rate_interval]))` | `{{job}}` |
-      | Taxa de 5xx | two targets: `sum by (job) (rate(http_requests_total{job=~"$job", status=~"5.."}[$__rate_interval]))` and the same with `code=~"5.."` | `{{job}}` on both |
-      | Taxa de 4xx | the same pair with `4..` | `{{job}}` on both |
-      | CPU por serviço | `rate(process_cpu_seconds_total{job=~"$job"}[$__rate_interval])` | `{{job}} — {{instance}}` |
-      | Memória residente | `process_resident_memory_bytes{job=~"$job"}` | `{{job}} — {{instance}}` |
+      | Targets up | `up{job=~"$job"}` | `{{job}} — {{instance}}` |
+      | Throughput by service | `sum by (job) (rate(http_requests_total{job=~"$job"}[$__rate_interval]))` | `{{job}}` |
+      | 5xx error rate | two targets: `sum by (job) (rate(http_requests_total{job=~"$job", status=~"5.."}[$__rate_interval]))` and the same with `code=~"5.."` | `{{job}}` on both |
+      | 4xx error rate | the same pair with `4..` | `{{job}}` on both |
+      | CPU by service | `rate(process_cpu_seconds_total{job=~"$job"}[$__rate_interval])` | `{{job}} — {{instance}}` |
+      | Resident memory | `process_resident_memory_bytes{job=~"$job"}` | `{{job}} — {{instance}}` |
 
       **The `schemaVersion` is measured, not chosen:** let Grafana load the hand-written file, then
       `Export → Export as JSON` with *export for sharing externally* **off**, and adopt the exported
       model as the file after confirming it kept the queries, ids and positions that were written.
       Anything else leaves the stored model differing from the runtime one, which is the defect this
-      feature exists to remove.
+      feature exists to remove. **Every string the dashboard puts on screen is in English** — panel
+      titles, row titles, variable labels and panel descriptions — the same rule the rest of the
+      repository follows.
+      Done: **the file and the runtime model are now byte-identical**, comparing the settings
+      editor's model against `/api/dashboards/uid/services-overview` with `id` and `version` — the
+      two fields the database assigns — removed from both, and every object key sorted. 6154
+      characters each way, no first differing index. That is requirement 4 in its strongest form,
+      and it replaces the unsaved-changes symptom that task 1 showed does not reproduce.
+      **The export loop cost three passes and none of them was the `schemaVersion`.** That number
+      was already measured in task 1 — `42`, read off the old dashboard's runtime model — so the
+      hand-written file carried it from the start and matched. What Grafana adds that a hand-written
+      file has no way to guess is smaller and duller: four top-level defaults
+      (`fiscalYearStartMonth: 0`, `preload: false`, `timepicker: {}`, `weekStart: ""`), the built-in
+      `Annotations & Alerts` entry that every dashboard gets whether its file declares it or not,
+      and `regexApplyTo: "value"` on each query variable. The old file declared none of these
+      either. Convergence is iterative by nature: each pass reveals only the next divergence, so
+      budget more than one for task 4.
+      **What the six panels draw**, read from the DOM with `loadgen` running:
+
+      | Panel | Series | Distinct labels | Legend |
+      | --- | --- | --- | --- |
+      | Targets up | 2 | 2 | `fastapi-app — app:8002`, `service-go — service-go:8003` |
+      | Throughput by service | 2 | 2 | `fastapi-app`, `service-go` |
+      | CPU by service | 2 | 2 | `fastapi-app — app:8002`, `service-go — service-go:8003` |
+      | 5xx error rate | 0 | 0 | `No data`, as expected |
+      | 4xx error rate | 0 | 0 | `No data`, as expected |
+      | Resident memory | 2 | 2 | `fastapi-app — app:8002`, `service-go — service-go:8003` |
+
+      Against the baseline: the two resource panels went from two series under one label to two
+      series under two, which is requirement 7; the CPU panel went from a monotonic climb to a rate
+      oscillating between 10% and 15% with the load, which is requirement 2.
+      **Requirement 1, proven by selection rather than by reading the JSON:** loading with
+      `var-job=service-go` drops every cross-service panel to a single series — the two resource
+      panels included, and those are the ones the old dashboard could not filter at all.
+      **The provider deleted the old dashboard on its own.** Removing `fastapi_metrics.json` from
+      disk made `/api/dashboards/uid/fastapi-dashboard` return `Dashboard not found` within ~5 s,
+      with no restart. `disableDeletion: false` behaves as the plan read it.
       Commit: `feat(grafana): rebuild the dashboard for multiple services`
 - [ ] **Add the per-convention rows.** Two `row` panels and the five panels under them, selected by
       label presence and never by job name, with `job` inside every bucket grouping:
 
       | Row | Panel | Expression |
       | --- | --- | --- |
-      | Rotas (`handler`) | p95 por rota | `histogram_quantile(0.95, sum by (le, job, handler) (rate(http_request_duration_seconds_bucket{job=~"$job", handler=~"$handler", handler!="/metrics"}[$__rate_interval])))` |
-      | Rotas (`handler`) | Throughput por rota | `sum by (job, handler) (rate(http_requests_total{job=~"$job", handler=~"$handler", handler!="/metrics"}[$__rate_interval]))` |
-      | Rotas (`handler`) | Códigos por rota | `sum by (job, handler, status) (rate(http_requests_total{job=~"$job", handler=~"$handler", handler!="/metrics"}[$__rate_interval]))` |
-      | Requisições (`code`) | p95 por código | `histogram_quantile(0.95, sum by (le, job, code) (rate(http_request_duration_seconds_bucket{job=~"$job", code!=""}[$__rate_interval])))` |
-      | Requisições (`code`) | Throughput por código e método | `sum by (job, code, method) (rate(http_requests_total{job=~"$job", code!=""}[$__rate_interval]))` |
+      | Routes (`handler`) | p95 by route | `histogram_quantile(0.95, sum by (le, job, handler) (rate(http_request_duration_seconds_bucket{job=~"$job", handler=~"$handler", handler!="/metrics"}[$__rate_interval])))` |
+      | Routes (`handler`) | Throughput by route | `sum by (job, handler) (rate(http_requests_total{job=~"$job", handler=~"$handler", handler!="/metrics"}[$__rate_interval]))` |
+      | Routes (`handler`) | Status codes by route | `sum by (job, handler, status) (rate(http_requests_total{job=~"$job", handler=~"$handler", handler!="/metrics"}[$__rate_interval]))` |
+      | Requests (`code`) | p95 by code | `histogram_quantile(0.95, sum by (le, job, code) (rate(http_request_duration_seconds_bucket{job=~"$job", code!=""}[$__rate_interval])))` |
+      | Requests (`code`) | Throughput by code and method | `sum by (job, code, method) (rate(http_requests_total{job=~"$job", code!=""}[$__rate_interval]))` |
 
       The route row's p95 panel carries in its own `description` field the limitation stated in
       full, not a pointer: the FastAPI app exposes four latency buckets — `0.1`, `0.5`, `1.0`,
