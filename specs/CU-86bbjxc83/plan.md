@@ -520,7 +520,10 @@ Run 2026-08-23, against the volumes that already existed. Every step carries wha
 14. **Requirement 5, negative proof** — pointing one target at a uid the `datasource.yaml` does not
     declare fails `test_every_query_references_a_declared_datasource_uid` and nothing else;
     reverted, suite green.
-15. CI on the branch — **not run yet**: it needs the branch pushed, which is a separate decision.
+15. CI on the branch — **green on all three jobs** (run 32666722315, PR #6): `go` 13 s, `infra`
+    13 s, `build` 55 s, no Node deprecation annotations. `infra` matters most here: it is the job
+    that runs `promtool check config` and `docker compose config -q` against the real binaries, and
+    it passed with the rewritten provisioning.
 16. `git diff --stat main...HEAD` names **exactly** the six files in "Affected files" plus this
     ticket's two documents, and nothing else. `git show --stat` on each of the eleven commits names
     only that task's files.
