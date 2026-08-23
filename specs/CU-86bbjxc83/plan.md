@@ -378,8 +378,23 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       requirement are all still there, one clause of reasoning each; the measurements behind them
       stay here.
       Commit: `docs: document the multi-service dashboard`
-- [ ] **Update `README.md`.** The three sentences naming *FastAPI Metrics*, including the project
+- [x] **Update `README.md`.** The three sentences naming *FastAPI Metrics*, including the project
       layout line, and a description of what the rebuilt dashboard shows.
+      Done: the three renames — the `grafana` bullet in "How it works", the teardown paragraph and
+      the project-layout line — plus the panel description, which now names the three rows and the
+      `Service` dropdown instead of listing six panel titles.
+      **A fourth thing was false and was not on the list.** The endpoint table has a column
+      *"Dashboard panel it feeds"*, and every value in it was an old panel title: `Request latency`,
+      `CPU usage` twice, `Memory usage`. They now read `p95 by route`, `CPU by service` and
+      `Resident memory`. `/health` was marked `—`, meaning it fed nothing; that was true while the
+      dashboard filtered it out and stopped being true when the route panels started showing it, so
+      it now reads "Throughput by route — the flat 10s baseline", which is also where a reader meets
+      the healthcheck traffic the architecture notes warn about.
+      Left alone deliberately: the teardown proof that tells the reader to build a dashboard by hand
+      and confirm it survives a `down`. It is about hand-made dashboards, not provisioned ones, and
+      the *T12 live test* dashboard sitting in `grafana_data` is what someone following those steps
+      leaves behind. The `deleteDatasources:` trap is not in `README.md` either: it bites whoever
+      edits the provisioning file, not whoever brings the stack up, and `CLAUDE.md` carries it.
       Commit: `docs: update the readme for the services dashboard`
 - [ ] **Run the verification script and record every outcome below.** No commit beyond the tick.
 
