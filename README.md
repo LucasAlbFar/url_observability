@@ -8,17 +8,17 @@ Two small services — one FastAPI, one Go — instrumented end-to-end with **Pr
 - **`service-go`** — a small Go service (`service-go/main.go`) instrumented via `prometheus/client_golang`. It exists to test the claim the stack is language-agnostic, so it mirrors the app's paths and keeps its own library's metric labels (`code`/`method`, not `handler`/`status`) instead of imitating them. Ten metric names end up exported by both services, separated only by the `job` label.
 - **`loadgen`** — a standalone async script (`worker/load_driver.py`) that continuously calls both services' `/load/*` endpoints over HTTP, purely to generate traffic for the metrics/dashboards.
 - **`prometheus`** — scrapes `app:8002/metrics` and `service-go:8003/metrics` every 5s, under the jobs `fastapi-app` and `service-go`. Both the scrape interval and the retention window (7 days, capped at 512 MB) live in `prometheus.yml`; the container's command line only points it at that file and at the volume its TSDB writes to.
-- **`grafana`** — auto-provisioned with a Prometheus datasource and a ready-made "FastAPI Metrics" dashboard (request latency p95, throughput, CPU, memory, status codes, 4xx/5xx error rate).
+- **`grafana`** — auto-provisioned with a Prometheus datasource and a ready-made "Services Overview" dashboard. Fourteen panels in three rows: *Services* compares the two side by side (targets up, throughput, CPU, resident memory, 4xx/5xx), and *Routes* and *Requests* each hold whichever services use that label convention — routes for the app, response codes for the Go service. Two dropdowns sit at the top: `Service` filters every panel on the dashboard, and `Route` narrows the *Routes* row to particular endpoints.
 
 The `/load/*` endpoints each stress a different resource on purpose, so the dashboard has something to plot. On the FastAPI app (`:8002`):
 
 | Endpoint | What it does | Dashboard panel it feeds |
 | --- | --- | --- |
-| `GET /health` | Returns `{"status": "ok"}` — what the healthcheck probes | — |
-| `GET /load/io-bound` | `asyncio.sleep(2)` | Request latency |
-| `GET /load/cpu-bound` | Blocking CPU-heavy loop | CPU usage |
-| `GET /load/stress/{seconds}` | Blocking busy-wait for N seconds | CPU usage |
-| `GET /load/memory-spike` | Allocates a large in-memory list | Memory usage |
+| `GET /health` | Returns `{"status": "ok"}` — what the healthcheck probes | Throughput by route — the flat 10s baseline |
+| `GET /load/io-bound` | `asyncio.sleep(2)` | p95 by route |
+| `GET /load/cpu-bound` | Blocking CPU-heavy loop | CPU by service |
+| `GET /load/stress/{seconds}` | Blocking busy-wait for N seconds | CPU by service |
+| `GET /load/memory-spike` | Allocates a large in-memory list | Resident memory |
 
 The Go service (`:8003`) serves the same three paths, deliberately — a route that exists on both services is what makes their series merge visible:
 
@@ -99,7 +99,9 @@ Everything below needs `--profile` for the reason given above — a bare `docker
 | `prometheus_data` | the scraped metrics history (`/prometheus`), kept for the retention window set in `prometheus.yml` |
 | `grafana_data` | dashboards, users and preferences you created by hand (`/var/lib/grafana`) |
 
-Everything else survives: a `down` without `--volumes` keeps both databases, so the metrics history and any dashboard you built in the UI are still there after the next `up`. The provisioned datasource and the "FastAPI Metrics" dashboard are bind-mounted from the repo, and bind-mounted repo files are **never** deleted.
+Everything else survives: a `down` without `--volumes` keeps both databases, so the metrics history and any dashboard you built in the UI are still there after the next `up`. The provisioned datasource and the "Services Overview" dashboard are bind-mounted from the repo, and bind-mounted repo files are **never** deleted.
+
+One exception, and it is a one-off: the provisioned datasource gained an explicit `uid` after this stack had already run, so `datasource.yaml` deletes and recreates it on every start. A dashboard you built by hand *before* that change points at the uid Grafana had generated for itself and will come back with its datasource missing — pick `prometheus` again in each panel. Dashboards built from now on are unaffected.
 
 Don't take that on faith — it takes two minutes to prove. With the stack up, create a dashboard by hand in Grafana and let Prometheus scrape for a few minutes, then:
 
@@ -235,7 +237,7 @@ service-go/
   go.mod / go.sum         # module definition and committed checksums
 worker/
   load_driver.py          # standalone async load generator (calls both services' endpoints)
-grafana/                  # provisioned datasource + "FastAPI Metrics" dashboard
+grafana/                  # provisioned datasource + "Services Overview" dashboard
 prometheus.yml            # Prometheus scrape config
 docker-compose.yml        # the five services, their profiles and named volumes
 tests/                    # pytest suite: one file per module, plus four that check config
