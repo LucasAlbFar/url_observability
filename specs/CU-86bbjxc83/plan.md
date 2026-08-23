@@ -148,7 +148,7 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       the stored file and the runtime model agreeing on `schemaVersion`, panel type and ids — and
       the verification step is rewritten to that.
       Commit: `docs(specs): record the dashboard baseline before the rebuild`
-- [ ] **Give the datasource an explicit uid.** Add `uid: prometheus` to
+- [x] **Give the datasource an explicit uid.** Add `uid: prometheus` to
       `grafana/provisioning/datasources/datasource.yaml`, and assert in
       `tests/test_grafana_provisioning.py` that every provisioned datasource declares a uid. The
       cross-check between that uid and the dashboard's targets belongs to the assertions task, not
@@ -157,6 +157,26 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       `/api/datasources` that the uid changed in place against the **existing** volume; if
       provisioning refuses to update a `readOnly` datasource, add the planned `deleteDatasources:`
       block to the same file and record which of the two paths was needed.
+      Done: **the planned exit was needed, and the failure it guards against is harder than this
+      plan predicted.** Adding `uid: prometheus` alone does not fail to update in place — it stops
+      Grafana from starting at all. Measured 2026-08-23: the container entered a restart loop and
+      the log read `Failed to provision data sources … Datasource provisioning error: data source
+      not found`, followed by `starting module provisioning: invalid service state: Failed`. The
+      mechanism is that Grafana matches the existing datasource by name, then looks it up by the
+      *new* uid in order to update it, does not find it, and aborts the whole provisioning module
+      rather than that one datasource. With the `deleteDatasources:` block in front, the same
+      restart came up in **~6 s**, `healthy`, with zero `level=error` lines in the boot, one
+      datasource, `uid: prometheus`, `isDefault: true`, `readOnly: true` — and `id: 2`, because
+      delete-then-insert recreates the row rather than editing it. The block stays in the file
+      permanently: on a volume provisioned before this change it is what makes Grafana boot, and on
+      a fresh volume it is a no-op. A comment beside it says exactly that, because a future reader
+      finding a `deleteDatasources:` for the only datasource in the file would otherwise read it as
+      leftover debris.
+      Checked in the same restart, since it is what the ordering of this task depends on: the old
+      dashboard still resolves. It references the datasource by the bare name `prometheus`, and
+      Grafana matches that against the name whatever the uid is, so the panels kept drawing —
+      `up` through the datasource proxy returns both jobs. That is why the assertion linking the
+      dashboard's targets to this uid belongs to the assertions task and not to this one.
       Commit: `feat(grafana): give the provisioned datasource an explicit uid`
 - [ ] **Rebuild the dashboard.** Create `grafana/dashboards/services.json` with `uid:
       services-overview`, title `Services Overview`, every target and every panel referencing the
@@ -230,12 +250,13 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
 
 ## Edge cases
 
-- **Changing a provisioned datasource's uid is the only change here that touches state.** The
-  volume already holds `id: 1`, `uid: P1809F7CD0C75ACF3`, `readOnly: true`. Verification must run
-  against that volume, not a fresh one — a cold start would answer a different question. Planned
-  exit if the provisioner will not update in place: a `deleteDatasources:` block in the same file,
-  which runs before the insert. Whichever path is taken gets recorded, because it is the answer the
-  next person will need.
+- **Changing a provisioned datasource's uid is the only change here that touches state, and it is
+  a hard boot failure, not a silent one.** Measured in task 2 against the populated volume: adding
+  a `uid` to a datasource Grafana had already provisioned under a generated one aborts the entire
+  provisioning module and the container never becomes healthy. The `deleteDatasources:` block is
+  not a fallback to reach for if something looks wrong — it is required, and it stays in the file.
+  This is also why the verification runs against the existing volume: a fresh one would have come
+  up clean and hidden the failure completely.
 - **A datasource change needs a Grafana restart; a dashboard change does not.** Datasource
   provisioning runs at startup. The dashboard provider polls the mounted directory, so editing the
   JSON on the host is picked up without a restart.

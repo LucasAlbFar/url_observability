@@ -1,7 +1,19 @@
 apiVersion: 1
 
+# Runs before the insert below. It exists because giving an already
+# provisioned datasource a `uid` is not an in-place update: Grafana
+# matches the existing one by name, then looks it up by the new uid to
+# update it, fails to find it, and aborts the whole provisioning
+# module — the container never becomes healthy. Deleting first is the
+# documented way out. Keep this block: any volume provisioned before
+# the uid was added still needs it, and on a fresh volume it is a no-op.
+deleteDatasources:
+  - name: prometheus
+    orgId: 1
+
 datasources:
   - name: prometheus
+    uid: prometheus
     type: prometheus
     access: proxy
     url: http://prometheus:9090

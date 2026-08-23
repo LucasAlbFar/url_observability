@@ -14,6 +14,7 @@ import yaml
 
 DASHBOARD_BIND = "./grafana/dashboards"
 PROVIDER_CONFIG = "grafana/provisioning/dashboards/dashboard.yml"
+DATASOURCE_CONFIG = "grafana/provisioning/datasources/datasource.yaml"
 
 
 @pytest.fixture(scope="session")
@@ -47,6 +48,19 @@ def test_every_provisioning_file_parses_as_yaml(repo_root):
     assert paths, directory
     for path in paths:
         assert yaml.safe_load(path.read_text()), path.name
+
+
+def test_every_datasource_declares_a_uid(repo_root):
+    """Confirm no datasource lets Grafana generate its uid.
+
+    A datasource without a `uid` still resolves, because Grafana
+    invents one and dashboards may reference it by name instead. The
+    invented value is not reproducible across volumes, so a dashboard
+    pinned to it would break on a fresh one.
+    """
+    config = yaml.safe_load((repo_root / DATASOURCE_CONFIG).read_text())
+    for datasource in config["datasources"]:
+        assert datasource.get("uid"), datasource["name"]
 
 
 def test_provider_path_matches_the_compose_mount(repo_root):
