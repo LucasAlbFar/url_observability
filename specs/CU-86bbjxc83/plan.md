@@ -396,7 +396,7 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       leaves behind. The `deleteDatasources:` trap is not in `README.md` either: it bites whoever
       edits the provisioning file, not whoever brings the stack up, and `CLAUDE.md` carries it.
       Commit: `docs: update the readme for the services dashboard`
-- [ ] **Run the verification script and record every outcome below.** No commit beyond the tick.
+- [x] **Run the verification script and record every outcome below.** No commit beyond the tick.
 
 ## Edge cases
 
@@ -454,38 +454,73 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
 
 ## Verification steps
 
-1. `tox` passes end to end — `py311` with the new assertions, `lint`, `safety`.
-2. `docker compose --profile '*' config -q` exits clean and `config --services` resolves five
-   services.
-3. `docker compose --profile core --profile load up -d` against the **existing** `grafana_data`;
-   `app`, `service-go`, `prometheus` and `grafana` all reach `healthy`.
-4. **Requirement 5:** `curl -s -u admin:admin localhost:3000/api/datasources` returns one
-   datasource with `uid: prometheus`, not two, and not the generated uid.
-5. `curl -s -u admin:admin 'localhost:3000/api/search?type=dash-db'` returns *Services Overview*
-   and no longer returns *FastAPI Metrics*. *T12 live test* is expected to still be there.
-6. **Panel by panel in a browser**, against the baseline captured in task 1: does it draw, how many
-   series, does the legend distinguish the services. The two error panels at `No data` remain
-   expected.
-7. **Requirement 4:** the stored file and the runtime model agree. Read the settings editor's model
-   in the browser and the API's `/api/dashboards/uid/services-overview` side by side: same
-   `schemaVersion`, same panel types, same ids. The baseline recorded them disagreeing — `42` /
-   `timeseries` / `1..7` against `36` / `graph` / absent — and the rebuilt file must close that gap.
-   The unsaved-changes symptom is **not** used as the proof: measured in task 1, Grafana `12.4.7`
-   does not raise it, because its dirty check compares against the migrated model on both sides.
-   Plus `grep -c '__inputs' services.json` → 0.
-8. **Requirement 1:** unselecting a service in `$job` removes it from every cross-service panel,
-   the two resource panels included.
-9. **Requirement 7:** the CPU and memory panels show two series with distinct legends, not two
-   entries both reading `CPU seconds`.
-10. **Requirement 2:** the CPU panel shows a rate that moves with load, not a monotonic climb.
-11. **Requirement 6:** no panel repeats a `refId` among its own targets — asserted by test and read
-    once on screen through `Inspect → Panel JSON` on the panel that carries two targets.
-12. **Genericity, with no third service to prove it:** the guard test passes and
+Run 2026-08-23, against the volumes that already existed. Every step carries what it returned.
+
+1. `tox` — **green end to end.** `py311` 45 passed, coverage 100% against the 80% gate; `lint`
+   clean on black, isort and flake8; `safety` reports no known vulnerabilities in either
+   `requirements/base.txt` or `requirements/dev.txt`, audited separately as the convention requires.
+   43.6 s total.
+2. `docker compose --profile '*' config -q` — **exits clean**, and `config --services` resolves
+   **five**: `prometheus service-go app grafana loadgen`.
+3. A full `--profile '*' down` followed by `--profile core --profile load up -d` against the
+   **existing** volumes — both named volumes survived the `down`, and all four healthchecked
+   services reached `healthy` **within 10 s**. Prometheus still answered for the window before the
+   teardown, so no history was lost. Worth recording next to the ninety-second `start_period` this
+   project measured for a cold Grafana: against a populated volume the migrations are already
+   applied and it comes up in seconds. The `start_period` is sized for the case that is slow, not
+   for this one.
+4. **Requirement 5** — `/api/datasources` returns **one** datasource, `uid: prometheus`,
+   `isDefault: true`, `readOnly: true`. Its `id` moved 1 → 2 → 3 across the restarts of tasks 2 and
+   this step, which is `deleteDatasources:` doing exactly what it says on every boot: the row is
+   recreated rather than edited. Zero `level=error` lines in the boot, so the delete-then-insert is
+   idempotent and not a one-time repair.
+5. `/api/search?type=dash-db` returns `services-overview | Services Overview`, and **no longer
+   returns** `fastapi-dashboard`. `adgmx4s | T12 live test` is still there, as the plan predicted —
+   it is hand-made, lives in `grafana_data`, and nothing here touches it.
+6. **Panel by panel in a browser, against the baseline captured in task 1** — eleven panels, all
+   eleven behaving:
+
+   | Panel | Series | Distinct labels | Against the baseline |
+   | --- | --- | --- | --- |
+   | Targets up | 2 | 2 | new panel |
+   | Throughput by service | 2 | 2 | was one line per route, no service axis |
+   | CPU by service | 2 | 2 | was 2 series under one label, `CPU seconds` twice |
+   | 5xx error rate | 0 | — | `No data`, as before and as expected |
+   | 4xx error rate | 0 | — | `No data`, as before and as expected |
+   | Resident memory | 2 | 2 | was 2 series under one label, `Memory` twice |
+   | p95 by route | 5 | 5 | was 5 unqualified route names; now each carries its job |
+   | Throughput by route | 5 | 5 | same |
+   | Status codes by route | 5 | 5 | same |
+   | p95 by code | 1 | 1 | new row — the Go service had nowhere to appear before |
+   | Throughput by code and method | 1 | 1 | new |
+
+   Only `fastapi-app` appears in the route row and only `service-go` in the code row, with no job
+   name anywhere in the file.
+7. **Requirement 4** — the settings editor's model and `/api/dashboards/uid/services-overview` are
+   **byte-identical**: 11344 characters each, `schemaVersion: 42` on both sides, panel types only
+   `row` and `timeseries`, ids `1..14`. `grep -c '__inputs'` on the file returns 0, so the adopted
+   export is the plain one and not the share-externally form that would have replaced the datasource
+   with an input.
+8. **Requirement 1** — loading with `var-job=service-go` leaves exactly one series in every
+   cross-service panel, the two resource panels included. The route row goes empty at the same time,
+   which is the chained `handler` variable behaving: its query is scoped to `$job`, and the Go
+   service carries no route label.
+9. **Requirement 7** — CPU and memory each draw two series with distinct legends,
+   `fastapi-app — app:8002` beside `service-go — service-go:8003`.
+10. **Requirement 2** — the CPU panel oscillates between roughly 7% and 16% and dips at 18:04 in
+    step with the throughput panel. A rate reacting to load, where the baseline recorded a
+    monotonic climb from 0 to 27.
+11. **Requirement 6** — read from the runtime model rather than the file: refIds per panel are
+    `-, A, A, A, AB, AB, A, -, A, A, A, -, A, A`. The two error panels carry two targets each under
+    distinct refIds, and the rows carry none.
+12. **Genericity** — `test_no_query_names_a_scrape_job` passes, and
     `grep -o 'fastapi-app\|service-go' grafana/dashboards/services.json` returns nothing.
-13. **Requirement 3, negative proof:** give two panels the same `gridPos`, confirm the intersection
-    test fails, revert.
-14. **Requirement 5, negative proof:** change one target's uid, confirm exactly one test fails,
-    revert.
-15. A CI run on the branch, green on all three jobs.
-16. `git diff --stat main...HEAD` names only the files in "Affected files" plus this ticket's two
-    documents, and `git show --stat HEAD` at each commit names only that task's files.
+13. **Requirement 3, negative proof** — giving two panels the same `gridPos` fails
+    `test_no_two_panels_share_grid_space` and nothing else; reverted, suite green.
+14. **Requirement 5, negative proof** — pointing one target at a uid the `datasource.yaml` does not
+    declare fails `test_every_query_references_a_declared_datasource_uid` and nothing else;
+    reverted, suite green.
+15. CI on the branch — **not run yet**: it needs the branch pushed, which is a separate decision.
+16. `git diff --stat main...HEAD` names **exactly** the six files in "Affected files" plus this
+    ticket's two documents, and nothing else. `git show --stat` on each of the eleven commits names
+    only that task's files.
