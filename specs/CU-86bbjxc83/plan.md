@@ -330,12 +330,36 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       collapsed row are relative to that row rather than to the dashboard grid — comparing the two
       sets would produce false collisions.
       Commit: `test(grafana): assert the dashboard declares what it renders`
-- [ ] **Forbid literal job names in queries.** A test that reads the `job_name` values out of
+- [x] **Forbid literal job names in queries.** A test that reads the `job_name` values out of
       `prometheus.yml` and asserts none appears verbatim in any panel `expr`. It parses the file in
       its own session-scoped fixture rather than moving `prometheus_config` into `conftest.py`:
       promoting a fixture is a refactor of a file this feature has no other reason to touch. Read
       from the file, never hard-coded, so the next feature's service inherits the guard without
       editing the test.
+      Done: `test_no_query_names_a_scrape_job`, twelve tests in the file. It reads the job names
+      out of `prometheus.yml` in its own session-scoped fixture, for the reason recorded above —
+      `prometheus_config` belongs to the module that tests that file and is not importable from
+      here — and the duplicated two-line load is cheaper than promoting a fixture into
+      `conftest.py`, which would edit a file this feature otherwise leaves alone.
+      **It covers variable queries as well as panel expressions**, which is one step past what this
+      plan asked for. A variable defined as `label_values(http_requests_total{job="service-go"}, …)`
+      locks the dashboard to a service exactly as firmly as a panel does, and it is the more likely
+      place to write one by accident because the variable is where a service name feels natural.
+      What it deliberately does not read is panel titles and descriptions: naming a service in
+      prose is documentation, not coupling, and forbidding it would have made the descriptions
+      written in task 4 illegal.
+      Proved by three probes, each reverted:
+
+      | Probe | Result |
+      | --- | --- |
+      | a panel `expr` filtered on `job="fastapi-app"` | fails, only this test |
+      | a variable query filtered on `job="service-go"` | fails, only this test |
+      | a `service-node` job added to `prometheus.yml`, and a panel filtered on it | fails, only this test |
+
+      The third is the one that matters, and it is the closest this feature can get to proving
+      genericity without a third service: the guard caught a job name it had never been told about,
+      because it had read it from the scrape configuration a moment earlier. The next feature adds
+      that service for real and inherits the guard without touching this file.
       Commit: `test(grafana): forbid literal job names in panel queries`
 - [ ] **Document it in `CLAUDE.md`.** The new path, the three panel rows and what separates them,
       the rule that `job` belongs inside every bucket grouping, and why a convention row never names

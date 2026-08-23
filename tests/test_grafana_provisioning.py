@@ -18,6 +18,7 @@ import yaml
 DASHBOARD_BIND = "./grafana/dashboards"
 PROVIDER_CONFIG = "grafana/provisioning/dashboards/dashboard.yml"
 DATASOURCE_CONFIG = "grafana/provisioning/datasources/datasource.yaml"
+PROMETHEUS_CONFIG = "prometheus.yml"
 
 
 @pytest.fixture(scope="session")
@@ -174,6 +175,46 @@ def test_every_dashboard_declares_the_service_variable(dashboards):
     for name, dashboard in dashboards:
         variables = dashboard["templating"]["list"]
         assert any(variable["name"] == "job" for variable in variables), name
+
+
+@pytest.fixture(scope="session")
+def scrape_job_names(repo_root):
+    """Return the job names prometheus.yml declares.
+
+    Read from the file rather than listed here, so a service added to
+    the scrape configuration is covered without touching this test.
+    `prometheus_config` is not reused: it lives in the module that
+    tests prometheus.yml and is not visible from here.
+    """
+    config = yaml.safe_load((repo_root / PROMETHEUS_CONFIG).read_text())
+    names = {job["job_name"] for job in config["scrape_configs"]}
+    assert names, PROMETHEUS_CONFIG
+    return names
+
+
+def queries(dashboard):
+    """Yield every PromQL string the dashboard sends to Prometheus."""
+    for panel in iter_panels(dashboard):
+        for target in panel.get("targets", []):
+            yield target["expr"]
+    for variable in dashboard.get("templating", {}).get("list", []):
+        if "query" in variable:
+            yield variable["query"]
+
+
+def test_no_query_names_a_scrape_job(dashboards, scrape_job_names):
+    """Confirm the dashboard separates services without naming any.
+
+    A panel written against a literal job name works, and keeps
+    working, while quietly making the file specific to the services
+    that exist today. The label to select on is the one the service
+    happens to carry; which service that is belongs to the `job`
+    variable.
+    """
+    for name, dashboard in dashboards:
+        for query in queries(dashboard):
+            for job in scrape_job_names:
+                assert job not in query, (name, job, query)
 
 
 def test_provider_path_matches_the_compose_mount(repo_root):
