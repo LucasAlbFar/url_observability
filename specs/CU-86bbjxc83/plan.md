@@ -296,7 +296,7 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       The scene state was stale, not the file; check with a clean load before believing a blank
       dashboard.
       Commit: `feat(grafana): add the per-convention panel rows`
-- [ ] **Assert the dashboard declares what it renders.** In `tests/test_grafana_provisioning.py`:
+- [x] **Assert the dashboard declares what it renders.** In `tests/test_grafana_provisioning.py`:
       no panel of type `graph`; every panel carries an `id` and the ids are unique; `refId` unique
       **within** each panel and free to repeat across panels; no two `gridPos` rectangles intersect;
       every target and every panel references the datasource by a uid that `datasource.yaml`
@@ -304,6 +304,31 @@ tasks at the end add what is new, they do not repair what earlier tasks broke.
       `panels`, because a collapsed row carries its children inside itself and a flat loop would
       skip them. Rewrite the module docstring: the sentence saying nothing here looks at a query, a
       panel type or a grid position stops being true in this commit.
+      Done: six new tests, eleven in the file, and **every one of them proved by breaking the
+      dashboard on purpose** — each probe applied one defect, ran the suite, and was reverted:
+
+      | Defect introduced | Test that failed |
+      | --- | --- |
+      | a panel typed `graph` | `test_no_panel_uses_the_retired_graph_type` |
+      | a panel with its `id` removed | `test_every_panel_declares_a_unique_id` |
+      | two panels sharing an `id` | `test_every_panel_declares_a_unique_id` |
+      | a `refId` repeated inside one panel | `test_ref_ids_are_unique_within_each_panel` |
+      | two panels given the same `gridPos` | `test_no_two_panels_share_grid_space` |
+      | a target's datasource written as the bare name | `test_every_query_references_a_declared_datasource_uid` |
+      | a uid the `datasource.yaml` does not declare | `test_every_query_references_a_declared_datasource_uid` |
+      | the `job` variable removed | `test_every_dashboard_declares_the_service_variable` |
+
+      Eight probes, eight single failures, each the intended one. The docstring's claim about
+      collapsed rows was proved the same way rather than asserted: none of this dashboard's three
+      rows is collapsed, so a ninth probe collapsed one, moved a `graph` panel inside it, and
+      confirmed `test_no_panel_uses_the_retired_graph_type` still catches it. A flat loop over the
+      top-level list would have passed that file.
+      Two scoping decisions worth the words. **Row panels are exempt from the datasource
+      assertion**: a `row` carries no query and Grafana's own migrated model gives it no datasource,
+      so requiring one would fail against the very model the file was converged to. And the
+      **`gridPos` intersection check reads only the top-level list**, because coordinates inside a
+      collapsed row are relative to that row rather than to the dashboard grid — comparing the two
+      sets would produce false collisions.
       Commit: `test(grafana): assert the dashboard declares what it renders`
 - [ ] **Forbid literal job names in queries.** A test that reads the `job_name` values out of
       `prometheus.yml` and asserts none appears verbatim in any panel `expr`. It parses the file in
