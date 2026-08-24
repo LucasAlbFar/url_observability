@@ -4,27 +4,158 @@ Spec: [./spec.md](./spec.md)
 
 ## Context
 
-<!-- Where in the codebase this lands and what already exists there. -->
+`prometheus.yml` declares two scrape jobs, each a `static_configs` with one hand-written address.
+Three test modules read that file: `tests/test_prometheus_config.py` asserts its structure,
+`tests/test_grafana_provisioning.py` borrows its job names to keep the dashboard generic, and the CI
+`infra` job runs `promtool check config` against it through the image read from `docker-compose.yml`.
+
+The change replaces both jobs with one `docker_sd_configs` job and moves the per-service
+configuration into container labels. Nothing else in the stack changes shape: no service is added,
+and `grafana/dashboards/services.json` is not edited.
+
+What makes this more than a config swap is `prometheus_data`. Its series are keyed by `job` and
+`instance`, and under discovery both labels come from `relabel_configs` rather than from the file.
+The deliverable is the swap **without a break in those series**, and the verification is built
+around proving that rather than around the new mechanism working at all.
 
 ## Facts verified against the repo
 
-<!-- What was actually checked in the code, not assumed. -->
+Measured 2026-08-24 unless dated otherwise.
 
--
+- **`prometheus.yml` has two jobs**, `fastapi-app` → `app:8002` and `service-go` → `service-go:8003`,
+  both `static_configs`, `metrics_path: /metrics`, under a global `scrape_interval: 5s`.
+- **`test_every_scrape_job_has_a_target` fails on a discovery job** (`tests/test_prometheus_config.py:59`):
+  it collects targets by iterating `job.get("static_configs", [])` and asserts the list is non-empty.
+- **The genericity guard goes green and empty.** The `scrape_job_names` fixture
+  (`tests/test_grafana_provisioning.py:196`) reads `job_name` from `prometheus.yml`, and
+  `test_no_query_names_a_scrape_job` (`:228`) forbids those strings in every panel expression. With
+  the only job named after the discovery mechanism, it forbids that name and nothing else.
+- **`test_scrape_job_names_are_unique` becomes trivially true** with a single job. The invariant it
+  carried — two services cannot land under the same `job` label — has to move to the compose labels.
+- **The dashboard names no job.** Its 13 `expr` and 2 template variables select by `job=~"$job"` and
+  by label presence; the service variable is `label_values(up, job)`. Nothing depends on `job`
+  having the values it has, only on the set not changing.
+- **The socket needs a supplementary group.** `/var/run/docker.sock` is `srw-rw---- root:983`
+  (group `docker`), mode `660`, and `docker image inspect prom/prometheus:v3.13.2` reports
+  `User=nobody`. Reading it without `group_add` fails on permission.
+- **`app:8002` and `service-go:8003` resolve from inside the Prometheus container** — that is what
+  the current `static_configs` uses, so rewriting `__address__` to the compose service name is not a
+  bet.
+- **`prometheus_data` exists and holds 13 MB.** The baseline and the continuity check are therefore
+  meaningful; against an empty volume they would prove nothing.
+- **No `.env` exists in the repo**, so a new compose interpolation needs an inline default or the
+  CI `config -q` resolves it empty.
+- **Prometheus does not scrape itself today**, and will not start to: without `prometheus.io/scrape`
+  the `keep` discards its container like any other.
+- **`tests/test_compose_config.py` already carries what the new assertions need** — a session-scoped
+  `compose` fixture, a `CORE_SERVICES` tuple naming the four healthchecked services, and a
+  module-level `FROM_IMAGE` and `dockerfiles` fixture. No new helper is required.
+- **Four places describe the scrape in prose:** `README.md:10` (the two addresses and the two job
+  names), `:99`, `:241`, and the `Observability wiring` section of `CLAUDE.md`.
+
+**Not measured yet — confirmed in task 3, with `promtool check config` and `/api/v1/targets`:**
+
+- The meta-label naming, i.e. that `prometheus.io/scrape` reaches relabelling as
+  `__meta_docker_container_label_prometheus_io_scrape`.
+- That Docker SD emits one target per published port, and that targets of the same container
+  collapse once `__address__` is rewritten from labels and the `__meta_*` labels are dropped.
+- That a stopped container leaves the target list rather than reporting `up=0`.
 
 ## Affected files
 
--
+| File | Change |
+| --- | --- |
+| `prometheus.yml` | Both `static_configs` jobs become one `docker_sd_configs` job with four relabel rules |
+| `docker-compose.yml` | Socket mount and `group_add` on `prometheus`; the scrape labels on `app` and `service-go` |
+| `tests/test_prometheus_config.py` | `test_every_scrape_job_has_a_target` redefined; new assertion that discovery is opt-in |
+| `tests/test_compose_config.py` | The label contract: complete, unique, and the socket declared |
+| `tests/test_grafana_provisioning.py` | The genericity guard reads job values from the compose labels |
+| `CLAUDE.md` | `Observability wiring` rewritten, plus the socket trap |
+| `README.md` | The scrape description and how a service joins |
 
 ## Tasks
 
-- [ ]
-- [ ]
+One commit per task, with the checkbox ticked in the same commit. Any sentence in `CLAUDE.md` or
+`README.md` that a task makes false is corrected in that task's commit.
+
+- [ ] Record the baseline here: both targets from `/api/v1/targets` with their `job` and `instance`,
+      and the series count per job. No code, and **before** any edit — continuity is only
+      demonstrable against a before. — `docs(specs): record the target labels before the switch`
+- [ ] Compose: the scrape labels on `app` and `service-go`, the socket mount and `group_add` on
+      `prometheus`. `prometheus.yml` is untouched, so the labels stay inert and the stack behaves
+      exactly as before. — `feat(compose): label the scraped services and mount the docker socket`
+- [ ] `prometheus.yml`: the `docker_sd_configs` job with its four relabel rules, replacing both
+      static jobs. Confirm the three unmeasured items here. — `feat(prometheus): discover scrape targets from container labels`
+- [ ] `tests/test_prometheus_config.py`: `test_every_scrape_job_has_a_target` accepting a
+      `*_sd_configs` source, and the new assertion that a discovery job carries `action: keep`. —
+      `test(prometheus): accept discovery jobs and require the scrape opt-in`
+- [ ] `tests/test_compose_config.py`: a scraped service declares job and port, no two services claim
+      the same job label, and `prometheus` declares the socket and `group_add`. —
+      `test(compose): assert the scrape opt-in labels are complete and unique`
+- [ ] `tests/test_grafana_provisioning.py`: the guard's fixture reads `prometheus.io/job` from the
+      compose file, with the docstring recording why the source moved. —
+      `test(grafana): read job values from the compose labels`
+- [ ] `CLAUDE.md`: label discovery, the four-label contract, why `job` and `instance` cannot change,
+      and the socket trap. Conclusions only — the derivation stays in this file. —
+      `docs: document label-based target discovery`
+- [ ] `README.md`: the scrape description and a short section on how a service joins. —
+      `docs: explain how a service joins the scrape`
+- [ ] Run the verification steps and record each outcome here. No commit beyond the tick. —
+      `docs(specs): record the verification outcomes`
 
 ## Edge cases
 
--
+- **Socket permission is the expected failure, and it surfaces at `up`.** The socket is `root:983`,
+  mode `660`, and Prometheus runs as `nobody`. Planned exit: `group_add: ["${DOCKER_GID:-983}"]` —
+  the inline default is required because no `.env` exists and CI would otherwise resolve it empty.
+- **`user: root` is the wrong exit and is a one-way door.** `prometheus_data` belongs to `nobody`;
+  files written as root are not readable again after a revert.
+- **`:ro` on the socket is not a security boundary.** It protects the file node, not the API:
+  whoever reads the socket enumerates every container on the host. Accepted for a local stack, and
+  written down rather than left implicit.
+- **One target per published port.** Latent today, since each service publishes one. Rewriting
+  `__address__` from labels should collapse a container's targets into one — verify the list shows
+  two, not four.
+- **A stopped service leaves the target list instead of reporting `up=0`.** Real signal loss against
+  `static_configs`: the `Targets up` panel loses the line rather than drawing a zero. No mitigation
+  short of reinstating the fixed list this ticket removes.
+- **Without `prometheus.io/job` the `job` label silently becomes the discovery job name** — new
+  series, orphaned history, and nothing fails. That is why the compose test demands the label rather
+  than trusting the relabel rule.
+- **The optional path rule needs `regex: (.+)`.** Without it, a service that omits
+  `prometheus.io/path` gets an empty `__metrics_path__` instead of the `/metrics` default.
+- **`refresh_interval: 15s` is delay, not failure.** A container that starts takes up to 15s to
+  become a target; the next ticket times this and should not read the wait as a broken discovery.
+- **Only `promtool` reads the relabel semantics.** No Python test can tell whether a `source_labels`
+  entry names a meta-label that exists, which is why the CI `infra` job is part of the verification
+  rather than a formality.
+- **Markdownlint** on the `CLAUDE.md` and `README.md` edits: compact tables (MD060), blank lines
+  around fences and lists.
 
 ## Verification steps
 
--
+1. `tox` passes end to end — `py311` with the new assertions, `lint`, `safety`.
+2. `promtool check config` accepts `prometheus.yml`, run through the image read out of
+   `docker-compose.yml`, the way the CI `infra` job does it.
+3. `docker compose --profile '*' config -q` exits clean, and `config --services` resolves five
+   services.
+4. `docker compose --profile core --profile load up -d` against the **existing** `prometheus_data`;
+   `app`, `service-go`, `prometheus` and `grafana` all reach `healthy`, and the Prometheus log shows
+   no socket permission error.
+5. `/api/v1/targets` returns exactly two targets, both `up`, with `job` and `instance` identical to
+   the baseline recorded in task 1 — two, not one per published port.
+6. `label_values(job)` returns exactly `fastapi-app` and `service-go`.
+7. **Series continuity:** a range query spanning the restart shows no gap
+   (`count_over_time(up{job="fastapi-app"}[30m])`), and the series count per job matches the
+   baseline.
+8. **Discovery proof:** `docker compose --profile core stop service-go` and the target leaves the
+   list; start it again and it returns within the refresh interval, with no configuration edit.
+9. **Opt-in proof:** remove `prometheus.io/scrape` from one service, recreate it, and its target
+   disappears; revert.
+10. **The dashboard draws all fourteen panels** in a browser, and `git diff` does not name
+    `grafana/dashboards/services.json`.
+11. **Negative proof of the guard:** write `job="fastapi-app"` into a dashboard expression and
+    confirm the test fails — today's guard would not fail it; revert.
+12. A CI run on the branch is green on all three jobs.
+13. `git diff --stat main...HEAD` names only the files in "Affected files", plus this ticket's two
+    documents; `git show --stat HEAD` at each commit names only that task's files.
