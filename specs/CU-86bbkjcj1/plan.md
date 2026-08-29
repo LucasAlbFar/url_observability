@@ -86,7 +86,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
 - [x] Record the baseline here: both targets from `/api/v1/targets` with their `job` and `instance`,
       and the series count per job. No code, and **before** any edit — continuity is only
       demonstrable against a before. — `docs(specs): record the target labels before the switch`
-- [ ] Compose: the scrape labels on `app` and `service-go`, the socket mount and `group_add` on
+- [x] Compose: the scrape labels on `app` and `service-go`, the socket mount and `group_add` on
       `prometheus`. `prometheus.yml` is untouched, so the labels stay inert and the stack behaves
       exactly as before. — `feat(compose): label the scraped services and mount the docker socket`
 - [ ] `prometheus.yml`: the `docker_sd_configs` job with its four relabel rules, replacing both
