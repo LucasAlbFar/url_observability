@@ -10,6 +10,9 @@ runs `promtool check config` for the semantics.
 import pytest
 import yaml
 
+SCRAPE_META = "__meta_docker_container_label_prometheus_io_scrape"
+PROJECT_FILTER = "com.docker.compose.project"
+
 
 @pytest.fixture(scope="session")
 def prometheus_config(repo_root):
@@ -89,5 +92,41 @@ def test_discovery_is_opt_in(prometheus_config):
     for job in prometheus_config["scrape_configs"]:
         if not _sd_configs(job):
             continue
-        actions = [rule.get("action") for rule in job.get("relabel_configs", [])]
-        assert "keep" in actions, job["job_name"]
+        # The source label matters as much as the action: a `keep` on
+        # some other label would satisfy a looser assertion while
+        # leaving this door open.
+        keeps = [
+            rule
+            for rule in job.get("relabel_configs", [])
+            if rule.get("action") == "keep"
+            and SCRAPE_META in rule.get("source_labels", [])
+        ]
+        assert keeps, job["job_name"]
+
+
+def test_discovery_is_scoped_to_this_project(prometheus_config, repo_root):
+    """Confirm discovery cannot reach another stack's containers.
+
+    The socket enumerates every container on the host, and
+    `prometheus.io/scrape` is a convention other stacks use too, so the
+    opt-in alone does not scope it. A foreign container would join with
+    an address rebuilt from its own compose service name, which does
+    not resolve on this network: a permanently down target, and a
+    foreign value in the `job` dropdown.
+
+    The expected value is compose's default project name, the
+    directory name. That coupling is deliberate — a mismatch means
+    discovery silently returns nothing, and the container still reports
+    healthy while every panel goes empty.
+    """
+    expected = f"{PROJECT_FILTER}={repo_root.name}"
+    for job in prometheus_config["scrape_configs"]:
+        for key in _sd_configs(job):
+            for config in job[key]:
+                values = [
+                    value
+                    for entry in config.get("filters", [])
+                    if entry.get("name") == "label"
+                    for value in entry.get("values", [])
+                ]
+                assert expected in values, job["job_name"]
