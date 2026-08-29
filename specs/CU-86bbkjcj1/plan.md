@@ -58,13 +58,17 @@ Measured 2026-08-24 unless dated otherwise.
 - **Four places describe the scrape in prose:** `README.md:10` (the two addresses and the two job
   names), `:99`, `:241`, and the `Observability wiring` section of `CLAUDE.md`.
 
-**Not measured yet — confirmed in task 3, with `promtool check config` and `/api/v1/targets`:**
+**Confirmed in task 3, 2026-08-29, with `promtool check config` and `/api/v1/targets`:**
 
-- The meta-label naming, i.e. that `prometheus.io/scrape` reaches relabelling as
-  `__meta_docker_container_label_prometheus_io_scrape`.
-- That Docker SD emits one target per published port, and that targets of the same container
-  collapse once `__address__` is rewritten from labels and the `__meta_*` labels are dropped.
-- That a stopped container leaves the target list rather than reporting `up=0`.
+- **The meta-label naming holds.** `prometheus.io/scrape` reaches relabelling as
+  `__meta_docker_container_label_prometheus_io_scrape`, and the compose service name as
+  `__meta_docker_container_label_com_docker_compose_service`.
+- **A container yields more than one candidate target, and the rewrite collapses them.**
+  `prometheus` and `grafana` each appear twice in the dropped list at the same address; `app` and
+  `service-go` produce one active target each, not one per published port.
+- **A stopped container leaves the target list.** With `service-go` stopped the list holds one
+  target and its `up` series disappears rather than reading 0; starting it again restores the
+  target within the refresh interval, with no configuration edit.
 
 ## Affected files
 
@@ -89,7 +93,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
 - [x] Compose: the scrape labels on `app` and `service-go`, the socket mount and `group_add` on
       `prometheus`. `prometheus.yml` is untouched, so the labels stay inert and the stack behaves
       exactly as before. — `feat(compose): label the scraped services and mount the docker socket`
-- [ ] `prometheus.yml`: the `docker_sd_configs` job with its four relabel rules, replacing both
+- [x] `prometheus.yml`: the `docker_sd_configs` job with its four relabel rules, replacing both
       static jobs. Confirm the three unmeasured items here. — `feat(prometheus): discover scrape targets from container labels`
 - [ ] `tests/test_prometheus_config.py`: `test_every_scrape_job_has_a_target` accepting a
       `*_sd_configs` source, and the new assertion that a discovery job carries `action: keep`. —

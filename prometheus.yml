@@ -8,12 +8,36 @@ storage:
       size: 512MB
 
 scrape_configs:
-  - job_name: "fastapi-app"
-    metrics_path: /metrics
-    static_configs:
-      - targets: ["app:8002"]
-
-  - job_name: "service-go"
-    metrics_path: /metrics
-    static_configs:
-      - targets: ["service-go:8003"]
+  # One job for every service. A service joins the scrape by declaring the
+  # labels in its own compose block, not by being written down here.
+  - job_name: "docker-labels"
+    docker_sd_configs:
+      # 15s, not the 60s default: a container that starts should become a
+      # target in seconds, since that delay is the demonstration.
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 15s
+    relabel_configs:
+      # Opt in, or be discarded. Without this `keep`, discovery means scraping
+      # every container that starts — Prometheus and Grafana included.
+      - source_labels: [__meta_docker_container_label_prometheus_io_scrape]
+        regex: "true"
+        action: keep
+      # `job` comes from the label, never from the compose service name:
+      # the series already in prometheus_data are keyed by these values.
+      - source_labels: [__meta_docker_container_label_prometheus_io_job]
+        target_label: job
+      # `instance` likewise: the address is rebuilt from the compose service
+      # name and the declared port, so it stays `app:8002` instead of becoming
+      # a container IP that changes on every recreate. Rebuilding it also
+      # collapses a container's published ports into a single target.
+      - source_labels:
+          - __meta_docker_container_label_com_docker_compose_service
+          - __meta_docker_container_label_prometheus_io_port
+        separator: ":"
+        target_label: __address__
+      # Optional. `(.+)` is what leaves the /metrics default alone when a
+      # service declares no path — without it an absent label writes an empty
+      # __metrics_path__.
+      - source_labels: [__meta_docker_container_label_prometheus_io_path]
+        regex: (.+)
+        target_label: __metrics_path__
