@@ -1,0 +1,18 @@
+{
+  "name": "service-node",
+  "version": "1.0.0",
+  "description": "Third observed service: joins the scrape by container label alone",
+  "private": true,
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": "24.20.0"
+  },
+  "dependencies": {
+    "prom-client": "15.1.3"
+  }
+}

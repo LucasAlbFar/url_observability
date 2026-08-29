@@ -88,7 +88,7 @@ Measured 2026-08-29 against `main`, with the discovery ticket merged.
 One commit per task, with the checkbox ticked in the same commit. Any sentence in `CLAUDE.md` or
 `README.md` that a task makes false is corrected in that task's commit.
 
-- [ ] The Node service on its own: source, test, `package.json`, `package-lock.json`, `Dockerfile`.
+- [x] The Node service on its own: source, test, `package.json`, `package-lock.json`, `Dockerfile`.
       Not in the compose file yet, so the stack still runs two services and nothing is observed. —
       `feat(service-node): add a third service instrumented with prom-client`
 - [ ] The service in `docker-compose.yml` with its three labels, and its routes in `URLS`. **This is
