@@ -98,7 +98,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
 - [x] `tests/test_prometheus_config.py`: `test_every_scrape_job_has_a_target` accepting a
       `*_sd_configs` source, and the new assertion that a discovery job carries `action: keep`. —
       `test(prometheus): accept discovery jobs and require the scrape opt-in`
-- [ ] `tests/test_compose_config.py`: a scraped service declares job and port, no two services claim
+- [x] `tests/test_compose_config.py`: a scraped service declares job and port, no two services claim
       the same job label, and `prometheus` declares the socket and `group_add`. —
       `test(compose): assert the scrape opt-in labels are complete and unique`
 - [ ] `tests/test_grafana_provisioning.py`: the guard's fixture reads `prometheus.io/job` from the

@@ -2,7 +2,8 @@
 
 These parse the compose file and assert the invariants the stack
 hardening introduced: pinned tags, named volumes, profiles,
-healthchecks and the storage path. Nothing here starts a container,
+healthchecks, the storage path and the labels a service scrapes by.
+Nothing here starts a container,
 so they say nothing about whether the stack actually comes up.
 """
 
@@ -30,6 +31,12 @@ REQUIREMENT_FLAGS = ("-r", "--requirement")
 # `pip install --upgrade pip` is bootstrapping the installer, not
 # declaring a dependency, so it is the one name allowed to float.
 UNPINNED_ALLOWED = {"pip"}
+# The scrape contract: a service joins by declaring these, and nothing
+# else. The path label is optional and defaults to /metrics.
+SCRAPE_LABEL = "prometheus.io/scrape"
+JOB_LABEL = "prometheus.io/job"
+PORT_LABEL = "prometheus.io/port"
+DOCKER_SOCKET = "/var/run/docker.sock"
 
 
 @pytest.fixture(scope="session")
@@ -83,6 +90,28 @@ def installed_packages(text):
             for token in tokens:
                 if not token.startswith("-"):
                     yield token
+
+
+def service_labels(service):
+    """Return a service's labels as a mapping.
+
+    Compose accepts both a mapping and a `key=value` list. Reading only
+    the mapping form would make a list-shaped block look like a service
+    with no labels, and the opt-in tests below would then pass by
+    finding nothing to check.
+    """
+    labels = service.get("labels", {})
+    if isinstance(labels, list):
+        return dict(entry.split("=", 1) for entry in labels)
+    return labels
+
+
+def scraped_services(compose):
+    """Yield each service that opted into the scrape, with its labels."""
+    for name, service in compose["services"].items():
+        labels = service_labels(service)
+        if labels.get(SCRAPE_LABEL) == "true":
+            yield name, labels
 
 
 def test_compose_carries_no_obsolete_version_key(compose):
@@ -193,3 +222,49 @@ def test_prometheus_command_sets_the_storage_path(compose):
     flags = {argument.split("=", 1)[0] for argument in command}
     for flag in STORAGE_FLAGS:
         assert flag in flags, flag
+
+
+def test_scraped_services_declare_a_job_and_a_port(compose):
+    """Confirm an opted-in service carries the rest of the contract.
+
+    Without `prometheus.io/job` the `job` label silently becomes the
+    discovery job name: new series, the history in prometheus_data
+    orphaned, and nothing failing. A relabel rule cannot demand the
+    label, so this does.
+    """
+    checked = 0
+    for name, labels in scraped_services(compose):
+        checked += 1
+        assert labels.get(JOB_LABEL), name
+        assert labels.get(PORT_LABEL), name
+    assert checked, "no service opted into the scrape"
+
+
+def test_scrape_job_labels_are_unique(compose):
+    """Confirm no two services claim the same `job` label.
+
+    This is where the invariant behind test_scrape_job_names_are_unique
+    now lives. With a single discovery job, job names in prometheus.yml
+    can no longer collide; the collision moved to the labels, and
+    Prometheus still folds the second service's series under the first
+    one's label without complaining.
+    """
+    # `.get`, so a service missing the label fails the completeness
+    # test above and this one only reports a real collision.
+    jobs = [labels.get(JOB_LABEL) for _, labels in scraped_services(compose)]
+    assert len(jobs) == len(set(jobs)), jobs
+
+
+def test_prometheus_reads_the_docker_socket_unprivileged(compose):
+    """Confirm discovery has its socket, and does not take it as root.
+
+    `user: root` would also read the socket and is a one-way door:
+    prometheus_data belongs to `nobody`, and files written as root are
+    not readable again after a revert. `group_add` is what makes a
+    660 root:docker socket readable without that.
+    """
+    service = compose["services"]["prometheus"]
+    mounts = [m for m in service["volumes"] if m.startswith(DOCKER_SOCKET)]
+    assert mounts, service["volumes"]
+    assert service.get("group_add"), service.get("group_add")
+    assert "user" not in service
