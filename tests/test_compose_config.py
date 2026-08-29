@@ -92,26 +92,33 @@ def installed_packages(text):
                     yield token
 
 
-def service_labels(service):
-    """Return a service's labels as a mapping.
+def scraped_services(compose_labels):
+    """Yield each service that opted into the scrape, with its labels.
 
-    Compose accepts both a mapping and a `key=value` list. Reading only
-    the mapping form would make a list-shaped block look like a service
-    with no labels, and the opt-in tests below would then pass by
-    finding nothing to check.
+    The labels come from the shared `compose_labels` fixture, which is
+    also what the dashboard's genericity guard reads: one reader
+    normalising the label block and the other not is how that guard
+    would quietly stop covering a service.
     """
-    labels = service.get("labels", {})
-    if isinstance(labels, list):
-        return dict(entry.split("=", 1) for entry in labels)
-    return labels
-
-
-def scraped_services(compose):
-    """Yield each service that opted into the scrape, with its labels."""
-    for name, service in compose["services"].items():
-        labels = service_labels(service)
+    for name, labels in compose_labels.items():
         if labels.get(SCRAPE_LABEL) == "true":
             yield name, labels
+
+
+def socket_mounts(service):
+    """Yield each Docker socket mount a service declares, read-only first.
+
+    Compose accepts a volume as a short string or as a long mapping.
+    Reading only the string form raises on the other, which is a loud
+    failure but the wrong one.
+    """
+    for volume in service.get("volumes", []):
+        if isinstance(volume, str):
+            source, _, rest = volume.partition(":")
+            if source == DOCKER_SOCKET:
+                yield rest.endswith(":ro")
+        elif volume.get("source") == DOCKER_SOCKET:
+            yield bool(volume.get("read_only"))
 
 
 def test_compose_carries_no_obsolete_version_key(compose):
@@ -224,23 +231,26 @@ def test_prometheus_command_sets_the_storage_path(compose):
         assert flag in flags, flag
 
 
-def test_scraped_services_declare_a_job_and_a_port(compose):
+def test_scraped_services_declare_a_job_and_a_port(compose_labels):
     """Confirm an opted-in service carries the rest of the contract.
 
-    Without `prometheus.io/job` the `job` label silently becomes the
-    discovery job name: new series, the history in prometheus_data
-    orphaned, and nothing failing. A relabel rule cannot demand the
-    label, so this does.
+    A `replace` rule *deletes* the label it targets when the value is
+    empty, so a service opting in without `prometheus.io/job` does not
+    fall back to anything — it would be scraped carrying no `job` at
+    all. `prometheus.yml` drops such a container rather than storing
+    it under a broken identity; this is where the omission is reported
+    as the mistake it is, instead of as a service that silently never
+    appears.
     """
     checked = 0
-    for name, labels in scraped_services(compose):
+    for name, labels in scraped_services(compose_labels):
         checked += 1
         assert labels.get(JOB_LABEL), name
         assert labels.get(PORT_LABEL), name
     assert checked, "no service opted into the scrape"
 
 
-def test_scrape_job_labels_are_unique(compose):
+def test_scrape_job_labels_are_unique(compose_labels):
     """Confirm no two services claim the same `job` label.
 
     This is where the invariant behind test_scrape_job_names_are_unique
@@ -249,9 +259,14 @@ def test_scrape_job_labels_are_unique(compose):
     Prometheus still folds the second service's series under the first
     one's label without complaining.
     """
-    # `.get`, so a service missing the label fails the completeness
-    # test above and this one only reports a real collision.
-    jobs = [labels.get(JOB_LABEL) for _, labels in scraped_services(compose)]
+    # A service missing the label belongs to the completeness test
+    # above; counting it here would report two such services as a
+    # collision with each other.
+    jobs = [
+        labels[JOB_LABEL]
+        for _, labels in scraped_services(compose_labels)
+        if JOB_LABEL in labels
+    ]
     assert len(jobs) == len(set(jobs)), jobs
 
 
@@ -262,9 +277,14 @@ def test_prometheus_reads_the_docker_socket_unprivileged(compose):
     prometheus_data belongs to `nobody`, and files written as root are
     not readable again after a revert. `group_add` is what makes a
     660 root:docker socket readable without that.
+
+    `:ro` is asserted as the declared minimum, not as a boundary: it
+    protects the file node and not the API, and whoever reads that
+    socket enumerates every container on the host either way.
     """
     service = compose["services"]["prometheus"]
-    mounts = [m for m in service["volumes"] if m.startswith(DOCKER_SOCKET)]
-    assert mounts, service["volumes"]
+    read_only = list(socket_mounts(service))
+    assert read_only, service["volumes"]
+    assert all(read_only), service["volumes"]
     assert service.get("group_add"), service.get("group_add")
     assert "user" not in service

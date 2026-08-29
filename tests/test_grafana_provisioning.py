@@ -195,7 +195,7 @@ def test_every_dashboard_declares_the_service_variable(dashboards):
 
 
 @pytest.fixture(scope="session")
-def scrape_job_names(repo_root):
+def scrape_job_names(compose_labels):
     """Return the values the `job` label actually takes.
 
     The source is docker-compose.yml, not prometheus.yml. Under label
@@ -207,13 +207,14 @@ def scrape_job_names(repo_root):
     unioned into this set, for the same reason.
 
     Read from the file rather than listed here, so a service that joins
-    the scrape is covered without touching this test.
+    the scrape is covered without touching this test. The reading is
+    the shared `compose_labels` fixture, which normalises both forms a
+    compose label block can take — a local reader that handled only the
+    mapping form would drop a list-shaped service out of this set, and
+    the guard would stop rejecting that service's name.
     """
-    compose = yaml.safe_load((repo_root / COMPOSE_CONFIG).read_text())
     names = {
-        service["labels"][JOB_LABEL]
-        for service in compose["services"].values()
-        if JOB_LABEL in service.get("labels", {})
+        labels[JOB_LABEL] for labels in compose_labels.values() if JOB_LABEL in labels
     }
     assert names, COMPOSE_CONFIG
     return names
