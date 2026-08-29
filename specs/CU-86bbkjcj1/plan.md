@@ -107,7 +107,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
 - [x] `CLAUDE.md`: label discovery, the four-label contract, why `job` and `instance` cannot change,
       and the socket trap. Conclusions only — the derivation stays in this file. —
       `docs: document label-based target discovery`
-- [ ] `README.md`: the scrape description and a short section on how a service joins. —
+- [x] `README.md`: the scrape description and a short section on how a service joins. —
       `docs: explain how a service joins the scrape`
 - [ ] Run the verification steps and record each outcome here. No commit beyond the tick. —
       `docs(specs): record the verification outcomes`
