@@ -94,7 +94,7 @@ rather than to this ticket: it instruments its three routes and not its unmatche
 | `docker-compose.yml` | The service with its three scrape labels, healthcheck and profiles; `loadgen` waiting on it |
 | `worker/load_driver.py` | The Node routes in `URLS`, and the comment that said "both services" |
 | `tests/test_load_driver.py` | The driven hosts derived from the compose labels instead of counted |
-| `tests/conftest.py` | An image fixture reading the compose tags and the `Dockerfile` `FROM` lines |
+| `tests/conftest.py` | A `pinned_images` fixture reading the compose tags and every `Dockerfile` `FROM` |
 | `tests/test_docs_versions.py` | Reads that fixture instead of `compose_images` |
 | `tests/test_compose_config.py` | `CORE_SERVICES` derived from the file; the install parser reading `npm` and no longer discarding a command on `-r` |
 | `.github/workflows/python-app.yml` | A `node` job in the mould of `go` |
@@ -115,7 +115,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       `feat(compose): let the node service join the scrape by label`
 - [x] A `node` job in CI, reading its version from `package.json`. —
       `ci: check the node service on its own job`
-- [ ] Debt: the image fixture reads the `FROM` lines of every `Dockerfile` alongside the compose
+- [x] Debt: the image fixture reads the `FROM` lines of every `Dockerfile` alongside the compose
       tags. — `test(docs): check the tags of locally built images too`
 - [ ] Debt: the install parser reads `npm`, and `-r` stops discarding the command it appears in. —
       `test(compose): read npm installs and stop discarding piped pip commands`

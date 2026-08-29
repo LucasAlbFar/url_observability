@@ -54,6 +54,7 @@ Reading the Docker socket is what makes this work, and it is why the `prometheus
 
 - Python 3.11
 - Go 1.25 with `prometheus/client_golang`, built by `golang:1.26.5` and run on `alpine:3.24.1`
+- Node 24 with `prom-client`, on `node:24.20.0`
 - FastAPI 0.139 (Uvicorn), Pydantic 2 / pydantic-settings
 - prometheus-fastapi-instrumentator
 - pytest, pytest-asyncio, pytest-cov (80% coverage gate)
