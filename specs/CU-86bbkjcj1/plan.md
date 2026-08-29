@@ -143,8 +143,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
 
 ## Verification steps
 
-Run 2026-08-29 against the existing `prometheus_data`. Every step passed except 12, which
-waits on a push.
+Run 2026-08-29 against the existing `prometheus_data`. Every step passed.
 
 | # | Outcome |
 | --- | --- |
@@ -159,7 +158,7 @@ waits on a push.
 | 9 | Removing `prometheus.io/scrape` and recreating drops the target; restoring the label brings it back |
 | 10 | All three rows and all eleven charts drew, legends reading `fastapi-app — app:8002` and `service-go — service-go:8003`. `git diff` does not name `grafana/dashboards/services.json` |
 | 11 | `job="fastapi-app"` written into a panel expression fails the new guard; the same edit against the old fixture passed 13/13 |
-| 12 | Pending — the branch is not pushed yet |
+| 12 | Green on all three jobs — `build`, `go`, `infra` — on PR #7 |
 | 13 | The diff names the seven files in "Affected files" plus this ticket's two documents, and each commit names only its own task's files |
 
 Two notes on what the run does **not** prove. The `up` range query carries a value forward for up
