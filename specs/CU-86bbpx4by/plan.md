@@ -113,7 +113,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       the proof:** `git diff` names no `prometheus.yml`, the target appears on its own, and the time
       it takes is measured here. Confirm the unmeasured items and record the panel table. —
       `feat(compose): let the node service join the scrape by label`
-- [ ] A `node` job in CI, reading its version from `package.json`. —
+- [x] A `node` job in CI, reading its version from `package.json`. —
       `ci: check the node service on its own job`
 - [ ] Debt: the image fixture reads the `FROM` lines of every `Dockerfile` alongside the compose
       tags. — `test(docs): check the tags of locally built images too`
