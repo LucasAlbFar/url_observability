@@ -56,12 +56,38 @@ def test_storage_retention_is_bounded(prometheus_config):
     assert retention["size"]
 
 
+def _sd_configs(job):
+    """Return the discovery blocks a job declares, by any mechanism."""
+    return [key for key in job if key.endswith("_sd_configs") and job[key]]
+
+
 def test_every_scrape_job_has_a_target(prometheus_config):
-    """Confirm no job is configured to scrape nothing."""
+    """Confirm no job is configured to scrape nothing.
+
+    Under discovery "does this job scrape anything" stops having a
+    static answer: the addresses arrive from the Docker socket at
+    runtime and are not in this file. So the test asks for a source of
+    targets — a `static_configs` carrying addresses, or any
+    `*_sd_configs` block — rather than for a list of addresses.
+    """
     for job in prometheus_config["scrape_configs"]:
         targets = [
             target
             for static in job.get("static_configs", [])
             for target in static.get("targets", [])
         ]
-        assert targets, job["job_name"]
+        assert targets or _sd_configs(job), job["job_name"]
+
+
+def test_discovery_is_opt_in(prometheus_config):
+    """Confirm a discovery job keeps only the containers that asked.
+
+    Without a `keep`, discovery means scraping every container that
+    starts — Prometheus and Grafana included — which is the cardinality
+    door a later feature exists to close, left open early.
+    """
+    for job in prometheus_config["scrape_configs"]:
+        if not _sd_configs(job):
+            continue
+        actions = [rule.get("action") for rule in job.get("relabel_configs", [])]
+        assert "keep" in actions, job["job_name"]

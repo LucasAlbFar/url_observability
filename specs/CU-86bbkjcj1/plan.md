@@ -95,7 +95,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       exactly as before. — `feat(compose): label the scraped services and mount the docker socket`
 - [x] `prometheus.yml`: the `docker_sd_configs` job with its four relabel rules, replacing both
       static jobs. Confirm the three unmeasured items here. — `feat(prometheus): discover scrape targets from container labels`
-- [ ] `tests/test_prometheus_config.py`: `test_every_scrape_job_has_a_target` accepting a
+- [x] `tests/test_prometheus_config.py`: `test_every_scrape_job_has_a_target` accepting a
       `*_sd_configs` source, and the new assertion that a discovery job carries `action: keep`. —
       `test(prometheus): accept discovery jobs and require the scrape opt-in`
 - [ ] `tests/test_compose_config.py`: a scraped service declares job and port, no two services claim
