@@ -109,7 +109,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       `docs: document label-based target discovery`
 - [x] `README.md`: the scrape description and a short section on how a service joins. —
       `docs: explain how a service joins the scrape`
-- [ ] Run the verification steps and record each outcome here. No commit beyond the tick. —
+- [x] Run the verification steps and record each outcome here. No commit beyond the tick. —
       `docs(specs): record the verification outcomes`
 
 ## Edge cases
@@ -142,6 +142,30 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
   around fences and lists.
 
 ## Verification steps
+
+Run 2026-08-29 against the existing `prometheus_data`. Every step passed except 12, which
+waits on a push.
+
+| # | Outcome |
+| --- | --- |
+| 1 | `tox` green: `py311` 50 passed, coverage 100%, `lint`, `safety` |
+| 2 | `promtool check config` SUCCESS under `prom/prometheus:v3.13.2`, read out of the compose file |
+| 3 | `config -q` clean; `config --services` resolves five, and `group_add` resolves to `983` with no `.env` |
+| 4 | `down` then `up -d --build`: the four services reach `healthy`, and the Prometheus log carries no permission or `level=error` line |
+| 5 | Two targets, both `up`, `fastapi-app`/`app:8002` and `service-go`/`service-go:8003` — two, not one per published port |
+| 6 | `label_values(job)` → `['fastapi-app', 'service-go']` |
+| 7 | 136 and 68 series per job, matching the baseline exactly. A 3h `query_range` over `up`, spanning the static config through the switch, holds **two** series and no new one: same labels throughout. Its one gap, 45s on `service-go`, is the stop in task 3 — which is the point, since it shows the query does reveal a target leaving |
+| 8 | Stopping `service-go` drops the list to one target; starting it restores two, no configuration edit |
+| 9 | Removing `prometheus.io/scrape` and recreating drops the target; restoring the label brings it back |
+| 10 | All three rows and all eleven charts drew, legends reading `fastapi-app — app:8002` and `service-go — service-go:8003`. `git diff` does not name `grafana/dashboards/services.json` |
+| 11 | `job="fastapi-app"` written into a panel expression fails the new guard; the same edit against the old fixture passed 13/13 |
+| 12 | Pending — the branch is not pushed yet |
+| 13 | The diff names the seven files in "Affected files" plus this ticket's two documents, and each commit names only its own task's files |
+
+Two notes on what the run does **not** prove. The `up` range query carries a value forward for up
+to five minutes, so it cannot see a gap shorter than that from a Prometheus restart; what it does
+show is that no series ended and none began. And the `5xx`/`4xx` panels read `No data` — there is
+no error traffic in this stack, and that predates the switch.
 
 1. `tox` passes end to end — `py311` with the new assertions, `lint`, `safety`.
 2. `promtool check config` accepts `prometheus.yml`, run through the image read out of
