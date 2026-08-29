@@ -43,6 +43,11 @@ Measured 2026-08-24 unless dated otherwise.
   bet.
 - **`prometheus_data` exists and holds 13 MB.** The baseline and the continuity check are therefore
   meaningful; against an empty volume they would prove nothing.
+- **Baseline before the switch**, measured 2026-08-29 16:24Z against the existing
+  `prometheus_data`: `/api/v1/targets` returns two active targets, both `up` — `fastapi-app` at
+  `app:8002` and `service-go` at `service-go:8003`. Series per job, from `count({job="<name>"})`:
+  136 for `fastapi-app`, 68 for `service-go`. `label_values(job)` returns those two names and
+  nothing else.
 - **No `.env` exists in the repo**, so a new compose interpolation needs an inline default or the
   CI `config -q` resolves it empty.
 - **Prometheus does not scrape itself today**, and will not start to: without `prometheus.io/scrape`
@@ -78,7 +83,7 @@ Measured 2026-08-24 unless dated otherwise.
 One commit per task, with the checkbox ticked in the same commit. Any sentence in `CLAUDE.md` or
 `README.md` that a task makes false is corrected in that task's commit.
 
-- [ ] Record the baseline here: both targets from `/api/v1/targets` with their `job` and `instance`,
+- [x] Record the baseline here: both targets from `/api/v1/targets` with their `job` and `instance`,
       and the series count per job. No code, and **before** any edit — continuity is only
       demonstrable against a before. — `docs(specs): record the target labels before the switch`
 - [ ] Compose: the scrape labels on `app` and `service-go`, the socket mount and `group_add` on
