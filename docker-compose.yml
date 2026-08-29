@@ -6,6 +6,14 @@ services:
       - "8002:8002"
     environment:
       - DEBUG=True
+    labels:
+      # The scrape contract. `job` and `port` are not derived from the compose
+      # service name on purpose: `job` keys the series already in
+      # prometheus_data, and the port is the one the process listens on, not
+      # whatever the container happens to publish.
+      prometheus.io/scrape: "true"
+      prometheus.io/job: "fastapi-app"
+      prometheus.io/port: "8002"
     restart: unless-stopped
     healthcheck:
       # /health, not /metrics: readiness now means the router came up,
@@ -29,6 +37,10 @@ services:
     profiles: ["core", "load"]
     ports:
       - "8003:8003"
+    labels:
+      prometheus.io/scrape: "true"
+      prometheus.io/job: "service-go"
+      prometheus.io/port: "8003"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8003/health"]
@@ -48,6 +60,17 @@ services:
     volumes:
       - prometheus_data:/prometheus
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Read-only protects the file node, not the API: whoever reads this
+      # socket can enumerate every container on the host. Accepted for a local
+      # stack; a proxy container is the serious answer.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    # The socket is root:docker mode 660 and the image runs as `nobody`, so a
+    # supplementary group is what makes it readable. `user: root` also works
+    # and is a one-way door: prometheus_data belongs to `nobody`, and files
+    # written as root are not readable again after a revert. The inline
+    # default is required — no .env exists, and CI would resolve it empty.
+    group_add:
+      - "${DOCKER_GID:-983}"
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"

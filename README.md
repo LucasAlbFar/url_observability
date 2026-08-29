@@ -7,7 +7,7 @@ Two small services — one FastAPI, one Go — instrumented end-to-end with **Pr
 - **`app`** — a FastAPI service (`app/main.py`) instrumented via `prometheus-fastapi-instrumentator`, which exposes a `/metrics` endpoint.
 - **`service-go`** — a small Go service (`service-go/main.go`) instrumented via `prometheus/client_golang`. It exists to test the claim the stack is language-agnostic, so it mirrors the app's paths and keeps its own library's metric labels (`code`/`method`, not `handler`/`status`) instead of imitating them. Ten metric names end up exported by both services, separated only by the `job` label.
 - **`loadgen`** — a standalone async script (`worker/load_driver.py`) that continuously calls both services' `/load/*` endpoints over HTTP, purely to generate traffic for the metrics/dashboards.
-- **`prometheus`** — scrapes `app:8002/metrics` and `service-go:8003/metrics` every 5s, under the jobs `fastapi-app` and `service-go`. Both the scrape interval and the retention window (7 days, capped at 512 MB) live in `prometheus.yml`; the container's command line only points it at that file and at the volume its TSDB writes to.
+- **`prometheus`** — finds what to scrape by reading the Docker socket every 15s, and scrapes whatever it finds every 5s. No address is written down: a service opts in with labels in its own compose block (see [Joining the scrape](#joining-the-scrape)). The scrape interval and the retention window (7 days, capped at 512 MB) live in `prometheus.yml`; the container's command line only points it at that file and at the volume its TSDB writes to.
 - **`grafana`** — auto-provisioned with a Prometheus datasource and a ready-made "Services Overview" dashboard. Fourteen panels in three rows: *Services* compares the two side by side (targets up, throughput, CPU, resident memory, 4xx/5xx), and *Routes* and *Requests* each hold whichever services use that label convention — routes for the app, response codes for the Go service. Two dropdowns sit at the top: `Service` filters every panel on the dashboard, and `Route` narrows the *Routes* row to particular endpoints.
 
 The `/load/*` endpoints each stress a different resource on purpose, so the dashboard has something to plot. On the FastAPI app (`:8002`):
@@ -28,6 +28,28 @@ The Go service (`:8003`) serves the same three paths, deliberately — a route t
 | `GET /load/io-bound` | Sleeps 2s |
 | `GET /load/cpu-bound` | Spins for roughly as long as the FastAPI one takes |
 
+### Joining the scrape
+
+A service is scraped because it says so, not because someone edited `prometheus.yml`. Four labels in its own compose block are the whole contract:
+
+```yaml
+services:
+  my-service:
+    labels:
+      prometheus.io/scrape: "true"    # required: without it the container is ignored
+      prometheus.io/job: "my-service" # the value the job label takes
+      prometheus.io/port: "8004"      # the port the process listens on
+      prometheus.io/path: "/metrics"  # optional, and already the default
+```
+
+Start the container and its target appears within 15s; stop it and the target goes away. Nothing else changes — no configuration edit, no Prometheus restart. Declaring `scrape` without `job` or `port` is not a half-measure: the container is dropped rather than scraped under a broken identity, and the test suite fails the compose file.
+
+Discovery is scoped to this compose project. The socket lists every container on the machine, and `prometheus.io/scrape` is a convention other stacks use too, so a filter on the project label keeps a neighbouring stack's containers out. Rename the project directory, or set `COMPOSE_PROJECT_NAME`, and that filter needs the new name — a test compares the two for you.
+
+Two things are worth knowing. `prometheus.io/job` is a value the metrics history is keyed by, so two services must not claim the same one and an existing one must not be renamed — `app` stays `fastapi-app`. And a service that is not running has no target at all, rather than a target reporting `up=0`: a stopped service disappears from the *Targets up* panel instead of drawing a zero.
+
+Reading the Docker socket is what makes this work, and it is why the `prometheus` service mounts `/var/run/docker.sock` and joins the `docker` group. Read-only protects the file, not the API — anything that reads that socket can enumerate every container on the machine. Fine for a local playground; not something to copy into a shared host.
+
 ## Stack
 
 - Python 3.11
@@ -46,7 +68,15 @@ Exact Python pins live in `requirements/base.txt` / `requirements/dev.txt`. [CLA
 ## Running the stack
 
 ```bash
+export DOCKER_GID=$(getent group docker | cut -d: -f3)   # see below
 docker compose --profile core --profile load up --build
+```
+
+**`DOCKER_GID` is worth exporting once per shell.** Prometheus finds its targets by reading `/var/run/docker.sock`, which is mode `660` and owned by the `docker` group, and it runs as `nobody` — so it needs that group id. The compose file defaults to `983`, which is this machine's; Debian and Ubuntu usually hand out `999`. Getting it wrong fails **quietly**: the container still reports `healthy`, because `/-/healthy` says nothing about discovery, and the only symptom is that Prometheus finds zero targets and every Grafana panel is empty. The reason is in the log, once you look:
+
+```text
+level=ERROR ... err="error while listing containers: permission denied
+while trying to connect to the docker API at unix:///var/run/docker.sock"
 ```
 
 | Service | URL |
@@ -238,7 +268,7 @@ service-go/
 worker/
   load_driver.py          # standalone async load generator (calls both services' endpoints)
 grafana/                  # provisioned datasource + "Services Overview" dashboard
-prometheus.yml            # Prometheus scrape config
+prometheus.yml            # scrape settings + the label-discovery job
 docker-compose.yml        # the five services, their profiles and named volumes
 tests/                    # pytest suite: one file per module, plus four that check config
 requirements/             # pip-compile sources (base.in/dev.in) and lockfiles (base.txt/dev.txt)

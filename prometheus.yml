@@ -8,12 +8,57 @@ storage:
       size: 512MB
 
 scrape_configs:
-  - job_name: "fastapi-app"
-    metrics_path: /metrics
-    static_configs:
-      - targets: ["app:8002"]
-
-  - job_name: "service-go"
-    metrics_path: /metrics
-    static_configs:
-      - targets: ["service-go:8003"]
+  # One job for every service. A service joins the scrape by declaring the
+  # labels in its own compose block, not by being written down here.
+  - job_name: "docker-labels"
+    docker_sd_configs:
+      # 15s, not the 60s default: a container that starts should become a
+      # target in seconds, since that delay is the demonstration.
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 15s
+        # The socket enumerates every container on the host, and
+        # `prometheus.io/scrape` is a convention other stacks use too, so the
+        # opt-in below is not enough on its own: a container from an unrelated
+        # project would join with an address rebuilt from *its* compose service
+        # name, which does not resolve on this network — a permanently down
+        # target and a foreign value in the `job` dropdown. The project name is
+        # compose's default, the directory name; COMPOSE_PROJECT_NAME means
+        # changing it here too.
+        filters:
+          - name: label
+            values: ["com.docker.compose.project=url_observability"]
+    relabel_configs:
+      # Opt in, or be discarded. Without this `keep`, discovery means scraping
+      # every container that starts — Prometheus and Grafana included.
+      - source_labels: [__meta_docker_container_label_prometheus_io_scrape]
+        regex: "true"
+        action: keep
+      # Opting in without declaring both is a broken identity, not a default
+      # to fall back on: `replace` *deletes* the `job` label when the value is
+      # empty, so the target would carry no `job` at all, and the address
+      # would be rebuilt as `service:`. Dropping the container is the same
+      # answer tests/test_compose_config.py gives for this repo's own file.
+      - source_labels:
+          - __meta_docker_container_label_prometheus_io_job
+          - __meta_docker_container_label_prometheus_io_port
+        regex: (.+);(.+)
+        action: keep
+      # `job` comes from the label, never from the compose service name:
+      # the series already in prometheus_data are keyed by these values.
+      - source_labels: [__meta_docker_container_label_prometheus_io_job]
+        target_label: job
+      # `instance` likewise: the address is rebuilt from the compose service
+      # name and the declared port, so it stays `app:8002` instead of becoming
+      # a container IP that changes on every recreate. Rebuilding it also
+      # collapses a container's published ports into a single target.
+      - source_labels:
+          - __meta_docker_container_label_com_docker_compose_service
+          - __meta_docker_container_label_prometheus_io_port
+        separator: ":"
+        target_label: __address__
+      # Optional. `(.+)` is what leaves the /metrics default alone when a
+      # service declares no path — without it an absent label writes an empty
+      # __metrics_path__.
+      - source_labels: [__meta_docker_container_label_prometheus_io_path]
+        regex: (.+)
+        target_label: __metrics_path__

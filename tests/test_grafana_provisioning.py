@@ -19,6 +19,8 @@ DASHBOARD_BIND = "./grafana/dashboards"
 PROVIDER_CONFIG = "grafana/provisioning/dashboards/dashboard.yml"
 DATASOURCE_CONFIG = "grafana/provisioning/datasources/datasource.yaml"
 PROMETHEUS_CONFIG = "prometheus.yml"
+COMPOSE_CONFIG = "docker-compose.yml"
+JOB_LABEL = "prometheus.io/job"
 
 
 @pytest.fixture(scope="session")
@@ -193,17 +195,28 @@ def test_every_dashboard_declares_the_service_variable(dashboards):
 
 
 @pytest.fixture(scope="session")
-def scrape_job_names(repo_root):
-    """Return the job names prometheus.yml declares.
+def scrape_job_names(compose_labels):
+    """Return the values the `job` label actually takes.
 
-    Read from the file rather than listed here, so a service added to
-    the scrape configuration is covered without touching this test.
-    `prometheus_config` is not reused: it lives in the module that
-    tests prometheus.yml and is not visible from here.
+    The source is docker-compose.yml, not prometheus.yml. Under label
+    discovery the only `job_name` in prometheus.yml names the discovery
+    mechanism, so reading it left this guard forbidding a string no
+    query would ever contain — green, and covering nothing. The values
+    a query could name are the `prometheus.io/job` labels the services
+    declare. Should a static job return, its `job_name` has to be
+    unioned into this set, for the same reason.
+
+    Read from the file rather than listed here, so a service that joins
+    the scrape is covered without touching this test. The reading is
+    the shared `compose_labels` fixture, which normalises both forms a
+    compose label block can take — a local reader that handled only the
+    mapping form would drop a list-shaped service out of this set, and
+    the guard would stop rejecting that service's name.
     """
-    config = yaml.safe_load((repo_root / PROMETHEUS_CONFIG).read_text())
-    names = {job["job_name"] for job in config["scrape_configs"]}
-    assert names, PROMETHEUS_CONFIG
+    names = {
+        labels[JOB_LABEL] for labels in compose_labels.values() if JOB_LABEL in labels
+    }
+    assert names, COMPOSE_CONFIG
     return names
 
 
