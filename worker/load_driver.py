@@ -2,10 +2,11 @@ import asyncio
 
 import httpx
 
-# Both observed services, in one list. The Go service's /health is in
-# here and the FastAPI one is not, on purpose: the app's own healthcheck
-# already drives its /health every ten seconds, so both services carry
-# traffic on the shared path without this list duplicating a probe.
+# All three observed services, in one list. The Go and Node /health
+# routes are in here and the FastAPI one is not, on purpose: the app's
+# own healthcheck already drives its /health every ten seconds, so every
+# service carries traffic on the shared path without this list
+# duplicating a probe.
 URLS = [
     "http://app:8002/load/io-bound",
     "http://app:8002/load/cpu-bound",
@@ -14,6 +15,9 @@ URLS = [
     "http://service-go:8003/health",
     "http://service-go:8003/load/io-bound",
     "http://service-go:8003/load/cpu-bound",
+    "http://service-node:8004/health",
+    "http://service-node:8004/load/io-bound",
+    "http://service-node:8004/load/cpu-bound",
 ]
 
 

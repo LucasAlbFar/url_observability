@@ -28,19 +28,32 @@ async def test_main_loop_once(monkeypatch):
     await load_driver.main(cycles=1)
 
 
-def test_urls_drive_both_services():
-    """Confirm the generator hits the Go service as well as the app."""
-    assert len(load_driver.URLS) == 7
+def test_urls_drive_every_scraped_service(compose_labels):
+    """Confirm the generator hits every service the stack observes.
+
+    Derived from the compose labels rather than counted here: a service
+    that joins the scrape and is never called draws the flat line its
+    own healthcheck produces, and nothing says why. A hand-written
+    count would have to be edited by whoever adds the next service,
+    which is the moment the check is worth the least.
+    """
+    scraped = {
+        f"{name}:{labels['prometheus.io/port']}"
+        for name, labels in compose_labels.items()
+        if labels.get("prometheus.io/scrape") == "true"
+    }
+    assert scraped
     hosts = {url.split("/")[2] for url in load_driver.URLS}
-    assert hosts == {"app:8002", "service-go:8003"}
+    assert hosts == scraped
 
 
 def test_the_app_health_route_is_not_driven():
     """Confirm the app's own healthcheck is not duplicated here.
 
-    Both services answer /health; only the Go one needs traffic from
-    this list, since the app's compose healthcheck probes its own
+    All three services answer /health; only the other two need traffic
+    from this list, since the app's compose healthcheck probes its own
     every ten seconds.
     """
     assert "http://app:8002/health" not in load_driver.URLS
     assert "http://service-go:8003/health" in load_driver.URLS
+    assert "http://service-node:8004/health" in load_driver.URLS

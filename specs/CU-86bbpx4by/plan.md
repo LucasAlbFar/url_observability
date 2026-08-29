@@ -57,17 +57,34 @@ Measured 2026-08-29 against `main`, with the discovery ticket merged.
   tag, so the Node image is the bare Debian-based one — and a probe written against the runtime
   rather than against the image keeps that coupling from being made twice.
 
-**Not measured yet — confirmed in task 2, against the running stack:**
+**Measured in task 2, 2026-08-29, against the running stack:**
 
-- That `collectDefaultMetrics()` exports `process_cpu_seconds_total` and
-  `process_resident_memory_bytes` on Linux, which is what lights the CPU and memory panels with no
-  edit.
-- That a series carrying no `handler` label matches the `handler!="/metrics"` selector in
-  *Throughput by service*, and therefore that the Node service appears there.
-- The `le` bounds `prom-client`'s default histogram uses — a third set, with no consequence for the
-  dashboard because every bucket grouping already includes `job`, but worth recording.
-- How long the target takes to appear after `up`, expected within the 15s refresh interval.
-- The exact `node:<x.y.z>` tag to pin, which has to be a published one.
+- **`collectDefaultMetrics()` exports both process metrics** the resource panels read, so CPU and
+  resident memory light up with no edit.
+- **A series carrying no `handler` label matches `handler!="/metrics"`**, so the Node service does
+  enter *Throughput by service* — an absent label is not equal to a value.
+- **`prom-client`'s default histogram is not a third set of `le` bounds.** It is the same twelve as
+  Go's `DefBuckets`, `0.005` to `10` plus `+Inf`. This plan assumed a new set and assumed wrong;
+  what stays true is that the app's four remain a subset of those twelve.
+- **The target appeared 10.9s after `start`**, inside the 15s refresh interval, measured from the
+  command to the target being listed.
+- **The pinned tag is `node:24.20.0`**, the newest published patch of the current LTS line.
+- **The third service cost 128 series** — against 136 for the app and 68 for the Go service — the
+  number the cardinality feature sizes against.
+
+**The panel table, each row from the query that produces it and not from the JSON:**
+
+| Panel | Reaches the Node service? |
+| --- | --- |
+| *Targets up*, *CPU by service*, *Resident memory* | Yes — three jobs |
+| *Throughput by service* | Yes — three jobs |
+| *5xx / 4xx error rate* | **No.** With real 404 traffic on all three, the two targets return `fastapi-app` alone. The Node service recorded its 404 under `status_code`, which neither `status=~"4.."` nor `code=~"4.."` selects |
+| Row *Routes (`handler`)* | No — `fastapi-app` only |
+| Row *Requests (`code`)* | No — `service-go` only |
+
+A second blindness surfaced while measuring the error panels, and it belongs to the Go service
+rather than to this ticket: it instruments its three routes and not its unmatched handler, so its
+404s are counted nowhere. The app is the only service whose errors that panel can draw.
 
 ## Affected files
 
@@ -75,7 +92,8 @@ Measured 2026-08-29 against `main`, with the discovery ticket merged.
 | --- | --- |
 | `service-node/` | New: source, test, `package.json`, `package-lock.json`, `Dockerfile` |
 | `docker-compose.yml` | The service with its three scrape labels, healthcheck and profiles; `loadgen` waiting on it |
-| `worker/load_driver.py` | The Node routes in `URLS` |
+| `worker/load_driver.py` | The Node routes in `URLS`, and the comment that said "both services" |
+| `tests/test_load_driver.py` | The driven hosts derived from the compose labels instead of counted |
 | `tests/conftest.py` | An image fixture reading the compose tags and the `Dockerfile` `FROM` lines |
 | `tests/test_docs_versions.py` | Reads that fixture instead of `compose_images` |
 | `tests/test_compose_config.py` | `CORE_SERVICES` derived from the file; the install parser reading `npm` and no longer discarding a command on `-r` |
@@ -91,7 +109,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
 - [x] The Node service on its own: source, test, `package.json`, `package-lock.json`, `Dockerfile`.
       Not in the compose file yet, so the stack still runs two services and nothing is observed. —
       `feat(service-node): add a third service instrumented with prom-client`
-- [ ] The service in `docker-compose.yml` with its three labels, and its routes in `URLS`. **This is
+- [x] The service in `docker-compose.yml` with its three labels, and its routes in `URLS`. **This is
       the proof:** `git diff` names no `prometheus.yml`, the target appears on its own, and the time
       it takes is measured here. Confirm the unmeasured items and record the panel table. —
       `feat(compose): let the node service join the scrape by label`

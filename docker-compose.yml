@@ -54,6 +54,34 @@ services:
       # is retried instead of counting against `retries`.
       start_period: 10s
 
+  service-node:
+    build:
+      context: ./service-node
+      dockerfile: Dockerfile
+    profiles: ["core", "load"]
+    ports:
+      - "8004:8004"
+    labels:
+      prometheus.io/scrape: "true"
+      prometheus.io/job: "service-node"
+      prometheus.io/port: "8004"
+    restart: unless-stopped
+    healthcheck:
+      # `node -e` rather than a wget probe: the runtime is already in the
+      # image, so the check does not depend on what the base image ships.
+      # The Go service's wget works only because Alpine's BusyBox
+      # provides it, and the pinning rule forbids picking an image for
+      # the probe's sake.
+      test:
+        - "CMD"
+        - "node"
+        - "-e"
+        - "fetch('http://localhost:8004/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
   prometheus:
     image: prom/prometheus:v3.13.2
     profiles: ["core"]
@@ -120,6 +148,8 @@ services:
       app:
         condition: service_healthy
       service-go:
+        condition: service_healthy
+      service-node:
         condition: service_healthy
     restart: unless-stopped
 
