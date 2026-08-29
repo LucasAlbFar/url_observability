@@ -1,6 +1,6 @@
 # CU-86bbpx4by — 03b node service
 
-Status: Draft
+Status: Approved
 
 Plan: [./plan.md](./plan.md)
 
