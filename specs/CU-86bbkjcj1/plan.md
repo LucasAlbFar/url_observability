@@ -77,6 +77,7 @@ Measured 2026-08-24 unless dated otherwise.
 | `prometheus.yml` | Both `static_configs` jobs become one `docker_sd_configs` job with four relabel rules |
 | `docker-compose.yml` | Socket mount and `group_add` on `prometheus`; the scrape labels on `app` and `service-go` |
 | `tests/test_prometheus_config.py` | `test_every_scrape_job_has_a_target` redefined; new assertion that discovery is opt-in |
+| `tests/conftest.py` | The shared `compose_labels` fixture both guards read |
 | `tests/test_compose_config.py` | The label contract: complete, unique, and the socket declared |
 | `tests/test_grafana_provisioning.py` | The genericity guard reads job values from the compose labels |
 | `CLAUDE.md` | `Observability wiring` rewritten, plus the socket trap |
@@ -128,9 +129,11 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
 - **A stopped service leaves the target list instead of reporting `up=0`.** Real signal loss against
   `static_configs`: the `Targets up` panel loses the line rather than drawing a zero. No mitigation
   short of reinstating the fixed list this ticket removes.
-- **Without `prometheus.io/job` the `job` label silently becomes the discovery job name** — new
-  series, orphaned history, and nothing fails. That is why the compose test demands the label rather
-  than trusting the relabel rule.
+- **Without `prometheus.io/job` the target carries no `job` label at all** — measured 2026-08-29,
+  after review: `replace` *deletes* the label when the value is empty, so there is no fallback to
+  the discovery job name. Recorded here as the correction to what this plan first claimed. The
+  config now drops such a container with a `keep` on job and port, and the compose test still
+  demands the labels, so the omission is reported rather than merely survived.
 - **The optional path rule needs `regex: (.+)`.** Without it, a service that omits
   `prometheus.io/path` gets an empty `__metrics_path__` instead of the `/metrics` default.
 - **`refresh_interval: 15s` is delay, not failure.** A container that starts takes up to 15s to
@@ -138,6 +141,16 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
 - **Only `promtool` reads the relabel semantics.** No Python test can tell whether a `source_labels`
   entry names a meta-label that exists, which is why the CI `infra` job is part of the verification
   rather than a formality.
+- **Discovery reaches every container on the host, not only this project's.** The socket lists
+  them all and `prometheus.io/scrape` is a shared convention, so a neighbouring stack's container
+  would join with an address rebuilt from *its* compose service name — unresolvable here, a
+  permanently down target and a foreign value in the `job` dropdown. Closed with a `filters:` on
+  `com.docker.compose.project`, which names the project and therefore couples to the directory
+  name; a test compares the two, because a mismatch returns zero targets silently.
+- **A wrong `DOCKER_GID` fails quietly.** Measured with `DOCKER_GID=1234`: the container reports
+  `healthy`, discovery returns zero targets, every panel is empty, and the only signal is a
+  `permission denied` line in the log. `/-/healthy` reports the HTTP server, not the socket. Hence
+  the export step in `README.md` rather than trusting the `983` default.
 - **Markdownlint** on the `CLAUDE.md` and `README.md` edits: compact tables (MD060), blank lines
   around fences and lists.
 

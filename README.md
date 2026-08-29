@@ -42,7 +42,9 @@ services:
       prometheus.io/path: "/metrics"  # optional, and already the default
 ```
 
-Start the container and its target appears within 15s; stop it and the target goes away. Nothing else changes — no configuration edit, no Prometheus restart.
+Start the container and its target appears within 15s; stop it and the target goes away. Nothing else changes — no configuration edit, no Prometheus restart. Declaring `scrape` without `job` or `port` is not a half-measure: the container is dropped rather than scraped under a broken identity, and the test suite fails the compose file.
+
+Discovery is scoped to this compose project. The socket lists every container on the machine, and `prometheus.io/scrape` is a convention other stacks use too, so a filter on the project label keeps a neighbouring stack's containers out. Rename the project directory, or set `COMPOSE_PROJECT_NAME`, and that filter needs the new name — a test compares the two for you.
 
 Two things are worth knowing. `prometheus.io/job` is a value the metrics history is keyed by, so two services must not claim the same one and an existing one must not be renamed — `app` stays `fastapi-app`. And a service that is not running has no target at all, rather than a target reporting `up=0`: a stopped service disappears from the *Targets up* panel instead of drawing a zero.
 
@@ -66,7 +68,15 @@ Exact Python pins live in `requirements/base.txt` / `requirements/dev.txt`. [CLA
 ## Running the stack
 
 ```bash
+export DOCKER_GID=$(getent group docker | cut -d: -f3)   # see below
 docker compose --profile core --profile load up --build
+```
+
+**`DOCKER_GID` is worth exporting once per shell.** Prometheus finds its targets by reading `/var/run/docker.sock`, which is mode `660` and owned by the `docker` group, and it runs as `nobody` — so it needs that group id. The compose file defaults to `983`, which is this machine's; Debian and Ubuntu usually hand out `999`. Getting it wrong fails **quietly**: the container still reports `healthy`, because `/-/healthy` says nothing about discovery, and the only symptom is that Prometheus finds zero targets and every Grafana panel is empty. The reason is in the log, once you look:
+
+```text
+level=ERROR ... err="error while listing containers: permission denied
+while trying to connect to the docker API at unix:///var/run/docker.sock"
 ```
 
 | Service | URL |
