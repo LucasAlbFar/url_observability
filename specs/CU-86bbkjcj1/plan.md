@@ -101,7 +101,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
 - [x] `tests/test_compose_config.py`: a scraped service declares job and port, no two services claim
       the same job label, and `prometheus` declares the socket and `group_add`. —
       `test(compose): assert the scrape opt-in labels are complete and unique`
-- [ ] `tests/test_grafana_provisioning.py`: the guard's fixture reads `prometheus.io/job` from the
+- [x] `tests/test_grafana_provisioning.py`: the guard's fixture reads `prometheus.io/job` from the
       compose file, with the docstring recording why the source moved. —
       `test(grafana): read job values from the compose labels`
 - [ ] `CLAUDE.md`: label discovery, the four-label contract, why `job` and `instance` cannot change,
