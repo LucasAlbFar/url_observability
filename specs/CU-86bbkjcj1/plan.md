@@ -104,7 +104,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
 - [x] `tests/test_grafana_provisioning.py`: the guard's fixture reads `prometheus.io/job` from the
       compose file, with the docstring recording why the source moved. —
       `test(grafana): read job values from the compose labels`
-- [ ] `CLAUDE.md`: label discovery, the four-label contract, why `job` and `instance` cannot change,
+- [x] `CLAUDE.md`: label discovery, the four-label contract, why `job` and `instance` cannot change,
       and the socket trap. Conclusions only — the derivation stays in this file. —
       `docs: document label-based target discovery`
 - [ ] `README.md`: the scrape description and a short section on how a service joins. —

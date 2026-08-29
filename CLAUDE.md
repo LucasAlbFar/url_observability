@@ -79,7 +79,7 @@ docker run --rm --entrypoint promtool \
   check config /etc/prometheus/prometheus.yml
 ```
 
-The four test files ride along in the normal `tox -e py311` run and need no Docker. Three of them are purely **structural** — the configuration files parse and carry the fields the stack depends on. `tests/test_grafana_provisioning.py` goes further: since the dashboard rebuild it also asserts panel types, unique panel ids, non-overlapping `gridPos`, `refId` unique within each panel, datasource references by uid, the `job` variable, and that no scrape job name appears in any query. What none of them do is prove that a query returned data or that a panel drew — only a browser answers that, so don't read a green run as a dashboard review.
+The four test files ride along in the normal `tox -e py311` run and need no Docker. Three of them are purely **structural** — the configuration files parse and carry the fields the stack depends on. `tests/test_grafana_provisioning.py` goes further: since the dashboard rebuild it also asserts panel types, unique panel ids, non-overlapping `gridPos`, `refId` unique within each panel, datasource references by uid, the `job` variable, and that no scrape job name appears in any query — the names it forbids read from the `prometheus.io/job` labels in `docker-compose.yml`, since `prometheus.yml` no longer names a service. What none of them do is prove that a query returned data or that a panel drew — only a browser answers that, so don't read a green run as a dashboard review.
 
 `tests/test_compose_config.py` reaches every Dockerfile in the repo through `rglob`, but not equally: the base-image pinning rule applies to all of them (bare `major.minor.patch` only — every suffixed tag such as `golang:1.26.5-alpine` is rejected, and so are `scratch` and distroless), while the rule that installed packages are pinned only understands `pip`, so a Dockerfile in another language passes it **vacuously**. For `service-go` what stands in for it is `go.sum` — a hash per module, stronger than pip's `==` — plus the assertion that both `go.mod` and `go.sum` exist and are non-empty. That guarantee is why the image resolves dependencies through `go mod download`; a `go install pkg@latest` would escape every check here. `tests/test_docs_versions.py` does not see this service at all: it maps services declaring `image:`, and a locally built one declares `build:`.
 
@@ -126,7 +126,22 @@ Three traps. The app's p95 reads a flat **1s** for anything slower, having four 
 
 **Readiness.** Both services answer `/health` with `{"status": "ok"}` and both healthchecks probe it. Keep the two bodies identical: a route that exists on both services is what makes the merge observable. The probe traffic lands on an unfiltered handler every ten seconds, so a flat baseline in the dashboard panels comes from the healthchecks rather than from load.
 
-**Observability wiring.** `prometheus.yml` scrapes `app:8002/metrics` under job `fastapi-app` and `service-go:8003/metrics` under job `service-go`, both every 5s. Job names must stay unique — a test asserts it, because Prometheus itself accepts a duplicate and silently folds the second job's series under the first one's label. Don't rename `fastapi-app`: the series already in `prometheus_data` are keyed by it. Grafana auto-provisions its datasource and `grafana/dashboards/services.json` from `grafana/provisioning/`.
+**Observability wiring.** `prometheus.yml` declares **one** job, `docker-labels`, which discovers its targets from the Docker socket every 15s and scrapes them every 5s. No address is written in that file. A service joins the scrape from its own compose block, by declaring four labels and nothing else:
+
+| Label | Contract |
+| --- | --- |
+| `prometheus.io/scrape` | `"true"`, or a `keep` rule discards the container — Prometheus and Grafana included |
+| `prometheus.io/job` | the value the `job` label takes |
+| `prometheus.io/port` | the port the process listens on, not necessarily one it publishes |
+| `prometheus.io/path` | optional, `/metrics` when absent |
+
+**`job` and `instance` cannot change**, which is what the last two labels are for. The series in `prometheus_data` are keyed by both, so deriving `job` from the compose service name would rename `fastapi-app`, and letting `instance` become the container IP would re-key every series on each recreate. Instead `job` is copied from `prometheus.io/job` and `__address__` is rebuilt as `<compose service>:<port>` — which also collapses a container's several candidate targets into one. Don't rename `fastapi-app`, and don't let two services claim the same `prometheus.io/job`: `tests/test_compose_config.py` asserts uniqueness there now, because Prometheus folds the second one's series under the first one's label without complaining.
+
+One behaviour is lost against the old `static_configs`: a stopped service leaves the target list rather than reporting `up=0`, so the `Targets up` panel loses the line instead of drawing a zero. That is inherent to discovery, not a defect.
+
+**The Docker socket.** Prometheus mounts `/var/run/docker.sock` and reads it through `group_add: ["${DOCKER_GID:-983}"]`, staying `nobody`. `user: root` also works and is a one-way door — `prometheus_data` belongs to `nobody`, and files written as root are not readable again after a revert. The inline GID default is required: no `.env` exists, and CI would resolve the variable empty. And `:ro` is not a security boundary: it protects the file node, not the API, so whoever reads that socket enumerates every container on the host. Accepted because the stack is local; the real answer is a proxy container.
+
+Grafana auto-provisions its datasource and `grafana/dashboards/services.json` from `grafana/provisioning/`.
 
 ## Testing conventions
 
