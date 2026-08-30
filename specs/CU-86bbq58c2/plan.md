@@ -81,10 +81,9 @@ Measured 2026-08-30 against `main`, with the stack running under `core` and `loa
 
 **Hypotheses, to measure with the noisy service running:**
 
-- That grouping collides: collapsing two label values into one inside a single scrape produces two
-  samples with identical label sets and fails the scrape.
-  `prometheus_target_scrapes_sample_duplicate_timestamp_total` exists on `:9090/metrics` and reads
-  `0` now, so it is the instrument. If it holds, "drop **or** group" in the roadmap becomes "drop".
+- ~~That grouping collides~~ — **measured false in task 6, and the real answer is worse.** See
+  below. `prometheus_target_scrapes_sample_duplicate_timestamp_total` was the instrument and never
+  moved.
 - That a tripped `sample_limit` fails only the target that tripped it, leaving the others at `up=1`.
   This is what makes one shared job acceptable for services of different sizes.
 - That the limited target reports `up=0` and stays in the target list — unlike a stopped service,
@@ -156,6 +155,31 @@ there: 467 KB inside an hour from an exporter whose labels are perfectly ordinar
   way, so a panel can show how big a target is *while* it is being refused, which is exactly what
   the question "why is this one down" needs.
 
+**Measured in task 6, 2026-08-30. The grouping option, with the drop rules temporarily replaced by
+a `replace` rule collapsing `/users/<n>` to `/users/:id`:**
+
+- **Grouping does not collide. The hypothesis was wrong.**
+  `prometheus_target_scrapes_sample_duplicate_timestamp_total` stayed at `0`, `up` stayed `1`,
+  `lastError` stayed empty and the Prometheus log carried no warning. 550 samples with the same
+  label set after relabeling were accepted without complaint.
+- **It does not protect, either — which is the finding that decides the feature.**
+  `scrape_samples_post_metric_relabeling{job="noisy"}` read **550**, unchanged by the collapse: the
+  ceiling counts samples, and duplicates count. Grouping bounds *stored series* while leaving
+  *samples per scrape* exactly where they were, so the ceiling fires at precisely the moment it
+  would have without it. The first attempt at this measurement proved it by accident — the noisy
+  service was at 6750 samples and the scrape failed with `sample limit exceeded` before any
+  duplicate could be observed, so it had to be restarted to isolate the question.
+- **What it stores is not an aggregate.** The 550 samples collapsed to **one** series reading
+  **`1`** — one sample's value, not the 550 summed. A grouped counter is a number nobody should
+  read, and nothing in the config or the graph says so.
+- **`scrape_series_added` lies under grouping.** It read **50 per scrape** while the head gained
+  effectively nothing, because the scrape cache accounts for samples before the collapse. Under the
+  drop rules the same metric reads `0` and is accurate. So the panel in task 7 cannot rest on it
+  alone.
+- **Conclusion: ship the drop rules, and the roadmap's "discard **or** group" becomes "discard".**
+  Not for the reason assumed — grouping is safe — but because it costs the same ceiling pressure,
+  destroys the value it keeps, and misreports its own effect.
+
 ## Affected files
 
 | File | Change |
@@ -189,7 +213,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       `feat(prometheus): drop series labelled with a raw path`
 - [x] The limits in `global:`, sized against the measured samples per scrape with the headroom
       justified beside the value. — `feat(prometheus): cap what a single target can write`
-- [ ] Measure the grouping option: apply it, read the duplicate-sample counter before and after,
+- [x] Measure the grouping option: apply it, read the duplicate-sample counter before and after,
       record the outcome here either way. No code shipped if it collides. — verification
 - [ ] The *Cardinality* row in the dashboard, and its assertions. —
       `feat(grafana): show how much each target writes`
