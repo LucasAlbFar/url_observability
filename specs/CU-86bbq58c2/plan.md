@@ -139,7 +139,11 @@ Measured 2026-08-30 against `main`, with the stack running under `core` and `loa
 | `noisy` | 6750 | **467 KB** | 4 | 7 | 12 |
 
 Every number in `global:` is one of these with room, and the noisy row is why `body_size_limit` is
-there: 467 KB inside an hour from an exporter whose labels are perfectly ordinary in shape.
+there: 467 KB inside an hour from an exporter whose labels are perfectly ordinary in shape. That row
+is also why the ramp was later given a top — the code review below found that, left running, it
+crosses the 4 MB body limit and fails the scrape outright. Confirmed live while that round was being
+verified: the uncapped container, up about an hour, was emitting **42,450 samples for a 2.9 MB
+body** — 73% of the limit and still climbing. Capped at 5000 samples the body plateaus at 346 KB.
 
 - **Both ceiling hypotheses hold.** With `sample_limit` lowered to 100 on purpose, `fastapi-app`
   (146) and `service-node` (156) went to `up=0` while `service-go` (63) and `noisy` (0 post-relabel)
@@ -150,10 +154,14 @@ there: 467 KB inside an hour from an exporter whose labels are perfectly ordinar
   discovery removes from the list entirely. So *Targets up* draws a zero rather than losing the
   line, and the guard is visible without the counter no panel can read.
   `prometheus_target_scrapes_exceeded_sample_limit_total` read 8 on `:9090/metrics`.
-- **`scrape_samples_post_metric_relabeling` is still reported for a failed scrape** — 146 and 156
-  for the two targets that stored nothing. Prometheus writes the synthetic scrape metrics either
-  way, so a panel can show how big a target is *while* it is being refused, which is exactly what
-  the question "why is this one down" needs.
+- **`scrape_samples_post_metric_relabeling` is still reported for a scrape the limits refused** —
+  146 and 156 for the two targets that stored nothing. Prometheus writes the synthetic scrape
+  metrics either way, so a panel can show how big a target is *while* it is being refused, which is
+  exactly what the question "why is this one down" needs. **What this measurement does not cover:**
+  a target that cannot be reached reports **0**, the same as an empty scrape, so the panel collapses
+  rather than holding the last size. Generalising the refused case to "even for a failed scrape" put
+  a false sentence into `CLAUDE.md` and into the panel's own description; the code review below
+  caught it.
 
 **Measured in task 6, 2026-08-30. The grouping option, with the drop rules temporarily replaced by
 a `replace` rule collapsing `/users/<n>` to `/users/:id`:**
@@ -251,6 +259,41 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
 - [x] Run the verification steps and record each outcome here. No commit beyond the tick. —
       `docs(specs): record the verification outcomes`
 
+**The code review of the finished branch, 2026-08-30, raised eight findings and cost five commits.**
+Not one of them was a defect in the guard itself, which is the pattern worth keeping: the mechanism
+held under every check the review ran against the live stack, and what failed was the way the
+feature is demonstrated and described.
+
+- [x] The ramp had no top, so leaving the demonstration running inverts it: at ~100 minutes the body
+      crosses `body_size_limit`, the scrape fails, and both *Cardinality* panels read zero for
+      `noisy` — the exact picture of a guard that stopped working. Capped at 5000 samples, 5x
+      `sample_limit` and 346 KB against a 4 MB limit, with a test tying the cap to the limit it was
+      chosen against. — `fix(noisy): stop the ramp before it trips the body limit`
+- [x] `restart: unless-stopped` on `noisy` defeated "off by default": a restart policy is enforced by
+      the daemon and a compose profile is not, so one `--profile chaos` run brought the container
+      back on every host restart afterwards, writing demonstration garbage into `prometheus_data`
+      for the whole retention window. — `fix(compose): keep noisy from surviving a daemon restart`
+- [x] The ceiling assertion read *every* threshold in *every* panel, so an ordinary threshold added
+      anywhere later would fail the suite with a message pointing at `prometheus.yml`. Scoped to the
+      panels that query the stored-sample count. —
+      `test(grafana): scope the ceiling check to the panel that draws it`
+- [x] The *Samples per scrape* description generalised the refused-scrape measurement above into
+      "even for a failed scrape", which is the opposite of what an unreachable target reports. The
+      same sentence was corrected in the `CLAUDE.md` table. —
+      `fix(grafana): say what a refused scrape actually reports`
+- [x] Three defects in `README.md`, all of them steps a reader cannot follow: the `sample_limit`
+      demonstration told them to reload Prometheus, which answers `403` because the container runs
+      without `--web.enable-lifecycle`; the `/api/v1/targets` recipe grepped away the `job` label the
+      step tells them to watch; and the new section wrapped its prose instead of one paragraph per
+      line, with a stray blank line tripping MD012. Plus the `CLAUDE.md` fixture clause that
+      described `repo_root` while attached to `driven_services`. —
+      `docs: correct the guard demonstration steps`
+
+Re-verified after the round: 67/67 pytest with coverage at 100%, `black`/`isort`/`flake8` clean,
+`docker compose --profile '*' config -q` clean, and CI green on all four jobs at `9b20900`. One
+number moved: the plateau was stated as 355 KB from an estimate and measured at **346 KB**, so the
+comment, the config and the README all carry the measured figure.
+
 **Verification, run end to end on 2026-08-30. Each numbered step below, with its outcome:**
 
 1. **`tox` green** — `py311`, `lint` and `safety` all OK in 53s. Coverage 100% overall, `noisy`
@@ -265,7 +308,12 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
    **0**. No raw-path series in the TSDB, `scrape_series_added` at 0.
 6. **The well-behaved services untouched** — `up=1` on all four, samples 146 / 63 / 159, active
    series 151 / 68 / 164. The noisy target costs **5 series**: `up` and the four synthetic scrape
-   metrics, and nothing else.
+   metrics, and nothing else. **Re-read against the live stack after the code review:** 146 / 63 /
+   **156** and 151 / 68 / **161**, the noisy target still at 5. The Node service's +3 on both counts
+   was drift from label combinations its own traffic had added, and its container has restarted
+   since — the edge case below happening inside a single day, and the reason the sample ceiling
+   carries ~6x headroom rather than a snug fit. Every other number in this document is the 156 / 161
+   reading.
 7. **Negative proof of the drop rules** — with the noisy service restarted to 50 and the rules
    removed, 200 raw-path series were stored and post-relabel read 200; restored, post-relabel
    returned to 0 and stayed there.
@@ -325,6 +373,21 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
   and the reason the second layer exists.
 - **Markdownlint** on the `CLAUDE.md` and `README.md` edits: compact tables (MD060), blank lines
   around fences and lists.
+- **An unbounded demonstration inverts into the failure it demonstrates.** The ramp exists to be
+  left running, and left running long enough it trips `body_size_limit` and takes the whole scrape
+  down — at which point every panel reads zero for the noisy target and the guard looks broken. A
+  demonstration of a limit needs a limit of its own, sized against the one it is demonstrating.
+- **A restart policy is the daemon's, and a profile is compose's.** `profiles:` decides what a
+  `docker compose up` starts; it has no say once the container exists. `unless-stopped` on a service
+  meant to be off by default hands it back on every host restart.
+- **A test that asserts a number over every panel outgrows its own guarantee.** The ceiling check
+  was written when one panel drew a threshold. Left unscoped it fails any future threshold anywhere
+  in the dashboard, with a message naming `prometheus.yml` — a false positive that points the next
+  author at the wrong file entirely.
+- **A measured fact generalises badly when the failure has two shapes.** A scrape refused by the
+  limits and a scrape that never connected are both "failed", and they report the stored-sample
+  count differently: the first reports it, the second reports 0. Measuring one and writing "a failed
+  scrape" is how the panel description ended up telling the reader the opposite of what they see.
 
 ## Verification steps
 

@@ -51,7 +51,8 @@ recorded fact.
   hand-assembled `/metrics`. It runs on the app's image — the root `Dockerfile` already does
   `COPY . .`, so `build: .` with a different `command:` needs no new Dockerfile, CI job, lock file
   or dependency. It emits more raw-path series on every scrape, so the growth is a ramp rather than
-  a step.
+  a step, and the ramp levels off at a bound sized against the scrape's body limit — a demonstration
+  that ends in a plateau rather than in a scrape that fails for its own reasons.
 - **A `chaos` profile**, outside `core` and `load`, so the everyday stack still resolves the same
   services and the demonstration's series only reach `prometheus_data` when someone asks.
 - **No published port and no healthcheck.** Prometheus reaches it over the compose network, which is
@@ -104,8 +105,8 @@ recorded fact.
 
 Adding `--profile chaos` brings up the noisy service, and within the discovery refresh interval it
 becomes a fourth target — by declaring the same four labels as everyone else, which is what makes
-the ceiling necessary rather than optional. With no guard, its series count climbs on every scrape
-and does not level off.
+the ceiling necessary rather than optional. With no guard, its series count climbs on every scrape,
+reaching its own plateau only far above anything the guard allows.
 
 With the guard in place, the raw-path series are gone from the TSDB, and a run that outpaces the drop
 rules trips the ceiling instead: that target's scrape fails, it reports `up=0` while staying in the
