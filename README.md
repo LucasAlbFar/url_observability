@@ -1,12 +1,13 @@
 # FastAPI Observability Demo
 
-Two small services — one FastAPI, one Go — instrumented end-to-end with **Prometheus** and **Grafana**, paired with a synthetic load generator so the dashboards always have real traffic to show. No database, no task queue — this project is purely a hands-on observability playground.
+Three small services — one FastAPI, one Go, one Node — instrumented end-to-end with **Prometheus** and **Grafana**, paired with a synthetic load generator so the dashboards always have real traffic to show. No database, no task queue — this project is purely a hands-on observability playground.
 
 ## How it works
 
 - **`app`** — a FastAPI service (`app/main.py`) instrumented via `prometheus-fastapi-instrumentator`, which exposes a `/metrics` endpoint.
-- **`service-go`** — a small Go service (`service-go/main.go`) instrumented via `prometheus/client_golang`. It exists to test the claim the stack is language-agnostic, so it mirrors the app's paths and keeps its own library's metric labels (`code`/`method`, not `handler`/`status`) instead of imitating them. Ten metric names end up exported by both services, separated only by the `job` label.
-- **`loadgen`** — a standalone async script (`worker/load_driver.py`) that continuously calls both services' `/load/*` endpoints over HTTP, purely to generate traffic for the metrics/dashboards.
+- **`service-go`** — a small Go service (`service-go/main.go`) instrumented via `prometheus/client_golang`. It exists to test the claim the stack is language-agnostic, so it mirrors the app's paths and keeps its own library's metric labels (`code`/`method`, not `handler`/`status`) instead of imitating them. Ten metric names end up exported by both it and the app, separated only by the `job` label.
+- **`service-node`** — a small Node service (`service-node/main.js`) instrumented via `prom-client`. It exists to prove a service joins the observability stack by declaring labels on its own container, with no edit to `prometheus.yml` — it was added that way. Its labels are a third convention again (`route`/`status_code`/`method`), because `prom-client` does not instrument HTTP and leaves the naming to whoever writes the middleware.
+- **`loadgen`** — a standalone async script (`worker/load_driver.py`) that continuously calls every service's `/load/*` endpoints over HTTP, purely to generate traffic for the metrics/dashboards.
 - **`prometheus`** — finds what to scrape by reading the Docker socket every 15s, and scrapes whatever it finds every 5s. No address is written down: a service opts in with labels in its own compose block (see [Joining the scrape](#joining-the-scrape)). The scrape interval and the retention window (7 days, capped at 512 MB) live in `prometheus.yml`; the container's command line only points it at that file and at the volume its TSDB writes to.
 - **`grafana`** — auto-provisioned with a Prometheus datasource and a ready-made "Services Overview" dashboard. Fourteen panels in three rows: *Services* compares the two side by side (targets up, throughput, CPU, resident memory, 4xx/5xx), and *Routes* and *Requests* each hold whichever services use that label convention — routes for the app, response codes for the Go service. Two dropdowns sit at the top: `Service` filters every panel on the dashboard, and `Route` narrows the *Routes* row to particular endpoints.
 
@@ -20,13 +21,15 @@ The `/load/*` endpoints each stress a different resource on purpose, so the dash
 | `GET /load/stress/{seconds}` | Blocking busy-wait for N seconds | CPU by service |
 | `GET /load/memory-spike` | Allocates a large in-memory list | Resident memory |
 
-The Go service (`:8003`) serves the same three paths, deliberately — a route that exists on both services is what makes their series merge visible:
+The Go service (`:8003`) and the Node service (`:8004`) serve the same three paths, deliberately — a route that exists on all three is what makes their series merge visible:
 
 | Endpoint | What it does |
 | --- | --- |
 | `GET /health` | Returns the same `{"status": "ok"}` body the app does |
 | `GET /load/io-bound` | Sleeps 2s |
 | `GET /load/cpu-bound` | Spins for roughly as long as the FastAPI one takes |
+
+**Three services, three label conventions, on purpose.** Each one emits what its own library gives it, and nothing is renamed to make a panel light up. The dashboard's *Services* row groups by `job` and draws all three; its *Routes* and *Requests* rows each hold whichever services carry that label, so the Node service appears in neither. That is the measured cost of a new convention rather than a defect — it is recorded in `specs/CU-86bbpx4by/plan.md`.
 
 ### Joining the scrape
 
@@ -93,13 +96,13 @@ Pick the group you need:
 
 | Command | Brings up | Use it for |
 | --- | --- | --- |
-| `docker compose --profile core up -d` | `app`, `service-go`, `prometheus`, `grafana` | dashboards, without synthetic traffic |
-| `docker compose --profile load up -d` | `app`, `service-go`, `loadgen` | exercising both APIs, without the observability side |
-| `docker compose --profile core --profile load up -d` | all five | the full demo |
+| `docker compose --profile core up -d` | `app`, `service-go`, `service-node`, `prometheus`, `grafana` | dashboards, without synthetic traffic |
+| `docker compose --profile load up -d` | `app`, `service-go`, `service-node`, `loadgen` | exercising the APIs, without the observability side |
+| `docker compose --profile core --profile load up -d` | all six | the full demo |
 
-`app` and `service-go` belong to both profiles on purpose, so `--profile load` boots something worth hitting instead of a generator retrying against nothing.
+The three observed services belong to both profiles on purpose, so `--profile load` boots something worth hitting instead of a generator retrying against nothing.
 
-The first `up` takes a while to go green: Grafana runs its schema migrations against an empty database before opening its HTTP port, so `docker compose ps` can show it as `starting` for the better part of a minute. `app`, `service-go`, `prometheus` and `grafana` all report `healthy` once ready, and `loadgen` waits for both `app` and `service-go` to be healthy before it starts generating traffic.
+The first `up` takes a while to go green: Grafana runs its schema migrations against an empty database before opening its HTTP port, so `docker compose ps` can show it as `starting` for the better part of a minute. Every service that publishes a port reports `healthy` once ready, and `loadgen` waits for all three observed services before it starts generating traffic.
 
 The app also runs standalone, without Docker. Use a virtualenv — these requirements are pinned and installing them into your system Python is a bad trade:
 
@@ -180,13 +183,19 @@ Run everything (tests + lint + dependency audit) at once:
 tox
 ```
 
-`tox` covers the Python side only — the coverage gate, black, isort and flake8 never look at `service-go/`. The Go checks are their own CI job, and locally:
+`tox` covers the Python side only — the coverage gate, black, isort and flake8 never look at `service-go/` or `service-node/`. Each has its own CI job, and locally:
 
 ```bash
 cd service-go
 gofmt -l .       # prints the files it would rewrite, and still exits 0
 go vet ./...
 go test ./...
+```
+
+```bash
+cd service-node
+npm ci           # installs exactly package-lock.json, and fails if it drifted
+npm test
 ```
 
 ### Infra checks
@@ -266,11 +275,15 @@ service-go/
   main.go                 # the Go service: /health, /load/*, /metrics on :8003
   main_test.go            # its tests — run by `go test`, not by pytest
   go.mod / go.sum         # module definition and committed checksums
+service-node/
+  main.js                 # the Node service: /health, /load/*, /metrics on :8004
+  main.test.js            # its tests — run by `npm test`, not by pytest
+  package.json / package-lock.json   # manifest and committed lockfile
 worker/
-  load_driver.py          # standalone async load generator (calls both services' endpoints)
+  load_driver.py          # standalone async load generator (calls every service's endpoints)
 grafana/                  # provisioned datasource + "Services Overview" dashboard
 prometheus.yml            # scrape settings + the label-discovery job
-docker-compose.yml        # the five services, their profiles and named volumes
+docker-compose.yml        # the six services, their profiles and named volumes
 tests/                    # pytest suite: one file per module, plus four that check config
 requirements/             # pip-compile sources (base.in/dev.in) and lockfiles (base.txt/dev.txt)
 ```

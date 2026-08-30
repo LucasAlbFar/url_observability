@@ -124,7 +124,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
 - [x] `CLAUDE.md`: the third service, the third convention and its reach, the lock-file pinning.
       Conclusions only — the derivation stays in this file. —
       `docs: document the node service and its label convention`
-- [ ] `README.md`: the service in the stack description and the routes tables. —
+- [x] `README.md`: the service in the stack description and the routes tables. —
       `docs: add the node service to the stack description`
 - [ ] Run the verification steps and record each outcome here. No commit beyond the tick. —
       `docs(specs): record the verification outcomes`
