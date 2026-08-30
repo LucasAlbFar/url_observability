@@ -180,6 +180,32 @@ a `replace` rule collapsing `/users/<n>` to `/users/:id`:**
   Not for the reason assumed — grouping is safe — but because it costs the same ceiling pressure,
   destroys the value it keeps, and misreports its own effect.
 
+**Measured in task 7, 2026-08-30, in a browser against the running stack:**
+
+- **All three panels draw**, and the row is the guard made visible. *Samples per scrape* shows 146 /
+  63 / 156 for the well-behaved targets and a flat **0** for `noisy`. *Discarded by the guard* shows
+  the mirror image: `noisy` climbing past **12,000 samples per scrape thrown away**, the other three
+  flat at zero. That pair is the whole feature in two graphs.
+- **It also shows layer one protecting layer two.** The noisy target emits over 12,000 samples and
+  is nowhere near the 1000 ceiling, because the drop rules run first and the ceiling judges what is
+  left. Without them it would be `up=0`.
+- **The threshold line is off-screen at rest**, and correctly so: the axis scales to the data, and
+  1000 against a 156 maximum puts the line outside it. It comes into view as a target grows towards
+  the ceiling, which is when it is worth seeing. The panel description says so rather than
+  promising a line that is not there.
+- **`scrape_series_added` does not mean "new to the TSDB".** `service-node` draws a sustained
+  sawtooth of 1–3, which read alone is unbounded growth. It is not: its series count over an hour
+  went 161 → 164 → 161 → 161 → 163 → 161 → 161, oscillating and flat. The metric counts series new
+  to the **scrape cache**, and a label combination that appears occasionally is evicted and counted
+  again when it returns. Third time in this feature that a synthetic scrape metric does not mean
+  what its name says — the panel description now carries the caveat and points at its neighbour.
+- **Negative proofs of both new assertions:** a threshold value diverging from `global.sample_limit`
+  fails; a panel reading `scrape_samples_scraped` without its post-relabel counterpart fails.
+- **The blank first render was load time, not a broken file.** The dashboard showed row titles and
+  no panels for the first several seconds, which is indistinguishable from the trap the roadmap
+  records; waiting drew everything. `viewPanel=panel-<id>` is the way to check one panel without
+  fighting the scroll container in kiosk mode.
+
 ## Affected files
 
 | File | Change |
@@ -215,7 +241,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       justified beside the value. — `feat(prometheus): cap what a single target can write`
 - [x] Measure the grouping option: apply it, read the duplicate-sample counter before and after,
       record the outcome here either way. No code shipped if it collides. — verification
-- [ ] The *Cardinality* row in the dashboard, and its assertions. —
+- [x] The *Cardinality* row in the dashboard, and its assertions. —
       `feat(grafana): show how much each target writes`
 - [ ] `CLAUDE.md`: both layers, the `chaos` profile, what the guard does not cover. Conclusions only
       — the derivation stays in this file. — `docs: document the cardinality guard`

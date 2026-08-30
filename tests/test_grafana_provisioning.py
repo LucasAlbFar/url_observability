@@ -21,6 +21,14 @@ DATASOURCE_CONFIG = "grafana/provisioning/datasources/datasource.yaml"
 PROMETHEUS_CONFIG = "prometheus.yml"
 COMPOSE_CONFIG = "docker-compose.yml"
 JOB_LABEL = "prometheus.io/job"
+# The two synthetic metrics that count a scrape, and the reason they
+# have to be read as a pair. `scrape_samples_scraped` counts what the
+# target emitted, *before* metric relabeling; the other counts what
+# survived it. With the drop rules working, the first keeps climbing
+# while the second sits still — so a panel reading the first alone
+# draws a working guard as a broken one.
+SAMPLES_SCRAPED = "scrape_samples_scraped"
+SAMPLES_STORED = "scrape_samples_post_metric_relabeling"
 
 
 @pytest.fixture(scope="session")
@@ -281,3 +289,66 @@ def test_provider_path_matches_the_compose_mount(repo_root):
         if mount.split(":")[0] == DASHBOARD_BIND
     ]
     assert targets == [config["providers"][0]["options"]["path"]]
+
+
+def test_the_sample_ceiling_drawn_matches_the_one_enforced(dashboards, repo_root):
+    """Confirm the threshold line is the limit Prometheus applies.
+
+    The ceiling now exists in two files: enforced in prometheus.yml and
+    drawn in the dashboard. Two copies of a number drift, and this one
+    drifts silently — the panel keeps drawing a line, at the wrong
+    height, and the graph says a target is safe while Prometheus is
+    refusing it.
+    """
+    limit = yaml.safe_load((repo_root / PROMETHEUS_CONFIG).read_text())
+    enforced = limit["global"]["sample_limit"]
+    checked = 0
+    for name, dashboard in dashboards:
+        for panel in iter_panels(dashboard):
+            steps = (
+                panel.get("fieldConfig", {})
+                .get("defaults", {})
+                .get("thresholds", {})
+                .get("steps", [])
+            )
+            for step in steps:
+                if step.get("value") is None:
+                    continue
+                checked += 1
+                assert step["value"] == enforced, (name, panel["title"], step)
+    assert checked, "no threshold drawn against the sample ceiling"
+
+
+def test_the_pre_relabel_sample_count_is_never_drawn_alone(dashboards):
+    """Confirm a panel reading what a target emits also reads what is kept.
+
+    Measured while building the guard: with the drop rules in place the
+    noisy target reported 350 samples scraped and 0 stored. A panel on
+    the first number alone shows a line climbing without bound and
+    invites the reader to conclude the guard failed, when the gap
+    between the two is precisely the guard working.
+    """
+    checked = 0
+    for name, dashboard in dashboards:
+        for query in queries(dashboard):
+            if SAMPLES_SCRAPED not in query:
+                continue
+            checked += 1
+            assert SAMPLES_STORED in query, (name, query)
+    assert checked, f"no panel reads {SAMPLES_SCRAPED}"
+
+
+def test_a_panel_reads_what_each_target_stores(dashboards):
+    """Confirm the row that makes the guard visible exists at all.
+
+    Without this the two tests above are satisfied by a dashboard that
+    draws no cardinality panel whatsoever, which is the state this
+    ticket set out to leave behind.
+    """
+    drawn = [
+        query
+        for _, dashboard in dashboards
+        for query in queries(dashboard)
+        if SAMPLES_STORED in query
+    ]
+    assert drawn
