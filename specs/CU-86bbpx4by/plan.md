@@ -121,7 +121,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       `test(compose): read npm installs and stop discarding piped pip commands`
 - [x] Debt: `CORE_SERVICES` derived from the compose file. —
       `test(compose): derive the healthchecked services from the file`
-- [ ] `CLAUDE.md`: the third service, the third convention and its reach, the lock-file pinning.
+- [x] `CLAUDE.md`: the third service, the third convention and its reach, the lock-file pinning.
       Conclusions only — the derivation stays in this file. —
       `docs: document the node service and its label convention`
 - [ ] `README.md`: the service in the stack description and the routes tables. —

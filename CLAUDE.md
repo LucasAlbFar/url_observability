@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-A demo/learning project showing observability with Prometheus + Grafana across **two** services in different languages. The `app` service is a small FastAPI API instrumented via `prometheus-fastapi-instrumentator`; `service-go` is a small Go program instrumented via `prometheus/client_golang`, and it exists to test the claim that the stack attaches to something that is not the FastAPI app. The `loadgen` service is a standalone async script that continuously hits both services' `/load/*` endpoints purely to generate metrics traffic for the Grafana dashboards. There is no database and no task queue (Celery/RQ) — "worker" here means load generator, not background job processor.
+A demo/learning project showing observability with Prometheus + Grafana across **three** services in different languages. The `app` service is a small FastAPI API instrumented via `prometheus-fastapi-instrumentator`; `service-go` is a small Go program instrumented via `prometheus/client_golang`, and it exists to test the claim that the stack attaches to something that is not the FastAPI app; `service-node` is a small Node program instrumented via `prom-client`, and it exists to prove a service joins by declaring container labels, with no edit to `prometheus.yml`. The `loadgen` service is a standalone async script that continuously hits every service's `/load/*` endpoints purely to generate metrics traffic for the Grafana dashboards. There is no database and no task queue (Celery/RQ) — "worker" here means load generator, not background job processor.
 
 ## Stack & versions
 
@@ -53,6 +53,16 @@ gofmt -l .       # prints the files it would rewrite — and still exits 0
 go vet ./...
 go test ./...    # ~2s: two of the routes cost real time by design
 ```
+
+### Node service
+
+```bash
+cd service-node
+npm ci           # installs exactly package-lock.json, and fails if it drifted
+npm test         # node --test, ~2s: the two load routes run concurrently
+```
+
+Its own CI job, for the reason the Go one has one: `tox` never sees it. The job reads the version from `engines.node` in `package.json` rather than naming it, the way the Go job reads `go.mod`.
 
 These three are the `go` job in CI, which reads its toolchain from `service-go/go.mod` rather than naming a version. `gofmt` reporting through stdout while exiting 0 is why the job tests its *output*; do the same in any script that calls it.
 
@@ -115,7 +125,17 @@ Measurements and the reasoning behind each of these: `specs/CU-86bb30dec/plan.md
 
 **The load generator is intentionally decoupled** from the `app` package: its own `Dockerfile`, one pinned dependency (`httpx`), no shared requirements file. Keep it that way. It reads no environment at all — `URLS` in `worker/load_driver.py` is the only list any code reads, so don't reintroduce a `LOADGEN_URLS` env var to duplicate it.
 
-**The second service.** `service-go/` is flat on purpose — `main.go`, `main_test.go`, `go.mod`, `go.sum`, `Dockerfile`, no `cmd/` and no packages — and listens on **8003**. It serves `/health`, `/load/io-bound`, `/load/cpu-bound` and `/metrics`, reads no environment, and is called by nothing but the load generator. It deliberately mirrors the app's paths and deliberately does **not** mirror its metric labels: it exports what `client_golang` gives it (`code`/`method`, lowercase verb) rather than the instrumentator's `handler`/`status`. Ten metric names are now exported by both services, six of them `process_*` — including `process_cpu_seconds_total` and `process_resident_memory_bytes`, the two the dashboard's resource panels query — separated only by `job` and `instance`. That collision is the point of the service, not a defect to fix here; the full series list is in `specs/CU-86bbdrkm7/plan.md`.
+**The second and third services.** `service-go/` is flat on purpose — `main.go`, `main_test.go`, `go.mod`, `go.sum`, `Dockerfile`, no `cmd/` and no packages — and listens on **8003**. It serves `/health`, `/load/io-bound`, `/load/cpu-bound` and `/metrics`, reads no environment, and is called by nothing but the load generator. It deliberately mirrors the app's paths and deliberately does **not** mirror its metric labels: it exports what `client_golang` gives it (`code`/`method`, lowercase verb) rather than the instrumentator's `handler`/`status`. Ten metric names are exported by both the app and the Go service, six of them `process_*` — including `process_cpu_seconds_total` and `process_resident_memory_bytes`, the two the dashboard's resource panels query — separated only by `job` and `instance`. That collision is the point of the service, not a defect to fix here; the full series list is in `specs/CU-86bbdrkm7/plan.md`.
+
+`service-node/` is flat for the same reason — `main.js`, `main.test.js`, `package.json`, `package-lock.json`, `Dockerfile`, no framework — and listens on **8004**. It mirrors the same paths and carries a **third** label convention, `route`/`status_code`/`method`, because `prom-client` does not instrument HTTP and leaves the names to the author. Do not rename them to `handler` or `code`: three live conventions is what this service is for, and the cost of them is measured, not guessed:
+
+| Panel | Reaches `service-node`? |
+| --- | --- |
+| *Targets up*, *CPU by service*, *Resident memory*, *Throughput by service* | Yes |
+| *5xx / 4xx error rate* | No — the two targets select `status` and `code` |
+| Rows *Routes (`handler`)* and *Requests (`code`)* | No |
+
+Measured against the running stack in `specs/CU-86bbpx4by/plan.md`, which also records the cost in series. Two details from that measurement are worth carrying: a series with **no** `handler` label matches `handler!="/metrics"`, which is why the Node service reaches the throughput panel at all; and the 4xx panel draws the app alone, because the Go service does not instrument its unmatched handler and so counts no 404 anywhere.
 
 **The dashboard.** `grafana/dashboards/services.json` — `Services Overview`, uid `services-overview` — is fourteen panels in three rows: *Services* groups by `job`; *Routes (`handler`)* and *Requests (`code`)* each hold whichever services carry that label. Three rules, all asserted by `tests/test_grafana_provisioning.py`:
 
@@ -125,7 +145,7 @@ Measurements and the reasoning behind each of these: `specs/CU-86bb30dec/plan.md
 
 Three traps. The app's p95 reads a flat **1s** for anything slower, having four buckets against the Go service's twelve. The `deleteDatasources:` block in `datasource.yaml` is **required, not leftover** — giving a uid to an already-provisioned datasource makes Grafana abort provisioning and never start — and it runs on every boot, so a hand-made dashboard predating the uid loses its datasource. And `jsonData.timeInterval` must track `global.scrape_interval`: `$__rate_interval` is derived from it, not from `prometheus.yml`, and Grafana's silent 15s default floors every rate window at 60s. A test asserts the two agree.
 
-**Readiness.** Both services answer `/health` with `{"status": "ok"}` and both healthchecks probe it. Keep the two bodies identical: a route that exists on both services is what makes the merge observable. The probe traffic lands on an unfiltered handler every ten seconds, so a flat baseline in the dashboard panels comes from the healthchecks rather than from load.
+**Readiness.** All three services answer `/health` with `{"status": "ok"}` and every healthcheck probes it. Keep the bodies identical: a route that exists on all three is what makes the merge observable. The Node probe runs `node -e` rather than `wget`, so it depends on the runtime in the image rather than on what the base image happens to ship — the coupling `service-go` has to BusyBox, not repeated. The probe traffic lands on an unfiltered handler every ten seconds, so a flat baseline in the dashboard panels comes from the healthchecks rather than from load.
 
 **Observability wiring.** `prometheus.yml` declares **one** job, `docker-labels`, which discovers its targets from the Docker socket every 15s and scrapes them every 5s. No address is written in that file. A service joins the scrape from its own compose block, by declaring four labels and nothing else:
 
