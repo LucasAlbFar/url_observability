@@ -81,13 +81,26 @@ def pinned_images(repo_root):
         for service in compose["services"].values()
         if "image" in service
     ]
-    dockerfiles = sorted(repo_root.rglob("Dockerfile"))
+    dockerfiles = [
+        path
+        for path in sorted(repo_root.rglob("Dockerfile"))
+        # An installed dependency shipping its own Dockerfile is not this
+        # stack's to pin, and `rglob` does not read .gitignore. Both
+        # documents tell a developer to run `npm ci` locally, so the
+        # directory exists on their machine and not in CI — the shape of
+        # failure that is hardest to reproduce.
+        if "node_modules" not in path.parts
+    ]
     assert dockerfiles
     for path in dockerfiles:
         references.extend(FROM_IMAGE.findall(path.read_text()))
     assert references
     pinned = {}
     for reference in references:
+        # A stage reference (`FROM builder`) carries no tag; asserting
+        # says which file to look at, where unpacking would raise a
+        # ValueError naming nothing.
+        assert ":" in reference, reference
         repository, tag = reference.rsplit(":", 1)
         pinned.setdefault(repository, set()).add(tag)
     return pinned

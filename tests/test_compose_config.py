@@ -37,6 +37,9 @@ REQUIREMENT_FLAGS = ("-r", "--requirement")
 # `pip install --upgrade pip` is bootstrapping the installer, not
 # declaring a dependency, so it is the one name allowed to float.
 UNPINNED_ALLOWED = {"pip"}
+# What has to follow the separator for a reference to count as pinned:
+# a version, not a tag or a range. `latest`, `^5.0.0` and `~1.2` fail.
+EXACT_VERSION = re.compile(r"^v?\d+(\.\d+)*$")
 NODE_BASE = "node"
 NODE_MODULE_FILES = ("package.json", "package-lock.json")
 NPM_CI = re.compile(r"\bnpm\s+ci\b")
@@ -60,8 +63,16 @@ def dockerfiles(repo_root):
 
     Discovery is the point: a Dockerfile a later feature adds
     inherits both pinning rules instead of quietly escaping them.
+
+    Installed dependencies are not this repo's to pin, and `rglob` does
+    not read .gitignore — so `node_modules`, which exists on a
+    developer's machine after `npm ci` and never in CI, is skipped.
     """
-    found = sorted(repo_root.rglob("Dockerfile"))
+    found = [
+        path
+        for path in sorted(repo_root.rglob("Dockerfile"))
+        if "node_modules" not in path.parts
+    ]
     assert found
     return found
 
@@ -133,12 +144,17 @@ def installed_packages(text):
 
 
 def is_pinned(package, separator):
-    """Report whether the reference names a version.
+    """Report whether the reference names an exact version.
 
     The leading `@` of a scoped npm package is dropped first, so
     `@scope/name` reads as unpinned and `@scope/name@1.2.3` as pinned.
+    What follows the separator has to look like a version: `@` alone
+    would accept `express@latest` and `express@^5.0.0`, which pin
+    nothing and would leave this test weaker than the claim made for
+    it.
     """
-    return separator in package.lstrip("@")
+    name, found, version = package.lstrip("@").partition(separator)
+    return bool(found) and bool(EXACT_VERSION.match(version))
 
 
 def scraped_services(compose_labels):
@@ -315,10 +331,19 @@ def test_serving_services_declare_a_healthcheck(compose):
     assert checked, "no serving service found"
 
 
-def test_loadgen_waits_for_every_service_it_drives(compose):
-    """Confirm the generator races neither of the services it hits."""
+def test_loadgen_waits_for_every_service_it_drives(compose, compose_labels):
+    """Confirm the generator races none of the services it hits.
+
+    Derived, like the healthcheck rule above and for the same reason:
+    the tuple this replaced named two services, so the third could —
+    and did — reach `depends_on` with nothing asserting it, and
+    deleting it again would leave the test green while the generator
+    hammers a service that has not reported ready.
+    """
     depends_on = compose["services"]["loadgen"]["depends_on"]
-    for name in ("app", "service-go"):
+    driven = [name for name, _ in scraped_services(compose_labels)]
+    assert driven
+    for name in driven:
         assert depends_on[name]["condition"] == "service_healthy", name
 
 

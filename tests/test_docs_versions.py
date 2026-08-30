@@ -20,11 +20,17 @@ import re
 
 DOCS = ("CLAUDE.md", "README.md")
 TAG_CHARACTERS = r"([\w.\-]+)"
+# Nothing that could be part of a longer name may sit to the left. The
+# fixture holds bare repositories now — `node`, `python`, `golang`,
+# `alpine` — so without this, writing `service-node:8004` in prose reads
+# as a `node` image on tag `8004` and fails a check about an image
+# nobody touched.
+LEFT_BOUNDARY = r"(?<![\w./-])"
 
 
 def find_references(text, repository):
     """Return every tag the text gives that repository."""
-    pattern = re.compile(re.escape(repository) + ":" + TAG_CHARACTERS)
+    pattern = re.compile(LEFT_BOUNDARY + re.escape(repository) + ":" + TAG_CHARACTERS)
     return pattern.findall(text)
 
 
