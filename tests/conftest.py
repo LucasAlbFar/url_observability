@@ -1,5 +1,6 @@
 """Test fixtures."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,11 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.main import app
+
+# The base image reference of a stage, one match per FROM. Shared with
+# tests/test_compose_config.py, which asserts every one of them is
+# pinned; here they are read for the tag itself.
+FROM_IMAGE = re.compile(r"^FROM\s+(\S+)", re.MULTILINE)
 
 
 @pytest.fixture(scope="session")
@@ -51,3 +57,50 @@ def compose_labels(repo_root):
             declared = dict(entry.split("=", 1) for entry in declared)
         labels[name] = declared
     return labels
+
+
+@pytest.fixture(scope="session")
+def pinned_images(repo_root):
+    """Map each pinned repository to every tag the stack gives it.
+
+    Both sources, because a repository pinned in only one of them is
+    still quoted in prose that can go stale: `image:` in the compose
+    file for what is pulled, and every `FROM` for what is built here.
+    Reading the compose file alone left three base images — the app's,
+    the load generator's, the Go service's two stages — outside the
+    drift check entirely, which is what this fixture exists to close.
+
+    A set of tags rather than one, because two files can name the same
+    repository: `Dockerfile` and `worker/Dockerfile` both pin `python`.
+    Collapsing them into one mapping would let the last file read win
+    and hide the disagreement, which is the drift itself.
+    """
+    compose = yaml.safe_load((repo_root / "docker-compose.yml").read_text())
+    references = [
+        service["image"]
+        for service in compose["services"].values()
+        if "image" in service
+    ]
+    dockerfiles = [
+        path
+        for path in sorted(repo_root.rglob("Dockerfile"))
+        # An installed dependency shipping its own Dockerfile is not this
+        # stack's to pin, and `rglob` does not read .gitignore. Both
+        # documents tell a developer to run `npm ci` locally, so the
+        # directory exists on their machine and not in CI — the shape of
+        # failure that is hardest to reproduce.
+        if "node_modules" not in path.parts
+    ]
+    assert dockerfiles
+    for path in dockerfiles:
+        references.extend(FROM_IMAGE.findall(path.read_text()))
+    assert references
+    pinned = {}
+    for reference in references:
+        # A stage reference (`FROM builder`) carries no tag; asserting
+        # says which file to look at, where unpacking would raise a
+        # ValueError naming nothing.
+        assert ":" in reference, reference
+        repository, tag = reference.rsplit(":", 1)
+        pinned.setdefault(repository, set()).add(tag)
+    return pinned

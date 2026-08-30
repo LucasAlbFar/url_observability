@@ -55,3 +55,7 @@ pytest.ini
 # Go build output: `go build` inside service-go/ writes a binary named
 # after the directory.
 /service-go/service-go
+
+# npm installs into the service directory; the lockfile is what is
+# committed.
+/service-node/node_modules/
