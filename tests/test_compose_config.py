@@ -14,7 +14,6 @@ import yaml
 
 PINNED_TAG = re.compile(r"^v?\d+\.\d+\.\d+$")
 FROM_IMAGE = re.compile(r"^FROM\s+(\S+)", re.MULTILINE)
-CORE_SERVICES = ("app", "service-go", "prometheus", "grafana")
 # The base image name that marks a Dockerfile as Go-built.
 GO_BASE = "golang"
 GO_MODULE_FILES = ("go.mod", "go.sum")
@@ -287,10 +286,33 @@ def test_every_service_declares_a_profile(compose):
         assert service.get("profiles"), name
 
 
-def test_core_services_declare_a_healthcheck(compose):
-    """Confirm the four serving containers report their readiness."""
-    for name in CORE_SERVICES:
+def serving_services(compose):
+    """Yield each service that answers requests, by the port it opens.
+
+    The rule replaces a hand-written tuple. Listing the services meant
+    that a new one was covered only if whoever added it also edited the
+    list, and the test would have gone on passing if they did not —
+    which is exactly how a third service could have arrived with no
+    readiness probe and nothing to say so.
+
+    Publishing a port is what separates the two kinds of service here:
+    the load generator opens none, calls the others and answers
+    nobody, so there is nothing to probe.
+    """
+    for name, service in compose["services"].items():
+        if service.get("ports"):
+            yield name
+
+
+def test_serving_services_declare_a_healthcheck(compose):
+    """Confirm every container that answers requests reports readiness."""
+    checked = 0
+    for name in serving_services(compose):
+        checked += 1
         assert "healthcheck" in compose["services"][name], name
+    # Without this the test passes by finding nothing to check, which
+    # is the failure mode the tuple it replaced could not have.
+    assert checked, "no serving service found"
 
 
 def test_loadgen_waits_for_every_service_it_drives(compose):

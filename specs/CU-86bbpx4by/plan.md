@@ -119,7 +119,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       tags. — `test(docs): check the tags of locally built images too`
 - [x] Debt: the install parser reads `npm`, and `-r` stops discarding the command it appears in. —
       `test(compose): read npm installs and stop discarding piped pip commands`
-- [ ] Debt: `CORE_SERVICES` derived from the compose file. —
+- [x] Debt: `CORE_SERVICES` derived from the compose file. —
       `test(compose): derive the healthchecked services from the file`
 - [ ] `CLAUDE.md`: the third service, the third convention and its reach, the lock-file pinning.
       Conclusions only — the derivation stays in this file. —
