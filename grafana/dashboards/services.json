@@ -671,6 +671,194 @@
       ],
       "title": "Throughput by code and method",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      },
+      "id": 15,
+      "panels": [],
+      "title": "Cardinality",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "What each target actually writes, counted after the drop rules. A scrape the limits refuse still reports it, so a target failing on `sample_limit` shows the size that got it refused — but a target that cannot be reached reports 0, the same as an empty scrape. The red line is `sample_limit` from prometheus.yml — the axis is scaled to the data, so it comes into view as a target grows towards the ceiling rather than sitting on screen at rest.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1000
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 36
+      },
+      "id": 16,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "scrape_samples_post_metric_relabeling{job=~\"$job\"}",
+          "legendFormat": "{{job}} — {{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Samples per scrape",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Samples the drop rules threw away, per scrape: what the target emitted minus what was stored. Flat zero everywhere is the healthy reading — a line above it is a service labelling series with a raw path.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 36
+      },
+      "id": 17,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "scrape_samples_scraped{job=~\"$job\"} - scrape_samples_post_metric_relabeling{job=~\"$job\"}",
+          "legendFormat": "{{job}} — {{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Discarded by the guard",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Series a scrape brought that the scrape cache did not already hold. Sustained and large is unbounded growth, which is the failure this row exists to catch early. Small and intermittent is not: a label combination that appears occasionally — a rare status code — is evicted from the cache and counted again when it returns, so a well-behaved service draws a low sawtooth rather than a flat zero. Read this beside Samples per scrape, which is flat when nothing is really growing.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 36
+      },
+      "id": 18,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "scrape_series_added{job=~\"$job\"}",
+          "legendFormat": "{{job}} — {{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "New series per scrape",
+      "type": "timeseries"
     }
   ],
   "preload": false,

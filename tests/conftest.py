@@ -14,6 +14,12 @@ from app.main import app
 # tests/test_compose_config.py, which asserts every one of them is
 # pinned; here they are read for the tag itself.
 FROM_IMAGE = re.compile(r"^FROM\s+(\S+)", re.MULTILINE)
+# The opt-in half of the scrape contract, and the profile that decides
+# whether the load generator calls a service. Being scraped and being
+# driven are different questions, and reading one for the other is the
+# bug the `driven_services` fixture below exists to stop repeating.
+SCRAPE_LABEL = "prometheus.io/scrape"
+LOAD_PROFILE = "load"
 
 
 @pytest.fixture(scope="session")
@@ -35,7 +41,20 @@ def client():
 
 
 @pytest.fixture(scope="session")
-def compose_labels(repo_root):
+def compose(repo_root):
+    """Parse docker-compose.yml.
+
+    Here rather than in one test module because three fixtures below
+    and two modules read it. Parsing it twice risks nothing on its own;
+    what it costs is that a reader wanting profiles alongside labels
+    has to re-open the file, which is how `driven_services` came to be
+    derived from the wrong set in the first place.
+    """
+    return yaml.safe_load((repo_root / "docker-compose.yml").read_text())
+
+
+@pytest.fixture(scope="session")
+def compose_labels(compose):
     """Return each compose service's labels, keyed by service name.
 
     Shared because two modules read them: the scrape contract in
@@ -49,7 +68,6 @@ def compose_labels(repo_root):
     service with no labels — both readers would then pass by finding
     nothing to check.
     """
-    compose = yaml.safe_load((repo_root / "docker-compose.yml").read_text())
     labels = {}
     for name, service in compose["services"].items():
         declared = service.get("labels", {})
@@ -60,7 +78,7 @@ def compose_labels(repo_root):
 
 
 @pytest.fixture(scope="session")
-def pinned_images(repo_root):
+def pinned_images(repo_root, compose):
     """Map each pinned repository to every tag the stack gives it.
 
     Both sources, because a repository pinned in only one of them is
@@ -75,7 +93,6 @@ def pinned_images(repo_root):
     Collapsing them into one mapping would let the last file read win
     and hide the disagreement, which is the drift itself.
     """
-    compose = yaml.safe_load((repo_root / "docker-compose.yml").read_text())
     references = [
         service["image"]
         for service in compose["services"].values()
@@ -104,3 +121,28 @@ def pinned_images(repo_root):
         repository, tag = reference.rsplit(":", 1)
         pinned.setdefault(repository, set()).add(tag)
     return pinned
+
+
+@pytest.fixture(scope="session")
+def driven_services(compose, compose_labels):
+    """Return the services the load generator calls, with their labels.
+
+    Scraped **and** in the load profile. Both halves are needed and
+    neither alone is right: the generator drives nothing that is not
+    observed, and a service outside the load profile does not come up
+    when the generator does, so waiting on it or calling it is a
+    contradiction rather than an omission.
+
+    Two tests derived this from the scrape label alone, which held only
+    while every scraped service happened to be in the load profile. A
+    service that opts into the scrape to be measured misbehaving — and
+    is deliberately left out of the load profile so it costs nothing in
+    normal operation — failed both, and the failure named the new
+    service rather than the derivation.
+    """
+    return {
+        name: labels
+        for name, labels in compose_labels.items()
+        if labels.get(SCRAPE_LABEL) == "true"
+        and LOAD_PROFILE in compose["services"][name].get("profiles", [])
+    }

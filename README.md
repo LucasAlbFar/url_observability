@@ -7,9 +7,10 @@ Three small services — one FastAPI, one Go, one Node — instrumented end-to-e
 - **`app`** — a FastAPI service (`app/main.py`) instrumented via `prometheus-fastapi-instrumentator`, which exposes a `/metrics` endpoint.
 - **`service-go`** — a small Go service (`service-go/main.go`) instrumented via `prometheus/client_golang`. It exists to test the claim the stack is language-agnostic, so it mirrors the app's paths and keeps its own library's metric labels (`code`/`method`, not `handler`/`status`) instead of imitating them. Ten metric names end up exported by both it and the app, separated only by the `job` label.
 - **`service-node`** — a small Node service (`service-node/main.js`) instrumented via `prom-client`. It exists to prove a service joins the observability stack by declaring labels on its own container, with no edit to `prometheus.yml` — it was added that way. Its labels are a third convention again (`route`/`status_code`/`method`), because `prom-client` does not instrument HTTP and leaves the naming to whoever writes the middleware.
+- **`noisy`** — a deliberately badly behaved service (`noisy/raw_path_emitter.py`), behind the `chaos` profile and **off by default**. It labels one series per user id — `/users/1`, `/users/2` — and reports fifty more of them on every scrape, which is the cardinality failure the guard in `prometheus.yml` exists to stop. Nothing else in the stack misbehaves, so without it the guard could never be watched firing. See [Watching the guard fire](#watching-the-guard-fire).
 - **`loadgen`** — a standalone async script (`worker/load_driver.py`) that continuously calls every service's `/load/*` endpoints over HTTP, purely to generate traffic for the metrics/dashboards.
 - **`prometheus`** — finds what to scrape by reading the Docker socket every 15s, and scrapes whatever it finds every 5s. No address is written down: a service opts in with labels in its own compose block (see [Joining the scrape](#joining-the-scrape)). The scrape interval and the retention window (7 days, capped at 512 MB) live in `prometheus.yml`; the container's command line only points it at that file and at the volume its TSDB writes to.
-- **`grafana`** — auto-provisioned with a Prometheus datasource and a ready-made "Services Overview" dashboard. Fourteen panels in three rows: *Services* compares the two side by side (targets up, throughput, CPU, resident memory, 4xx/5xx), and *Routes* and *Requests* each hold whichever services use that label convention — routes for the app, response codes for the Go service. Two dropdowns sit at the top: `Service` filters every panel on the dashboard, and `Route` narrows the *Routes* row to particular endpoints.
+- **`grafana`** — auto-provisioned with a Prometheus datasource and a ready-made "Services Overview" dashboard. Eighteen panels in four rows: *Services* compares them side by side (targets up, throughput, CPU, resident memory, 4xx/5xx); *Routes* and *Requests* each hold whichever services use that label convention — routes for the app, response codes for the Go service; and *Cardinality* shows how much each target writes, how much the guard discards, and how fast each one is adding series. Two dropdowns sit at the top: `Service` filters every panel on the dashboard, and `Route` narrows the *Routes* row to particular endpoints.
 
 The `/load/*` endpoints each stress a different resource on purpose, so the dashboard has something to plot. On the FastAPI app (`:8002`):
 
@@ -52,6 +53,52 @@ Discovery is scoped to this compose project. The socket lists every container on
 Two things are worth knowing. `prometheus.io/job` is a value the metrics history is keyed by, so two services must not claim the same one and an existing one must not be renamed — `app` stays `fastapi-app`. And a service that is not running has no target at all, rather than a target reporting `up=0`: a stopped service disappears from the *Targets up* panel instead of drawing a zero.
 
 Reading the Docker socket is what makes this work, and it is why the `prometheus` service mounts `/var/run/docker.sock` and joins the `docker` group. Read-only protects the file, not the API — anything that reads that socket can enumerate every container on the machine. Fine for a local playground; not something to copy into a shared host.
+
+### Watching the guard fire
+
+Discovery lets any container that declares those four labels be scraped. Nothing vets whether it labels its series sanely, so a service reporting `/users/1`, `/users/2`, `/users/3` writes one series per id until Prometheus runs out of memory. Two layers in `prometheus.yml` bound that, and `noisy` exists so you can watch them work.
+
+Bring it up next to a running stack:
+
+```bash
+docker compose --profile chaos up -d --build noisy
+```
+
+It becomes a target on its own within the 15s discovery interval — no configuration is edited. Open the *Cardinality* row of the dashboard, or ask Prometheus directly:
+
+```bash
+# what the target emits, before the guard
+curl -sG --data-urlencode 'query=scrape_samples_scraped{job="noisy"}' \
+  localhost:9090/api/v1/query
+
+# what actually gets stored, after it
+curl -sG --data-urlencode 'query=scrape_samples_post_metric_relabeling{job="noisy"}' \
+  localhost:9090/api/v1/query
+```
+
+The first number climbs every scrape until it levels off at 5000. The second stays at **0**, and the three well-behaved targets are untouched at 146, 63 and 156. That gap is the guard: `metric_relabel_configs` drops any series whose `handler` or `route` value carries a raw path segment, and it runs before anything is stored.
+
+The ceiling underneath it — `sample_limit` in `global:` — catches what no drop rule anticipated. To see it fire, lower it in `prometheus.yml` below a real service's sample count, then restart Prometheus so it rereads the file. There is no reload endpoint: the container runs without `--web.enable-lifecycle`, so `POST /-/reload` answers `403 Lifecycle API is not enabled`.
+
+```bash
+docker compose --profile core restart prometheus
+```
+
+Then watch that one target go down while the others keep reporting:
+
+```bash
+curl -s localhost:9090/api/v1/targets \
+  | jq -r '.data.activeTargets[] | "\(.labels.job)\t\(.health)\t\(.lastError)"'
+```
+
+A refused target reports `up=0` with `sample limit exceeded`, and **stays in the target list** — so the dashboard draws a zero rather than losing the line. Put the limit back afterwards and restart Prometheus again.
+
+Two things read differently than they look, and both are easy to mistake for a broken guard:
+
+- **`scrape_samples_scraped` keeps climbing while the guard works.** It counts what the target sent, before relabeling. The pair with `scrape_samples_post_metric_relabeling` is the fact; either one alone misleads.
+- **A drop rule stops new writes and deletes nothing already written.** Series stored before you added it stay queryable until they age out by staleness and retention.
+
+Take it down again with `docker compose --profile chaos down`, or leave it running: its series stop growing the moment the guard is in place, and its exposition body levels off at about 346 KB instead of climbing until it trips `body_size_limit` and takes the whole scrape down with it.
 
 ## Stack
 
@@ -99,8 +146,9 @@ Pick the group you need:
 | `docker compose --profile core up -d` | `app`, `service-go`, `service-node`, `prometheus`, `grafana` | dashboards, without synthetic traffic |
 | `docker compose --profile load up -d` | `app`, `service-go`, `service-node`, `loadgen` | exercising the APIs, without the observability side |
 | `docker compose --profile core --profile load up -d` | all six | the full demo |
+| `docker compose --profile core --profile load --profile chaos up -d` | all seven | the full demo **plus** the badly behaved service |
 
-The three observed services belong to both profiles on purpose, so `--profile load` boots something worth hitting instead of a generator retrying against nothing.
+`noisy` is in `chaos` alone, so it never joins by accident: its series are demonstration garbage and the TSDB keeps them for the whole retention window. The three well-behaved services belong to both `core` and `load` on purpose, so `--profile load` boots something worth hitting instead of a generator retrying against nothing.
 
 The first `up` takes a while to go green: Grafana runs its schema migrations against an empty database before opening its HTTP port, so `docker compose ps` can show it as `starting` for the better part of a minute. Every service that publishes a port reports `healthy` once ready, and `loadgen` waits for all three observed services before it starts generating traffic.
 
@@ -279,11 +327,13 @@ service-node/
   main.js                 # the Node service: /health, /load/*, /metrics on :8004
   main.test.js            # its tests — run by `npm test`, not by pytest
   package.json / package-lock.json   # manifest and committed lockfile
+noisy/
+  raw_path_emitter.py     # the bad citizen: raw-path series on :8005, `chaos` profile only
 worker/
   load_driver.py          # standalone async load generator (calls every service's endpoints)
 grafana/                  # provisioned datasource + "Services Overview" dashboard
-prometheus.yml            # scrape settings + the label-discovery job
-docker-compose.yml        # the six services, their profiles and named volumes
+prometheus.yml            # scrape settings, the label-discovery job, the cardinality guard
+docker-compose.yml        # the seven services, their profiles and named volumes
 tests/                    # pytest suite: one file per module, plus four that check config
 requirements/             # pip-compile sources (base.in/dev.in) and lockfiles (base.txt/dev.txt)
 ```
