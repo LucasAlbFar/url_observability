@@ -690,7 +690,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "What each target actually writes, counted after the drop rules. This is reported even for a scrape that failed, so it still answers \"how big is it\" while a target is down. The red line is `sample_limit` from prometheus.yml — the axis is scaled to the data, so it comes into view as a target grows towards the ceiling rather than sitting on screen at rest.",
+      "description": "What each target actually writes, counted after the drop rules. A scrape the limits refuse still reports it, so a target failing on `sample_limit` shows the size that got it refused — but a target that cannot be reached reports 0, the same as an empty scrape. The red line is `sample_limit` from prometheus.yml — the axis is scaled to the data, so it comes into view as a target grows towards the ceiling rather than sitting on screen at rest.",
       "fieldConfig": {
         "defaults": {
           "custom": {
