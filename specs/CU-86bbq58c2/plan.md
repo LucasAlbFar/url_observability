@@ -245,7 +245,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       `feat(grafana): show how much each target writes`
 - [x] `CLAUDE.md`: both layers, the `chaos` profile, what the guard does not cover. Conclusions only
       — the derivation stays in this file. — `docs: document the cardinality guard`
-- [ ] `README.md`: provoking the failure and watching the guard fire. —
+- [x] `README.md`: provoking the failure and watching the guard fire. —
       `docs: explain how to demonstrate the guard`
 - [ ] Run the verification steps and record each outcome here. No commit beyond the tick. —
       `docs(specs): record the verification outcomes`
