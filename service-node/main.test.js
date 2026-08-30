@@ -24,10 +24,6 @@ describe("application routes", { concurrency: true }, () => {
   const cases = [
     ["/health", '{"status":"ok"}\n'],
     ["/load/io-bound", '{"message":"I/O-bound task completed"}\n'],
-    [
-      "/load/cpu-bound",
-      '{"message":"CPU-bound task completed","result":1000000000}\n',
-    ],
   ];
 
   // The two load routes cost real time on purpose — one sleeps two
@@ -42,6 +38,18 @@ describe("application routes", { concurrency: true }, () => {
       assert.equal(await response.text(), body);
     });
   }
+
+  // The CPU route is asserted on its shape rather than its exact body:
+  // the loop runs to a deadline, so the iteration count it reports is a
+  // property of the machine and pinning it would fail on a faster one.
+  test("/load/cpu-bound", async () => {
+    const response = await fetch(origin + "/load/cpu-bound");
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.message, "CPU-bound task completed");
+    assert.ok(body.result > 0);
+  });
 });
 
 test("an unknown path answers 404", async () => {
@@ -102,3 +110,23 @@ async function counterTotal() {
   const lines = await sampleLines("http_requests_total");
   return lines.reduce((total, line) => total + Number(line.split(" ").pop()), 0);
 }
+
+// A client that hangs up mid-request is exactly the request an
+// observability demo must not lose, and listening only for `finish`
+// loses it.
+test("a request the client abandons is still counted", async () => {
+  const before = await counterTotal();
+  const controller = new AbortController();
+
+  const abandoned = fetch(origin + "/load/io-bound", {
+    signal: controller.signal,
+  });
+  setTimeout(() => controller.abort(), 100);
+  await assert.rejects(abandoned);
+  // The server sees the socket close on its own schedule.
+  await new Promise((resolve) => setTimeout(resolve, 200));
+
+  assert.equal(await counterTotal(), before + 1);
+  const lines = await sampleLines("http_requests_total");
+  assert.ok(lines.some((line) => line.includes('status_code="499"')));
+});

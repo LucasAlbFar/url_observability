@@ -57,15 +57,22 @@ function ioBound(response) {
   }, 2000);
 }
 
-// cpuBound burns CPU for roughly as long as the other two do. The count
-// is a tenth of the Go service's two billion because that is what makes
-// the durations comparable: measured on node:24.20.0, a billion
-// iterations take 0.81s against Go's 0.62s for two billion and Python's
-// 0.79s for ten million. The result is returned so the optimiser cannot
-// discard the work.
+// cpuBound burns CPU for roughly as long as the other two do — Go's
+// 0.62s, Python's 0.79s. It is bounded by a **clock**, not by an
+// iteration count, and that is not a style choice: Node runs one thread,
+// so this loop makes the whole process unresponsive for its duration,
+// /health included. A fixed count stretches with the machine — the same
+// billion iterations measured 0.81s idle here and 2.24s on a loaded one
+// — while the compose healthcheck's timeout does not. A deadline keeps
+// the blackout the same length everywhere, comfortably inside that
+// budget. The result is returned so the optimiser cannot discard the
+// work.
+const CPU_BURN_MS = 800;
+
 function cpuBound(response) {
+  const deadline = Date.now() + CPU_BURN_MS;
   let result = 0;
-  for (let i = 0; i < 1_000_000_000; i++) {
+  while (Date.now() < deadline) {
     result++;
   }
   writeJSON(
@@ -88,15 +95,31 @@ const routes = {
 function instrument(route, handler) {
   return (request, response) => {
     const end = duration.startTimer();
-    response.on("finish", () => {
+    let recorded = false;
+
+    const record = () => {
+      if (recorded) {
+        return;
+      }
+      recorded = true;
       const labels = {
         route,
-        status_code: response.statusCode,
         method: request.method,
+        // `finish` means the response was sent; `close` alone means the
+        // client hung up first. 499 is nginx's code for exactly that,
+        // borrowed so an abandoned request cannot be counted as the 200
+        // it never sent. Dropping it instead — which listening only for
+        // `finish` does — makes a failing request vanish from the
+        // graphs, which is the opposite of the point.
+        status_code: response.writableFinished ? response.statusCode : 499,
       };
       end(labels);
       requests.inc(labels);
-    });
+    };
+
+    // Both fire for a response that completes, so the first one wins.
+    response.on("finish", record);
+    response.on("close", record);
     handler(response);
   };
 }
@@ -107,9 +130,18 @@ function notFound(response) {
 
 // /metrics is served by the library and is not instrumented, matching
 // the Go service: a scrape should not be traffic in its own graphs.
+// Nothing here rejects: an unhandled rejection ends the process on
+// current Node, and writing the header before awaiting would leave a
+// scrape hanging until Prometheus times out if a collector threw.
 async function metrics(response) {
-  response.writeHead(200, { "Content-Type": client.register.contentType });
-  response.end(await client.register.metrics());
+  try {
+    const body = await client.register.metrics();
+    response.writeHead(200, { "Content-Type": client.register.contentType });
+    response.end(body);
+  } catch (error) {
+    response.writeHead(500, { "Content-Type": "text/plain" });
+    response.end(`${error}\n`);
+  }
 }
 
 export function createServer() {
