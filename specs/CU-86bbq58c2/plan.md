@@ -273,7 +273,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
 9. **The dashboard in a browser** — four rows, the *Cardinality* row in place at the bottom, no
    overlap. *Discarded by the guard* draws the noisy target's ramp to 26,000 with the other three
    flat at zero.
-10. CI — see the run on this branch.
+10. **CI green on all four jobs** — `build`, `go`, `infra` and `node`, on PR #9.
 11. **`git diff --stat main...HEAD` names only** the files in the table above plus this ticket's two
     documents.
 
