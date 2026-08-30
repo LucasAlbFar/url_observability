@@ -93,6 +93,27 @@ Measured 2026-08-30 against `main`, with the stack running under `core` and `loa
 - That the drop rules cost the three well-behaved services nothing: same `scrape_samples_scraped`,
   same series.
 
+**Measured in task 3, 2026-08-30, with the noisy service running and no guard in place:**
+
+- **The ramp is real and linear.** `scrape_samples_scraped{job="noisy"}` read 50, 150, 250, 350,
+  450 across five samples ten seconds apart, and `scrape_series_added{job="noisy"}` held at **50 on
+  every scrape** — every scrape brings fifty series that never existed before. `up` stayed `1`
+  throughout: nothing about this is an error state, which is the point.
+- **At the stack's 5s interval that is +10 series a second: 600 a minute, ~36,000 an hour.** The
+  whole rest of the stack is `prometheus_tsdb_head_series` 1088. One container, four labels, no
+  privileges, and inside an hour it outweighs everything else by a factor of thirty.
+- **The three well-behaved services were untouched** at the same instant: `scrape_samples_scraped`
+  146 / 63 / 156, `scrape_series_added` 0 / 0 / 0, `up=1` on all three. The problem is entirely one
+  target's, which is what makes a per-target ceiling the right shape of answer.
+- **Discovery treats it like anybody else.** Stopped, it left the target list after 14s; started, it
+  was back in **15.0s** — both inside the `refresh_interval`. There is no gate to fail here, which
+  is the argument the ceiling replaces.
+- **The ramp restarts with the container.** The count lives in the process, so a restart returns it
+  to 50 and the demonstration is repeatable rather than needing a volume reset.
+- **Measured against the real `prometheus_data`.** The edge case below was decided rather than
+  avoided: a few thousand series for a few minutes is negligible against a 512 MB / 7d retention,
+  and `down --volumes` would have destroyed the Grafana volume to save nothing.
+
 ## Affected files
 
 | File | Change |
@@ -118,7 +139,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       `test: derive the driven services from the load profile`
 - [x] The noisy service on its own: the module and its test. Not in the compose file yet. —
       `feat(noisy): add a service that emits raw paths on purpose`
-- [ ] The service in `docker-compose.yml` under `chaos`. **No guard yet:** bring it up, record
+- [x] The service in `docker-compose.yml` under `chaos`. **No guard yet:** bring it up, record
       `scrape_series_added` and `scrape_samples_scraped` climbing, and keep the numbers. This is the
       baseline of the problem. —
       `feat(compose): let the noisy service join the scrape behind its own profile`

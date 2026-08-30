@@ -82,6 +82,31 @@ services:
       retries: 3
       start_period: 10s
 
+  noisy:
+    # The app's image with a different command: the root Dockerfile is
+    # `COPY . .`, so this module already ships in it. That is the whole
+    # reason a fourth language was not added — a bad citizen needs to
+    # misbehave, not to be a fourth proof that any language can join.
+    build: .
+    command: ["python", "-m", "noisy.raw_path_emitter"]
+    # Not in `core` and not in `load`. Its series are demonstration
+    # garbage and the TSDB keeps them for the retention window, so they
+    # reach prometheus_data only when someone asks for them by name.
+    profiles: ["chaos"]
+    # It opts in with the same four labels as every well-behaved
+    # service, and nothing vets the difference. That is the argument
+    # for the ceiling: discovery cannot tell them apart, so the limit
+    # has to.
+    labels:
+      prometheus.io/scrape: "true"
+      prometheus.io/job: "noisy"
+      prometheus.io/port: "8005"
+    restart: unless-stopped
+    # No `ports:` — Prometheus reaches it over the compose network, and
+    # prometheus.io/port is the port the process listens on rather than
+    # one it publishes. No healthcheck either: nothing waits on this
+    # service, and publishing nothing is what excuses it from the rule.
+
   prometheus:
     image: prom/prometheus:v3.13.2
     profiles: ["core"]
