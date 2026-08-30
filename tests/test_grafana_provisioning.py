@@ -299,12 +299,20 @@ def test_the_sample_ceiling_drawn_matches_the_one_enforced(dashboards, repo_root
     drifts silently — the panel keeps drawing a line, at the wrong
     height, and the graph says a target is safe while Prometheus is
     refusing it.
+
+    Scoped to the panels that plot the stored-sample count. A threshold
+    anywhere else — a red at 5 on the error-rate panel — is an ordinary
+    one and has nothing to do with this limit, and reading it here
+    fails the suite with a message pointing at prometheus.yml.
     """
     limit = yaml.safe_load((repo_root / PROMETHEUS_CONFIG).read_text())
     enforced = limit["global"]["sample_limit"]
     checked = 0
     for name, dashboard in dashboards:
         for panel in iter_panels(dashboard):
+            plotted = [target["expr"] for target in panel.get("targets", [])]
+            if not any(SAMPLES_STORED in expr for expr in plotted):
+                continue
             steps = (
                 panel.get("fieldConfig", {})
                 .get("defaults", {})
