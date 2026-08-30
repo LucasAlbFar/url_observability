@@ -116,7 +116,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
 - [x] Debt: `driven` derived from the `load` profile in both sibling tests. First, because the noisy
       service fails both before any guard exists. —
       `test: derive the driven services from the load profile`
-- [ ] The noisy service on its own: the module and its test. Not in the compose file yet. —
+- [x] The noisy service on its own: the module and its test. Not in the compose file yet. —
       `feat(noisy): add a service that emits raw paths on purpose`
 - [ ] The service in `docker-compose.yml` under `chaos`. **No guard yet:** bring it up, record
       `scrape_series_added` and `scrape_samples_scraped` climbing, and keep the numbers. This is the
