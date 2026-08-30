@@ -23,6 +23,18 @@ PROJECT_FILTER = "com.docker.compose.project"
 # third rule in prometheus.yml — the cost of three live conventions,
 # owed to the feature that unifies them.
 PATH_LABELS = ("handler", "route")
+# The ceiling and the label limits. Every one fails the whole scrape
+# for the target that trips it, so each has to be present and each has
+# to be a positive number — a zero or a missing key is not a loose
+# limit, it is no limit.
+SCRAPE_LIMITS = (
+    "sample_limit",
+    "label_limit",
+    "label_name_length_limit",
+    "label_value_length_limit",
+    "target_limit",
+    "body_size_limit",
+)
 # Naming a target is what a drop rule must not do. It works, it is
 # easier to write, and it puts the list of services back into a file
 # that discovery emptied of service names.
@@ -226,3 +238,34 @@ def test_a_drop_rule_discards_raw_paths_and_keeps_labelled_ones(prometheus_confi
         for value in LABELLED_VALUES:
             assert not pattern.fullmatch(value), f"{name}: dropped {value}"
     assert checked, "no drop rule declared"
+
+
+def test_every_scrape_limit_is_declared_and_positive(prometheus_config):
+    """Confirm the backstop exists and bounds something.
+
+    Presence and sign only: whether `4MB` parses as a size is
+    promtool's question, and the CI infra job asks it. What cannot be
+    asked there is whether a limit was quietly dropped from this file,
+    since a config with no limits at all is perfectly valid.
+    """
+    limits = prometheus_config["global"]
+    for name in SCRAPE_LIMITS:
+        assert name in limits, name
+        value = limits[name]
+        assert value, name
+        if isinstance(value, int):
+            assert value > 0, name
+
+
+def test_no_scrape_limit_is_declared_on_a_single_job(prometheus_config):
+    """Confirm the limits are global rather than per job.
+
+    There is one job today, which is exactly when writing a limit on it
+    looks equivalent to writing it in `global:` and is not: the next
+    job added inherits the global block and inherits nothing from its
+    neighbour. The failure would be a new job scraping with no ceiling
+    at all, and nothing here or in promtool would say so.
+    """
+    for job in prometheus_config["scrape_configs"]:
+        for name in SCRAPE_LIMITS:
+            assert name not in job, f"{job['job_name']}: {name}"

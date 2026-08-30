@@ -1,6 +1,50 @@
 global:
   scrape_interval: 5s
 
+  # Layer two of the cardinality guard: the backstop for what layer one's drop
+  # rules did not anticipate. Every one of these is all-or-nothing — exceeding
+  # it fails that target's whole scrape, it does not discard the offending
+  # sample — which is why the surgical rules come first and these come second.
+  #
+  # They live in `global:` rather than on the job so that a job added later
+  # inherits them. There is one job today, which is exactly when a limit
+  # written on it would look equivalent and stop being so.
+  #
+  # A limit set too tight is nearly mute: the target goes to up=0 and the
+  # reason lives in a log line and in a counter no panel here can read. So
+  # every number below is the measured worst case with room, not a snug fit.
+  # Measured 2026-08-30 across the three well-behaved targets.
+
+  # Samples per scrape, counted after metric relabeling. Largest measured
+  # target: 156 (Node), against 146 (app) and 63 (Go). 1000 is ~6x that, and
+  # the headroom is deliberate: a well-behaved service's count drifts upward on
+  # its own — the previous ticket's own 404 verification permanently added
+  # label combinations — so a ceiling near today's reading fails weeks later
+  # for a reason nobody will connect to this file.
+  sample_limit: 1000
+  # Labels per sample, __name__ included, plus the `job` and `instance` this
+  # file attaches. Largest measured: 6 at the exporter (python_info), so 8 at
+  # ingest. 20 leaves room for a service with a richer convention.
+  label_limit: 20
+  # Longest label name measured: 14 (`implementation`).
+  label_name_length_limit: 64
+  # Longest label value measured: 27 (the Node version string). A raw URL path
+  # can be far longer, which is the point: this catches the label that is a
+  # payload rather than a name.
+  label_value_length_limit: 256
+  # Targets for this job. Discovery is already filtered to this compose
+  # project, so today's number is 4. 20 is the ceiling on that filter failing
+  # open, and unlike the others it marks targets failed without scraping them.
+  target_limit: 20
+  # The exposition body itself, which is memory during the scrape rather than
+  # series after it. Largest well-behaved target: 15.2 KB. The noisy service
+  # reached 467 KB inside an hour, so this is the limit that bounds an exporter
+  # whose *body* runs away even when its labels are ordinary.
+  body_size_limit: 4MB
+  # keep_dropped_targets is deliberately not set: the project filter already
+  # keeps discovery from enumerating the host, and the dropped-target list is
+  # what makes a mislabelled service debuggable on /targets.
+
 storage:
   tsdb:
     retention:

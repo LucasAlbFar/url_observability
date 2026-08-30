@@ -130,6 +130,32 @@ Measured 2026-08-30 against `main`, with the stack running under `core` and `loa
   30s window without the rule stayed queryable afterwards and age out by staleness and retention.
   Read as "the rule did not work" this is the likeliest false alarm in the whole feature.
 
+**Measured in task 5, 2026-08-30. The exposition bodies, and the ceiling deliberately tripped:**
+
+| Target | Samples | Body | Max labels | Longest name | Longest value |
+| --- | --- | --- | --- | --- | --- |
+| `fastapi-app` | 146 | 13.4 KB | 6 | 14 | 22 |
+| `service-go` | 63 | 9.9 KB | 4 | 8 | 8 |
+| `service-node` | 156 | 15.2 KB | 5 | 11 | 27 |
+| `noisy` | 6750 | **467 KB** | 4 | 7 | 12 |
+
+Every number in `global:` is one of these with room, and the noisy row is why `body_size_limit` is
+there: 467 KB inside an hour from an exporter whose labels are perfectly ordinary in shape.
+
+- **Both ceiling hypotheses hold.** With `sample_limit` lowered to 100 on purpose, `fastapi-app`
+  (146) and `service-node` (156) went to `up=0` while `service-go` (63) and `noisy` (0 post-relabel)
+  stayed at `up=1`. A tripped ceiling is **per target**, which is what makes one shared job workable
+  for services of very different sizes.
+- **A failed target stays listed.** `/api/v1/targets` kept all four, the two failing ones as
+  `health: down` with `lastError: "sample limit exceeded"` — unlike a stopped service, which
+  discovery removes from the list entirely. So *Targets up* draws a zero rather than losing the
+  line, and the guard is visible without the counter no panel can read.
+  `prometheus_target_scrapes_exceeded_sample_limit_total` read 8 on `:9090/metrics`.
+- **`scrape_samples_post_metric_relabeling` is still reported for a failed scrape** — 146 and 156
+  for the two targets that stored nothing. Prometheus writes the synthetic scrape metrics either
+  way, so a panel can show how big a target is *while* it is being refused, which is exactly what
+  the question "why is this one down" needs.
+
 ## Affected files
 
 | File | Change |
@@ -161,7 +187,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       `feat(compose): let the noisy service join the scrape behind its own profile`
 - [x] The drop rules in `metric_relabel_configs`, and their structural assertions. —
       `feat(prometheus): drop series labelled with a raw path`
-- [ ] The limits in `global:`, sized against the measured samples per scrape with the headroom
+- [x] The limits in `global:`, sized against the measured samples per scrape with the headroom
       justified beside the value. — `feat(prometheus): cap what a single target can write`
 - [ ] Measure the grouping option: apply it, read the duplicate-sample counter before and after,
       record the outcome here either way. No code shipped if it collides. — verification
