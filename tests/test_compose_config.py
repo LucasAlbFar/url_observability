@@ -10,7 +10,6 @@ so they say nothing about whether the stack actually comes up.
 import re
 
 import pytest
-import yaml
 
 PINNED_TAG = re.compile(r"^v?\d+\.\d+\.\d+$")
 FROM_IMAGE = re.compile(r"^FROM\s+(\S+)", re.MULTILINE)
@@ -49,12 +48,6 @@ SCRAPE_LABEL = "prometheus.io/scrape"
 JOB_LABEL = "prometheus.io/job"
 PORT_LABEL = "prometheus.io/port"
 DOCKER_SOCKET = "/var/run/docker.sock"
-
-
-@pytest.fixture(scope="session")
-def compose(repo_root):
-    """Parse docker-compose.yml."""
-    return yaml.safe_load((repo_root / "docker-compose.yml").read_text())
 
 
 @pytest.fixture(scope="session")
@@ -331,7 +324,7 @@ def test_serving_services_declare_a_healthcheck(compose):
     assert checked, "no serving service found"
 
 
-def test_loadgen_waits_for_every_service_it_drives(compose, compose_labels):
+def test_loadgen_waits_for_every_service_it_drives(compose, driven_services):
     """Confirm the generator races none of the services it hits.
 
     Derived, like the healthcheck rule above and for the same reason:
@@ -339,11 +332,16 @@ def test_loadgen_waits_for_every_service_it_drives(compose, compose_labels):
     and did — reach `depends_on` with nothing asserting it, and
     deleting it again would leave the test green while the generator
     hammers a service that has not reported ready.
+
+    Derived from the load profile rather than from the scrape label,
+    which is not the same set and only looked like it: a service can be
+    observed without being called. One that opts into the scrape and
+    stays out of the load profile does not come up with the generator,
+    so requiring `depends_on` on it would fail for being correct.
     """
     depends_on = compose["services"]["loadgen"]["depends_on"]
-    driven = [name for name, _ in scraped_services(compose_labels)]
-    assert driven
-    for name in driven:
+    assert driven_services
+    for name in driven_services:
         assert depends_on[name]["condition"] == "service_healthy", name
 
 

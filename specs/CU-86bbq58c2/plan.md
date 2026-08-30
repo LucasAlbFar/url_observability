@@ -113,7 +113,7 @@ Measured 2026-08-30 against `main`, with the stack running under `core` and `loa
 One commit per task, with the checkbox ticked in the same commit. Any sentence in `CLAUDE.md` or
 `README.md` that a task makes false is corrected in that task's commit.
 
-- [ ] Debt: `driven` derived from the `load` profile in both sibling tests. First, because the noisy
+- [x] Debt: `driven` derived from the `load` profile in both sibling tests. First, because the noisy
       service fails both before any guard exists. —
       `test: derive the driven services from the load profile`
 - [ ] The noisy service on its own: the module and its test. Not in the compose file yet. —
