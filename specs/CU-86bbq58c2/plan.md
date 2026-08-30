@@ -114,6 +114,22 @@ Measured 2026-08-30 against `main`, with the stack running under `core` and `loa
   avoided: a few thousand series for a few minutes is negligible against a 512 MB / 7d retention,
   and `down --volumes` would have destroyed the Grafana volume to save nothing.
 
+**Measured in task 4, 2026-08-30, with the drop rules in place:**
+
+- **The rules work and cost the well-behaved services nothing.** No raw-path series is stored,
+  `scrape_samples_post_metric_relabeling{job="noisy"}` reads **0**, `scrape_series_added` is 0 on
+  all four targets, and `up=1` on all four. The other three read 63 / 146 / 156 post-relabel, the
+  same as their pre-relabel counts: the rules matched none of their labels.
+- **`scrape_samples_scraped` keeps climbing anyway** — 350 while post-relabel was 0. It counts
+  samples **before** metric relabeling, so it measures what the target emits and not what is stored.
+  A panel showing only that number makes a working guard look broken; the pair is the fact, and the
+  gap between them is the guard's work.
+- **Negative proof:** with the `handler` rule removed, 800 raw-path series were stored and
+  post-relabel read 800; with it restored, post-relabel returned to 0.
+- **A drop rule stops new writes and deletes nothing already written.** The 800 series from the
+  30s window without the rule stayed queryable afterwards and age out by staleness and retention.
+  Read as "the rule did not work" this is the likeliest false alarm in the whole feature.
+
 ## Affected files
 
 | File | Change |
@@ -143,7 +159,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       `scrape_series_added` and `scrape_samples_scraped` climbing, and keep the numbers. This is the
       baseline of the problem. —
       `feat(compose): let the noisy service join the scrape behind its own profile`
-- [ ] The drop rules in `metric_relabel_configs`, and their structural assertions. —
+- [x] The drop rules in `metric_relabel_configs`, and their structural assertions. —
       `feat(prometheus): drop series labelled with a raw path`
 - [ ] The limits in `global:`, sized against the measured samples per scrape with the headroom
       justified beside the value. — `feat(prometheus): cap what a single target can write`

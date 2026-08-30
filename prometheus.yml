@@ -62,3 +62,29 @@ scrape_configs:
       - source_labels: [__meta_docker_container_label_prometheus_io_path]
         regex: (.+)
         target_label: __metrics_path__
+
+    # Layer one of the cardinality guard, and the surgical one: the offending
+    # series is thrown away and the rest of the target is still stored. It runs
+    # *before* the limits in `global:` are checked, so what it drops never
+    # counts against the ceiling.
+    #
+    # The selection is on the **shape of the value**, never on a job name. A
+    # rule naming a service would work, would be easier to write, and would put
+    # back in this file the list of services that discovery took out of it.
+    #
+    # Two rules because there is no wildcard over label values: `source_labels`
+    # names labels explicitly, and labeldrop/labelkeep match label *names*. The
+    # two path-carrying labels in this stack are `handler` (the FastAPI
+    # instrumentator) and `route` (the Node service); the Go service has none. A
+    # fourth convention would need a third rule — the cost of three live
+    # conventions, recorded for the feature that unifies them.
+    #
+    # What this cannot reach: an id in a label of a service's own naming. That
+    # is what the ceiling is for.
+    metric_relabel_configs:
+      - source_labels: [handler]
+        regex: '(.*/)?([0-9]+|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(/.*)?'
+        action: drop
+      - source_labels: [route]
+        regex: '(.*/)?([0-9]+|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(/.*)?'
+        action: drop

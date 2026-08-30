@@ -7,11 +7,46 @@ itself would accept the file, is not tested here — the CI infra job
 runs `promtool check config` for the semantics.
 """
 
+import re
+
 import pytest
 import yaml
 
 SCRAPE_META = "__meta_docker_container_label_prometheus_io_scrape"
 PROJECT_FILTER = "com.docker.compose.project"
+# The labels a service can put a URL path in. Hand-written, and this is
+# the one place in this ticket where that is the honest answer: the set
+# comes from three instrumentation libraries, not from any file in this
+# repo, so there is nothing to derive it from. `handler` is the FastAPI
+# instrumentator's, `route` the Node service's; the Go service exports
+# no path label. A fourth convention needs a fourth entry here and a
+# third rule in prometheus.yml — the cost of three live conventions,
+# owed to the feature that unifies them.
+PATH_LABELS = ("handler", "route")
+# Naming a target is what a drop rule must not do. It works, it is
+# easier to write, and it puts the list of services back into a file
+# that discovery emptied of service names.
+TARGET_LABELS = ("job", "instance")
+# Values a well-behaved service in this stack really reports, and
+# values a badly behaved one does. The regex is what a mistake would
+# live in, so it is exercised against both rather than merely asserted
+# to exist.
+RAW_VALUES = (
+    "/users/1",
+    "/users/42/posts",
+    "/orders/9c8f1a2b-3d4e-4f50-8a1b-2c3d4e5f6071",
+)
+LABELLED_VALUES = (
+    "/health",
+    "/load/io-bound",
+    "/load/cpu-bound",
+    "/load/memory-spike",
+    "/load/stress/{seconds}",
+    "/metrics",
+    "/api/v1/users",
+    "none",
+    "unmatched",
+)
 
 
 @pytest.fixture(scope="session")
@@ -130,3 +165,64 @@ def test_discovery_is_scoped_to_this_project(prometheus_config, repo_root):
                     for value in entry.get("values", [])
                 ]
                 assert expected in values, job["job_name"]
+
+
+def drop_rules(prometheus_config):
+    """Yield every metric_relabel rule that discards a series."""
+    for job in prometheus_config["scrape_configs"]:
+        for rule in job.get("metric_relabel_configs", []):
+            if rule.get("action") == "drop":
+                yield job["job_name"], rule
+
+
+def test_a_drop_rule_covers_every_path_carrying_label(prometheus_config):
+    """Confirm no convention is left without a guard.
+
+    There is no wildcard over label values in Prometheus:
+    `source_labels` names labels explicitly, and labeldrop/labelkeep
+    match label names rather than their values. So one rule per
+    path-carrying label is the only shape available, and a convention
+    missing from the list is a service the first layer never sees.
+    """
+    covered = {
+        label
+        for _, rule in drop_rules(prometheus_config)
+        for label in rule.get("source_labels", [])
+    }
+    assert covered, "no drop rule declared"
+    for label in PATH_LABELS:
+        assert label in covered, label
+
+
+def test_no_drop_rule_selects_on_a_target_label(prometheus_config):
+    """Confirm the guard is generic rather than a list of services.
+
+    A rule keyed on `job` would work and would undo what discovery
+    bought: prometheus.yml stops naming services, and the moment one
+    rule names one, the next reader adds the second.
+    """
+    checked = 0
+    for name, rule in drop_rules(prometheus_config):
+        checked += 1
+        for label in rule.get("source_labels", []):
+            assert label not in TARGET_LABELS, f"{name}: {label}"
+    assert checked, "no drop rule declared"
+
+
+def test_a_drop_rule_discards_raw_paths_and_keeps_labelled_ones(prometheus_config):
+    """Confirm the regex does what the rule claims.
+
+    Prometheus anchors a relabel regex at both ends, so `fullmatch` is
+    what reproduces it here. Both directions matter and the second
+    matters more: a regex that drops everything also drops every raw
+    path, and would pass a test that only checked the first.
+    """
+    checked = 0
+    for name, rule in drop_rules(prometheus_config):
+        checked += 1
+        pattern = re.compile(rule["regex"])
+        for value in RAW_VALUES:
+            assert pattern.fullmatch(value), f"{name}: kept {value}"
+        for value in LABELLED_VALUES:
+            assert not pattern.fullmatch(value), f"{name}: dropped {value}"
+    assert checked, "no drop rule declared"
