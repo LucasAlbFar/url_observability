@@ -101,7 +101,12 @@ services:
       prometheus.io/scrape: "true"
       prometheus.io/job: "noisy"
       prometheus.io/port: "8005"
-    restart: unless-stopped
+    # `no`, where every other service carries `unless-stopped`. A restart
+    # policy belongs to the daemon and a profile does not: `unless-stopped`
+    # would bring this container back on the next daemon or host restart
+    # without anyone naming the chaos profile, which is the "only when
+    # someone asks for them by name" above undone.
+    restart: "no"
     # No `ports:` — Prometheus reaches it over the compose network, and
     # prometheus.io/port is the port the process listens on rather than
     # one it publishes. No healthcheck either: nothing waits on this
