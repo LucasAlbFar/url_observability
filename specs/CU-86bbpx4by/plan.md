@@ -160,8 +160,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
 
 ## Verification steps
 
-Run 2026-08-30 against the existing `prometheus_data`. Every step passed except 13, which waits
-on a push.
+Run 2026-08-30 against the existing `prometheus_data`. Every step passed.
 
 | # | Outcome |
 | --- | --- |
@@ -177,7 +176,7 @@ on a push.
 | 10 | `service-node` costs **128 series**, against 136 for the app and 68 for the Go service |
 | 11 | Each debt fixed fails on its own edit: `npm install express` and `pip install -r base.txt gunicorn` fail the pinning test, a `Dockerfile` tag moved without the prose fails the drift test, and the new service stripped of its healthcheck fails the derived rule. All four passed before this ticket |
 | 12 | Stopping the service drops the list to two targets; starting it restores three, no configuration edit |
-| 13 | Pending — the branch is not pushed yet |
+| 13 | Green on all four jobs — `build`, `go`, `node`, `infra` — on PR #8 |
 | 14 | 17 files, all in "Affected files" plus this ticket's two documents |
 
 **The panel table, measured with 404 traffic on all three services:**
