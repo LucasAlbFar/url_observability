@@ -174,7 +174,7 @@ What the guard does **not** cover: an id in a label of a service's own naming. N
 | Metric | What it actually counts |
 | --- | --- |
 | `scrape_samples_scraped` | what the target emitted, **before** relabeling — keeps climbing while the guard works |
-| `scrape_samples_post_metric_relabeling` | what is stored, and it is reported **even for a failed scrape** |
+| `scrape_samples_post_metric_relabeling` | what is stored — still reported for a scrape the **limits refused**, but 0 for a target that cannot be reached |
 | `scrape_series_added` | series new to the **scrape cache**, so an intermittent label value is recounted each time it returns |
 
 The *Cardinality* row reads the second, never the first alone; `tests/test_grafana_provisioning.py` fails a panel that breaks that, and fails a threshold line that drifts from `global.sample_limit`.
@@ -189,7 +189,7 @@ Grafana auto-provisions its datasource and `grafana/dashboards/services.json` fr
 
 ## Testing conventions
 
-- `tests/conftest.py` provides `client`, `test_settings`, `repo_root`, `compose`, `compose_labels`, `pinned_images` and `driven_services` — the last is session-scoped and returns the repository root, for tests that read files rather than call code.
+- `tests/conftest.py` provides `client`, `test_settings`, `repo_root`, `compose`, `compose_labels`, `pinned_images` and `driven_services` — `repo_root` is session-scoped and returns the repository root, for tests that read files rather than call code.
 - One test file per module (`test_config.py`, `test_example.py`, `test_health.py`, `test_main.py`, `test_load.py`, `test_load_driver.py`, `test_noisy.py`), asserting exact status code + JSON body.
 - The Go tests live beside the source in `service-go/main_test.go`, not under `tests/`, and run from `go test` rather than from pytest — the coverage gate never sees them.
 - Four files break that rule on purpose: `test_compose_config.py`, `test_prometheus_config.py`, `test_grafana_provisioning.py` and `test_docs_versions.py` have no Python module behind them — they parse `docker-compose.yml`, `prometheus.yml`, the provisioned Grafana files, and the image versions quoted in `CLAUDE.md` and `README.md`. See "Infra checks" for what they do and do not cover.

@@ -56,10 +56,7 @@ Reading the Docker socket is what makes this work, and it is why the `prometheus
 
 ### Watching the guard fire
 
-Discovery lets any container that declares those four labels be scraped. Nothing vets whether it
-labels its series sanely, so a service reporting `/users/1`, `/users/2`, `/users/3` writes one
-series per id until Prometheus runs out of memory. Two layers in `prometheus.yml` bound that, and
-`noisy` exists so you can watch them work.
+Discovery lets any container that declares those four labels be scraped. Nothing vets whether it labels its series sanely, so a service reporting `/users/1`, `/users/2`, `/users/3` writes one series per id until Prometheus runs out of memory. Two layers in `prometheus.yml` bound that, and `noisy` exists so you can watch them work.
 
 Bring it up next to a running stack:
 
@@ -67,8 +64,7 @@ Bring it up next to a running stack:
 docker compose --profile chaos up -d --build noisy
 ```
 
-It becomes a target on its own within the 15s discovery interval — no configuration is edited. Open
-the *Cardinality* row of the dashboard, or ask Prometheus directly:
+It becomes a target on its own within the 15s discovery interval — no configuration is edited. Open the *Cardinality* row of the dashboard, or ask Prometheus directly:
 
 ```bash
 # what the target emits, before the guard
@@ -80,34 +76,29 @@ curl -sG --data-urlencode 'query=scrape_samples_post_metric_relabeling{job="nois
   localhost:9090/api/v1/query
 ```
 
-The first number climbs every scrape and never stops. The second stays at **0**, and the three
-well-behaved targets are untouched at 146, 63 and 156. That gap is the guard: `metric_relabel_configs`
-drops any series whose `handler` or `route` value carries a raw path segment, and it runs before
-anything is stored.
+The first number climbs every scrape until it levels off at 5000. The second stays at **0**, and the three well-behaved targets are untouched at 146, 63 and 156. That gap is the guard: `metric_relabel_configs` drops any series whose `handler` or `route` value carries a raw path segment, and it runs before anything is stored.
 
-The ceiling underneath it — `sample_limit` in `global:` — catches what no drop rule anticipated. To
-see it fire, lower it below a real service's sample count, reload, and watch that target alone go
-down while the others keep reporting:
+The ceiling underneath it — `sample_limit` in `global:` — catches what no drop rule anticipated. To see it fire, lower it in `prometheus.yml` below a real service's sample count, then restart Prometheus so it rereads the file. There is no reload endpoint: the container runs without `--web.enable-lifecycle`, so `POST /-/reload` answers `403 Lifecycle API is not enabled`.
+
+```bash
+docker compose --profile core restart prometheus
+```
+
+Then watch that one target go down while the others keep reporting:
 
 ```bash
 curl -s localhost:9090/api/v1/targets \
-  | grep -o '"health":"[a-z]*"\|"lastError":"[^"]*"'
+  | jq -r '.data.activeTargets[] | "\(.labels.job)\t\(.health)\t\(.lastError)"'
 ```
 
-A refused target reports `up=0` with `sample limit exceeded`, and **stays in the target list** — so
-the dashboard draws a zero rather than losing the line. Put the limit back afterwards.
+A refused target reports `up=0` with `sample limit exceeded`, and **stays in the target list** — so the dashboard draws a zero rather than losing the line. Put the limit back afterwards and restart Prometheus again.
 
 Two things read differently than they look, and both are easy to mistake for a broken guard:
 
-- **`scrape_samples_scraped` keeps climbing while the guard works.** It counts what the target sent,
-  before relabeling. The pair with `scrape_samples_post_metric_relabeling` is the fact; either one
-  alone misleads.
-- **A drop rule stops new writes and deletes nothing already written.** Series stored before you
-  added it stay queryable until they age out by staleness and retention.
+- **`scrape_samples_scraped` keeps climbing while the guard works.** It counts what the target sent, before relabeling. The pair with `scrape_samples_post_metric_relabeling` is the fact; either one alone misleads.
+- **A drop rule stops new writes and deletes nothing already written.** Series stored before you added it stay queryable until they age out by staleness and retention.
 
-Take it down again with `docker compose --profile chaos down`, or leave it: its series stop growing
-the moment the guard is in place.
-
+Take it down again with `docker compose --profile chaos down`, or leave it running: its series stop growing the moment the guard is in place, and its exposition body levels off at about 346 KB instead of climbing until it trips `body_size_limit` and takes the whole scrape down with it.
 
 ## Stack
 
