@@ -38,8 +38,9 @@ global:
   target_limit: 20
   # The exposition body itself, which is memory during the scrape rather than
   # series after it. Largest well-behaved target: 15.2 KB. The noisy service
-  # reached 467 KB inside an hour, so this is the limit that bounds an exporter
-  # whose *body* runs away even when its labels are ordinary.
+  # reached 467 KB inside an hour before its ramp was given a top, and plateaus
+  # at ~346 KB now — so this is the limit that bounds an exporter whose *body*
+  # runs away even when its labels are ordinary.
   body_size_limit: 4MB
   # keep_dropped_targets is deliberately not set: the project filter already
   # keeps discovery from enumerating the host, and the dropped-target list is

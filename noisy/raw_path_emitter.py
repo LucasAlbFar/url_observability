@@ -11,9 +11,12 @@ watched fire is a guard nobody has tested.
 This module is the missing bad citizen. It reports one series per user
 id — `/users/1`, `/users/2`, `/users/3` — and reports more of them on
 every scrape, so the target's series count is a ramp rather than a
-step. It joins the scrape by the same four labels every other service
-declares, which is the secondary point: opting in is not a privilege
-anyone vets, and that is why the ceiling has to exist.
+step. The ramp levels off at CEILING rather than climbing forever: an
+unbounded body eventually trips `body_size_limit` and fails the whole
+scrape, which reads on the dashboard as the guard having stopped
+working. It joins the scrape by the same four labels every other
+service declares, which is the secondary point: opting in is not a
+privilege anyone vets, and that is why the ceiling has to exist.
 
 It runs on the app's image with a different command, so it costs no
 Dockerfile, no CI job and no dependency, and it stays behind its own
@@ -30,6 +33,15 @@ PORT = 8005
 # enough to watch happen, slow enough to read the ramp on a graph.
 FIRST = 50
 STEP = 50
+# Where the ramp levels off. Without a top the body grows without bound
+# and crosses `body_size_limit` in a couple of hours: the scrape then
+# fails outright, `scrape_samples_scraped` falls to 0 and both
+# Cardinality panels read zero for this target — the guard looks broken
+# at exactly the moment someone left it running to watch it work. 5000
+# is 5x `sample_limit`, so the ceiling still fires hard, and ~346 KB of
+# body, well inside the 4MB the scrape allows. At a 5s interval the
+# plateau arrives in about eight minutes.
+CEILING = 5000
 # The app's convention, on purpose. The drop rule selects on the shape
 # of a path-carrying label's value, and `handler` is one of the two
 # this stack has; a service inventing a third name here would test the
@@ -46,9 +58,10 @@ class RawPathMetrics:
     instead of from whatever ran before it.
     """
 
-    def __init__(self, first=FIRST, step=STEP):
+    def __init__(self, first=FIRST, step=STEP, ceiling=CEILING):
         self._paths = first
         self._step = step
+        self._ceiling = ceiling
 
     def render(self):
         """Return the body for one scrape, then widen the next one."""
@@ -57,7 +70,7 @@ class RawPathMetrics:
             "# TYPE http_requests_total counter",
         ]
         lines.extend(SAMPLE.format(id=index) for index in range(self._paths))
-        self._paths += self._step
+        self._paths = min(self._paths + self._step, self._ceiling)
         return "\n".join(lines) + "\n"
 
 

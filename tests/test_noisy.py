@@ -12,7 +12,9 @@ import urllib.error
 import urllib.request
 
 import pytest
+import yaml
 
+from noisy import raw_path_emitter
 from noisy.raw_path_emitter import FIRST, STEP, create_server
 
 RAW_PATH = re.compile(r'handler="/users/\d+"')
@@ -79,6 +81,39 @@ def test_each_scrape_reports_more_paths_than_the_last(origin):
 
     assert len(samples(first)) == FIRST
     assert len(samples(second)) == FIRST + STEP
+
+
+def test_the_ramp_levels_off_at_the_ceiling():
+    """Confirm the ramp has a top.
+
+    Left climbing, the body crosses Prometheus's body_size_limit in a
+    couple of hours and the scrape fails outright — both Cardinality
+    panels then read zero for this target, which is what a guard that
+    stopped working looks like. The demo has to end in a plateau, not
+    in an outage.
+    """
+    metrics = raw_path_emitter.RawPathMetrics(first=2, step=2, ceiling=5)
+
+    counts = [len(samples(metrics.render())) for _ in range(5)]
+
+    assert counts == [2, 4, 5, 5, 5]
+
+
+def test_the_plateau_fits_inside_the_scrape_body_limit(repo_root):
+    """Confirm the ceiling was chosen against the limit that bounds it.
+
+    The two numbers live in different files, and raising this one
+    without reading the other is precisely how the plateau turns back
+    into the outage the ceiling was added to prevent.
+    """
+    config = yaml.safe_load((repo_root / "prometheus.yml").read_text())
+    limit = config["global"]["body_size_limit"]
+    assert limit.endswith("MB"), limit
+    allowed = int(limit[: -len("MB")]) * 1024 * 1024
+
+    body = raw_path_emitter.RawPathMetrics(first=raw_path_emitter.CEILING).render()
+
+    assert len(body.encode()) < allowed
 
 
 def test_an_unknown_path_answers_404(origin):
