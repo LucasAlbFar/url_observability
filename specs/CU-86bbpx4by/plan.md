@@ -117,7 +117,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       `ci: check the node service on its own job`
 - [x] Debt: the image fixture reads the `FROM` lines of every `Dockerfile` alongside the compose
       tags. — `test(docs): check the tags of locally built images too`
-- [ ] Debt: the install parser reads `npm`, and `-r` stops discarding the command it appears in. —
+- [x] Debt: the install parser reads `npm`, and `-r` stops discarding the command it appears in. —
       `test(compose): read npm installs and stop discarding piped pip commands`
 - [ ] Debt: `CORE_SERVICES` derived from the compose file. —
       `test(compose): derive the healthchecked services from the file`
