@@ -126,7 +126,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       `docs: document the node service and its label convention`
 - [x] `README.md`: the service in the stack description and the routes tables. —
       `docs: add the node service to the stack description`
-- [ ] Run the verification steps and record each outcome here. No commit beyond the tick. —
+- [x] Run the verification steps and record each outcome here. No commit beyond the tick. —
       `docs(specs): record the verification outcomes`
 
 ## Edge cases
@@ -159,6 +159,42 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
   around fences and lists.
 
 ## Verification steps
+
+Run 2026-08-30 against the existing `prometheus_data`. Every step passed except 13, which waits
+on a push.
+
+| # | Outcome |
+| --- | --- |
+| 1 | `tox` green: `py311` 53 passed, `lint`, `safety` |
+| 2 | `npm ci && npm test` in the pinned image: 7 passed, 0 failed |
+| 3 | `config -q` clean; `config --services` resolves six |
+| 4 | The five services that publish a port all report `healthy` |
+| 5 | `git diff main...HEAD` names neither `prometheus.yml` nor the dashboard — zero files — and `/api/v1/targets` returns three targets, all `up`, `service-node` at `service-node:8004` |
+| 6 | The target returned **3.7s** after `start`, well inside the 15s refresh. It took 10.9s when first measured in task 2, on a container that had to be created rather than restarted |
+| 7 | `label_values(job)` → `fastapi-app`, `service-go`, `service-node` |
+| 8 | The browser drew all three in *Targets up*, *Throughput by service*, *CPU by service* and *Resident memory*, legends reading `service-node — service-node:8004`. `git diff` does not name `grafana/dashboards/services.json` |
+| 9 | The panel table below, each row from its query and confirmed again in the browser |
+| 10 | `service-node` costs **128 series**, against 136 for the app and 68 for the Go service |
+| 11 | Each debt fixed fails on its own edit: `npm install express` and `pip install -r base.txt gunicorn` fail the pinning test, a `Dockerfile` tag moved without the prose fails the drift test, and the new service stripped of its healthcheck fails the derived rule. All four passed before this ticket |
+| 12 | Stopping the service drops the list to two targets; starting it restores three, no configuration edit |
+| 13 | Pending — the branch is not pushed yet |
+| 14 | 17 files, all in "Affected files" plus this ticket's two documents |
+
+**The panel table, measured with 404 traffic on all three services:**
+
+| Panel | Reaches `service-node`? |
+| --- | --- |
+| *Targets up*, *CPU by service*, *Resident memory* | Yes |
+| *Throughput by service* | Yes — an absent `handler` matches `handler!="/metrics"` |
+| *4xx error rate* | No: `fastapi-app` alone |
+| *5xx error rate* | Empty — no service produced a 5xx |
+| Row *Routes (`handler`)* | No — `fastapi-app` only |
+| Row *Requests (`code`)* | No — `service-go` only |
+
+The 4xx panel drawing the app alone has two causes, and only one of them is this convention: the
+Node service records its 404 under `status_code`, which neither target selects, while the Go service
+instruments its three routes and not its unmatched handler, so it counts no 404 at all. The second
+is a gap in `service-go` that predates this ticket.
 
 1. `tox` passes end to end — `py311` with the new assertions, `lint`, `safety`.
 2. What the `node` job runs passes locally, in the service directory.
