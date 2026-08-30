@@ -218,6 +218,7 @@ a `replace` rule collapsing `/users/<n>` to `/users/:id`:**
 | `tests/test_compose_config.py` | `driven` derived from the `load` profile, not from the scrape label |
 | `tests/test_load_driver.py` | The same, in the sibling test |
 | `tests/test_grafana_provisioning.py` | The new panels under the rules that already exist |
+| `tox.ini` | `--cov=noisy`, so the new module is inside the coverage gate |
 | `CLAUDE.md` | The two layers, the `chaos` profile, what the guard does not cover |
 | `README.md` | How to provoke the failure and how to watch the guard fire |
 
@@ -247,8 +248,47 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       — the derivation stays in this file. — `docs: document the cardinality guard`
 - [x] `README.md`: provoking the failure and watching the guard fire. —
       `docs: explain how to demonstrate the guard`
-- [ ] Run the verification steps and record each outcome here. No commit beyond the tick. —
+- [x] Run the verification steps and record each outcome here. No commit beyond the tick. —
       `docs(specs): record the verification outcomes`
+
+**Verification, run end to end on 2026-08-30. Each numbered step below, with its outcome:**
+
+1. **`tox` green** — `py311`, `lint` and `safety` all OK in 53s. Coverage 100% overall, `noisy`
+   included since `tox.ini` names it.
+2. **Compose resolves seven** under `--profile '*'` (`app grafana loadgen noisy prometheus
+   service-go service-node`), `config -q` clean, and `core`+`load` resolves the same six as before
+   this ticket.
+3. **`promtool check config`** accepts the limits and the drop rules.
+4. **The problem without the guard** — recorded in task 3: 50 → 150 → 250 → 350 → 450 samples across
+   40s, `scrape_series_added` fixed at 50 per scrape, `up=1` throughout.
+5. **The guard holding** — the noisy target now emits **26,850 samples per scrape** and stores
+   **0**. No raw-path series in the TSDB, `scrape_series_added` at 0.
+6. **The well-behaved services untouched** — `up=1` on all four, samples 146 / 63 / 159, active
+   series 151 / 68 / 164. The noisy target costs **5 series**: `up` and the four synthetic scrape
+   metrics, and nothing else.
+7. **Negative proof of the drop rules** — with the noisy service restarted to 50 and the rules
+   removed, 200 raw-path series were stored and post-relabel read 200; restored, post-relabel
+   returned to 0 and stayed there.
+8. **The grouping measurement** — recorded in task 6: no collision, no protection, no aggregate.
+9. **The dashboard in a browser** — four rows, the *Cardinality* row in place at the bottom, no
+   overlap. *Discarded by the guard* draws the noisy target's ramp to 26,000 with the other three
+   flat at zero.
+10. CI — see the run on this branch.
+11. **`git diff --stat main...HEAD` names only** the files in the table above plus this ticket's two
+    documents.
+
+**Two things step 7 turned up that the plan did not predict:**
+
+- **The damage a raw path does is not only memory — it pollutes the panels that already exist.**
+  During the 30s without the drop rules, the *Routes (`handler`)* row filled with `noisy — /users/0`
+  and `noisy — /users/1` legend entries, and *Status codes by route* with `noisy — /users/0 — 2xx`.
+  A convention row selects on label *presence*, so a badly behaved service joins it by definition.
+  That is a better argument for the guard than any series count.
+- **The ageing-out claim is true, and `query_range` makes it look false.** The 200 series stayed
+  visible to instant queries for exactly five minutes after their last real sample and then went, at
+  16:04:56. Checking with `query_range` first was misleading: its step points carry the last sample
+  forward across the 5-minute lookback, so the series appears to have a sample "now" when its last
+  real one was minutes ago.
 
 ## Edge cases
 
