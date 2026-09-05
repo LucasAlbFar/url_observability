@@ -13,34 +13,45 @@ global:
   # A limit set too tight is nearly mute: the target goes to up=0 and the
   # reason lives in a log line and in a counter no panel here can read. So
   # every number below is the measured worst case with room, not a snug fit.
-  # Measured 2026-08-30 across the three well-behaved targets.
+  # Measured 2026-08-30 across the three well-behaved targets, and again
+  # 2026-09-05 once the trace path joined the scrape: an infrastructure
+  # exporter is a different order of target, and every measurement quoted
+  # below moved with it even where the value did not.
 
   # Samples per scrape, counted after metric relabeling. Largest measured
-  # target: 156 (Node), against 146 (app) and 63 (Go). 1000 is ~6x that, and
-  # the headroom is deliberate: a well-behaved service's count drifts upward on
-  # its own — the previous ticket's own 404 verification permanently added
-  # label combinations — so a ceiling near today's reading fails weeks later
-  # for a reason nobody will connect to this file.
-  sample_limit: 1000
+  # target: 551 (Tempo), six times the 93 the applications reach and the
+  # reason this value moved from 1000. 4000 is ~7x that, and the headroom is
+  # deliberate: a target's count drifts upward on its own — Tempo's grows with
+  # tenants, routes and queues, and the previous ticket's own 404 verification
+  # permanently added label combinations — so a ceiling near today's reading
+  # fails weeks later for a reason nobody will connect to this file.
+  #
+  # The cost is paid by every target, because the limit cannot be set per one:
+  # the applications are now guarded by a number ~25x their own reading. Layer
+  # one is what bounds them; this is the backstop for what no rule anticipated.
+  sample_limit: 4000
   # Labels per sample, __name__ included, plus the `job` and `instance` this
-  # file attaches. Largest measured: 6 at the exporter (python_info), so 8 at
+  # file attaches. Largest measured: 8 at the exporter (Tempo), so 10 at
   # ingest. 20 leaves room for a service with a richer convention.
   label_limit: 20
-  # Longest label name measured: 14 (`implementation`).
+  # Longest label name measured: 19 (`service.instance.id`, from the
+  # Collector — the first dotted label name in this stack, which Prometheus 3
+  # stores as it arrives and PromQL reaches only as {"service.instance.id"=…}).
   label_name_length_limit: 64
-  # Longest label value measured: 27 (the Node version string). A raw URL path
+  # Longest label value measured: 71 (a Tempo metric name; __name__ counts
+  # here too, which is why the longest value is not a label at all). A raw path
   # can be far longer, which is the point: this catches the label that is a
   # payload rather than a name.
   label_value_length_limit: 256
   # Targets for this job. Discovery is already filtered to this compose
-  # project, so today's number is 4. 20 is the ceiling on that filter failing
+  # project, so today's number is 6. 20 is the ceiling on that filter failing
   # open, and unlike the others it marks targets failed without scraping them.
   target_limit: 20
   # The exposition body itself, which is memory during the scrape rather than
-  # series after it. Largest well-behaved target: 15.2 KB. The noisy service
-  # reached 467 KB inside an hour before its ramp was given a top, and plateaus
-  # at ~346 KB now — so this is the limit that bounds an exporter whose *body*
-  # runs away even when its labels are ordinary.
+  # series after it. Largest well-behaved target: 61.9 KB (Tempo). The noisy
+  # service reached 467 KB inside an hour before its ramp was given a top, and
+  # plateaus at ~346 KB now — so this is the limit that bounds an exporter
+  # whose *body* runs away even when its labels are ordinary.
   body_size_limit: 4MB
   # keep_dropped_targets is deliberately not set: the project filter already
   # keeps discovery from enumerating the host, and the dropped-target list is

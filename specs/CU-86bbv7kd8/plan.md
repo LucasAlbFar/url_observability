@@ -132,9 +132,12 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       `sample_limit`, body size against `body_size_limit`, and the actual values of Tempo's `route`
       label against the drop rule. Record the numbers and the query behind each one here. —
       verification
-- [ ] The ceiling adjusted **only if the measurement requires it**, with the new headroom justified
+- [x] The ceiling adjusted **only if the measurement requires it**, with the new headroom justified
       beside the value. No commit if it does not. —
       `feat(prometheus): raise the ceiling for the infrastructure targets`
+      **Done: `sample_limit` 1000 → 4000**, ~7x Tempo's 551, plus the five stale measurements beside
+      the other limits and the dashboard threshold that has to track the value. No other limit
+      moved. `promtool` accepts the file and all five targets stay at `up=1` after a restart.
 - [ ] The Tempo datasource with its `uid` in its first provisioned version, and its assertions. —
       `feat(grafana): provision the trace datasource`
 - [ ] The crossing, untraced: `/chain` on all three services, in `URLS`, with its tests. This is the
