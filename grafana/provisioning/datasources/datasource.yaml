@@ -31,3 +31,26 @@ datasources:
       # `$__rate_interval`, which is derived from it, never resolves below
       # 60s however far the time picker is zoomed in.
       timeInterval: 5s
+
+  # No `deleteDatasources` entry, and that is the whole difference from
+  # the one above: this datasource is born with its uid, so there is no
+  # rename for Grafana to fail at. Adding one would delete and recreate
+  # it on every boot for nothing.
+  - name: tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      # Both off, because this Tempo does not serve either. Grafana
+      # streams over gRPC to the datasource URL, and 3200 answers
+      # HTTP/1.1 — the dial fails and is retried with backoff for as
+      # long as Grafana runs, four log lines a minute saying the trace
+      # store is unreachable while every query through it succeeds.
+      # Measured: `search` alone leaves the metrics channel dialing.
+      # What it costs is results arriving in one response instead of
+      # filling in as they are found.
+      streamingEnabled:
+        search: false
+        metrics: false

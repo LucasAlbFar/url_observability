@@ -20,6 +20,8 @@ PROVIDER_CONFIG = "grafana/provisioning/dashboards/dashboard.yml"
 DATASOURCE_CONFIG = "grafana/provisioning/datasources/datasource.yaml"
 PROMETHEUS_CONFIG = "prometheus.yml"
 COMPOSE_CONFIG = "docker-compose.yml"
+TEMPO_CONFIG = "tempo.yaml"
+TEMPO_SERVICE = "tempo"
 JOB_LABEL = "prometheus.io/job"
 # The two synthetic metrics that count a scrape, and the reason they
 # have to be read as a pair. `scrape_samples_scraped` counts what the
@@ -268,13 +270,40 @@ def test_datasource_time_interval_matches_the_scrape_interval(repo_root):
     prometheus.yml, and Grafana falls back to its own 15s default when
     the datasource stays quiet — which silently floors every rate
     window in every dashboard at 60s.
+
+    Prometheus datasources only. The setting is theirs: a trace store
+    has no scrape interval to agree with, and reading every datasource
+    here would fail the one that cannot carry the field.
     """
     datasources = yaml.safe_load((repo_root / DATASOURCE_CONFIG).read_text())
     prometheus = yaml.safe_load((repo_root / PROMETHEUS_CONFIG).read_text())
     scrape = prometheus["global"]["scrape_interval"]
+    checked = 0
     for datasource in datasources["datasources"]:
+        if datasource["type"] != "prometheus":
+            continue
+        checked += 1
         declared = datasource.get("jsonData", {}).get("timeInterval")
         assert declared == scrape, (datasource["name"], declared, scrape)
+    assert checked, "no prometheus datasource declared"
+
+
+def test_the_trace_datasource_reaches_the_trace_store(repo_root):
+    """Confirm the datasource URL is where Tempo actually listens.
+
+    Both halves are declared elsewhere and neither says anything when
+    they stop agreeing: Grafana reports a datasource that fails only
+    when someone opens Explore, which is the one surface a trace has.
+    """
+    datasources = yaml.safe_load((repo_root / DATASOURCE_CONFIG).read_text())
+    compose = yaml.safe_load((repo_root / COMPOSE_CONFIG).read_text())
+    tempo = yaml.safe_load((repo_root / TEMPO_CONFIG).read_text())
+    stores = [d for d in datasources["datasources"] if d["type"] == "tempo"]
+    assert stores, "no trace datasource declared"
+    expected = f"http://{TEMPO_SERVICE}:{tempo['server']['http_listen_port']}"
+    assert TEMPO_SERVICE in compose["services"]
+    for store in stores:
+        assert store["url"] == expected, (store["name"], store["url"])
 
 
 def test_provider_path_matches_the_compose_mount(repo_root):

@@ -105,6 +105,7 @@ measurements this feature needs are tasks, and they are marked as such below.
 | `tempo.yaml` | New: the trace store, writing to the named volume |
 | `docker-compose.yml` | The two services in `core` with the four labels and no ports; `tempo_data`; the OTel variables on the three services |
 | `grafana/provisioning/datasources/datasource.yaml` | The Tempo datasource, with its `uid` |
+| `tests/test_grafana_provisioning.py` | The trace datasource's URL, and the scrape-interval rule scoped to Prometheus |
 | `app/api/endpoints/chain.py`, `app/main.py` | The new route, by the router pattern already in use |
 | `service-go/main.go`, `main_test.go`, `go.mod`, `go.sum` | `/chain`, then the hand-written server and client instrumentation |
 | `service-node/main.js`, `main.test.js`, `package.json`, `package-lock.json` | `/chain`, then the `--require` bootstrap |
@@ -138,8 +139,12 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       **Done: `sample_limit` 1000 → 4000**, ~7x Tempo's 551, plus the five stale measurements beside
       the other limits and the dashboard threshold that has to track the value. No other limit
       moved. `promtool` accepts the file and all five targets stay at `up=1` after a restart.
-- [ ] The Tempo datasource with its `uid` in its first provisioned version, and its assertions. —
+- [x] The Tempo datasource with its `uid` in its first provisioned version, and its assertions. —
       `feat(grafana): provision the trace datasource`
+      **One thing the plan did not foresee:** Grafana opens two gRPC streaming channels to the
+      datasource URL, and Tempo answers HTTP/1.1 on 3200, so both retry with backoff forever — four
+      log lines a minute against a datasource whose every query works. Both are turned off in
+      `jsonData`; turning off `search` alone leaves the metrics channel dialing.
 - [ ] The crossing, untraced: `/chain` on all three services, in `URLS`, with its tests. This is the
       baseline the next three tasks are a difference against. —
       `feat: make one request cross all three services`
