@@ -75,10 +75,13 @@ measurements this feature needs are tasks, and they are marked as such below.
 **Hypotheses, each resolved by a task below rather than by argument:**
 
 - That **Tempo exceeds `sample_limit: 1000`**. If it does, the target goes to `up=0`, stays in the
-  target list, and says why only in a log line and a counter.
+  target list, and says why only in a log line and a counter. **Resolved in task 2: it does not, at
+  551 of 1000** — but that is 1.8x headroom on a file whose own rule is a measured worst case with
+  room, so the ceiling moves anyway.
 - That the `route` label Tempo puts on its own metrics carries a route **name** rather than a raw
   path, and so survives the existing drop rule. If it does not, the rule deletes part of Tempo's
-  metrics and the symptom is an empty panel, not an error.
+  metrics and the symptom is an empty panel, not an error. **Resolved in task 2: it does** — three
+  values, none matched by the rule.
 - That the Collector image ships no shell — which would make the decision not to publish a port also
   the decision that avoids a healthcheck nobody can write. **Resolved in task 1: neither image ships
   one**, the Collector's nor Tempo's, and both run as uid 10001.
@@ -108,6 +111,7 @@ measurements this feature needs are tasks, and they are marked as such below.
 | `Dockerfile`, `requirements/base.in`, `base.txt`, `dev.txt` | The OTel packages and the wrapped start command |
 | `worker/load_driver.py` | `/chain` in `URLS` |
 | `prometheus.yml` | Only if the measurement requires it |
+| `grafana/dashboards/services.json` | Only with `prometheus.yml`: a panel draws the ceiling as a threshold |
 | `tests/test_collector_config.py` | New: structural assertions on the two configuration files |
 | `.github/workflows/python-app.yml` | The two config validators, in the shape the `promtool` step already has |
 | `tests/test_chain.py` | The new route's status code and body |
@@ -124,7 +128,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       scrape labels, no published port, the `tempo_data` volume — and the structural assertions on
       both files. Nothing exports yet: what this proves is that two services nobody wrote join the
       scrape on their own. — `feat(compose): add the collector and the trace store`
-- [ ] **Measurement, before any limit is edited:** samples per scrape for each new target against
+- [x] **Measurement, before any limit is edited:** samples per scrape for each new target against
       `sample_limit`, body size against `body_size_limit`, and the actual values of Tempo's `route`
       label against the drop rule. Record the numbers and the query behind each one here. —
       verification
@@ -149,6 +153,43 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       services. — `docs: explain how to follow a request across services`
 - [ ] Run the verification steps and record each outcome here. No commit beyond the tick. —
       `docs(specs): record the verification outcomes`
+
+**The measurement, 2026-09-05, against the `core` stack.** Samples from
+`scrape_samples_post_metric_relabeling` and `scrape_samples_scraped` on `/api/v1/query`; the label
+shape from `/api/v1/series?match[]={job="…"}`; the body from `wget -qO- http://<target>/metrics |
+wc -c` in a container on the compose network. Sixty three-span traces were pushed through the
+Collector first, so both new targets are read with their path exercised rather than idle.
+
+| Target | Samples/scrape | Body | Labels/series | Longest label value |
+| --- | --- | --- | --- | --- |
+| `tempo` | 551 | 61.9 KB | 10 | 71 |
+| `otel-collector` | 43 | 2.4 KB | 6 | 46 |
+| `service-node` | 93 | 9.9 KB | — | — |
+| `fastapi-app` | 71 | 7.5 KB | — | — |
+| `service-go` | 63 | — | — | — |
+
+The app and the Node service read below the 146 and 156 samples `prometheus.yml` quotes because the
+load profile was down: no traffic, so no per-route series. The Go service matches its recorded 63.
+Neither affects the decision, which is driven by the largest target.
+
+Four results:
+
+- **The drop rules take nothing from either new target** — `scrape_samples_scraped` equals
+  `scrape_samples_post_metric_relabeling` on both. Tempo does carry a `route` label, with three
+  values (`/frontend.Frontend/Process`, `/tempopb.BackendScheduler/Next`, `metrics`), and the rule
+  matches none of them.
+- **Tempo is the new largest target by a factor of six**, at 551 samples against the 93 that used to
+  lead. `sample_limit: 1000` holds today at 1.8x, which is not the headroom the value beside it
+  claims, and Tempo's count grows with tenants, routes and queues rather than staying put. The
+  ceiling moves in the next task.
+- **Every other limit holds, and four of the numbers justifying them are now stale**: labels per
+  series 8 at the exporter and 10 at ingest (written as 6 and 8), longest label name 19 —
+  `service.instance.id` — (written as 14), longest label value 71 (written as 27), largest
+  well-behaved body 61.9 KB (written as 15.2 KB), and six scraped targets rather than four.
+- **The Collector brings the stack its first dotted label names.** Prometheus 3 stores
+  `service.instance.id` as it arrives, and PromQL reaches it only in the quoted form
+  `{"service.instance.id"="…"}`. Nothing queries it today; the metrics rework is where it starts to
+  matter.
 
 ## Edge cases
 
