@@ -16,10 +16,11 @@ FROM_IMAGE = re.compile(r"^FROM\s+(\S+)", re.MULTILINE)
 # The base image name that marks a Dockerfile as Go-built.
 GO_BASE = "golang"
 GO_MODULE_FILES = ("go.mod", "go.sum")
-NAMED_VOLUMES = {"prometheus_data", "grafana_data"}
+NAMED_VOLUMES = {"prometheus_data", "grafana_data", "tempo_data"}
 EXPECTED_MOUNTS = {
     "prometheus": "prometheus_data:/prometheus",
     "grafana": "grafana_data:/var/lib/grafana",
+    "tempo": "tempo_data:/var/tempo",
 }
 STORAGE_FLAGS = ("--storage.tsdb.path",)
 CONTINUATION = re.compile(r"\\\s*\n\s*")
@@ -279,7 +280,7 @@ def test_every_node_dockerfile_commits_its_lockfile(dockerfiles):
 
 
 def test_named_volumes_are_declared(compose):
-    """Confirm both databases have a named volume to live in."""
+    """Confirm every store has a named volume to live in."""
     assert set(compose["volumes"]) == NAMED_VOLUMES
 
 

@@ -169,6 +169,44 @@ services:
       retries: 3
       start_period: 90s
 
+  otel-collector:
+    # The contrib distribution rather than the core one: the connector
+    # the metrics rework needs ships only here, and starting on core
+    # would mean moving a repository name through this file and both
+    # documents later for nothing gained now.
+    image: otel/opentelemetry-collector-contrib:0.160.0
+    profiles: ["core"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    labels:
+      prometheus.io/scrape: "true"
+      prometheus.io/job: "otel-collector"
+      # The port its own telemetry is published on, declared in the
+      # config file rather than defaulted — see the comment there.
+      prometheus.io/port: "8888"
+    restart: unless-stopped
+    # No `ports:` and no healthcheck, for the reason the noisy service
+    # has neither and one more: the image ships no shell, so a probe
+    # would mean choosing an image for the probe's sake, which the
+    # pinning rule forbids. Publishing nothing is what excuses it from
+    # the healthcheck rule derived from `ports:`.
+
+  tempo:
+    image: grafana/tempo:3.0.3
+    profiles: ["core"]
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      # Both paths in tempo.yaml sit under this mount, so a trace
+      # survives a `down` the way the dashboard state does.
+      - tempo_data:/var/tempo
+      - ./tempo.yaml:/etc/tempo.yaml:ro
+    labels:
+      prometheus.io/scrape: "true"
+      prometheus.io/job: "tempo"
+      prometheus.io/port: "3200"
+    restart: unless-stopped
+    # No published port and no healthcheck, for the same two reasons.
+
   loadgen:
     build:
       context: ./worker
@@ -186,3 +224,4 @@ services:
 volumes:
   prometheus_data:
   grafana_data:
+  tempo_data:

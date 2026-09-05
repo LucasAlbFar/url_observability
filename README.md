@@ -113,6 +113,7 @@ Take it down again with `docker compose --profile chaos down`, or leave it runni
 - markdownlint (Markdown style, via the VS Code extension bundling markdownlint 0.39+; rules in `.markdownlint.jsonc`)
 - Docker Compose, with every service behind a `core` or `load` profile
 - Prometheus `prom/prometheus:v3.13.2` and Grafana `grafana/grafana:12.4.7`, both pinned — no image tracks `latest`
+- OpenTelemetry Collector `otel/opentelemetry-collector-contrib:0.160.0` and Tempo `grafana/tempo:3.0.3`, the trace path — scraped like everything else, and reachable only from inside the compose network
 
 Exact Python pins live in `requirements/base.txt` / `requirements/dev.txt`. [CLAUDE.md](CLAUDE.md) covers the conventions for working on the code.
 

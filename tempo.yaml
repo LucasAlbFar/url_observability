@@ -1,0 +1,28 @@
+# The trace store. Single binary, local blocks on a named volume, and
+# one receiver: the Collector is the only thing that writes here.
+#
+# Short by Tempo standards because 3.x moved the blocks: the `ingester`
+# and `compactor` sections every 2.x example carries are gone, and their
+# defaults here already suit a demonstration — a block is cut every 30s
+# rather than every 30 minutes, so a trace becomes searchable while
+# someone is still looking for it.
+
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          # 0.0.0.0 rather than the default loopback: the Collector
+          # sends from another container.
+          endpoint: 0.0.0.0:4317
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/blocks
+    wal:
+      path: /var/tempo/wal

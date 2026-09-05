@@ -15,6 +15,7 @@ What those files don't tell you:
 - Python 3.11 — `python:3.11.15` base image, tox `py311`.
 - Prometheus `prom/prometheus:v3.13.2`, Grafana `grafana/grafana:12.4.7`. Every image reference is pinned to an exact patch version, and `tests/test_compose_config.py` rejects anything looser, including a floating minor, a two-component `<repository>:<major>.<minor>`. A Prometheus bump is one line in `docker-compose.yml` — the `infra` job derives the tag from there rather than repeating it — but every copy of a tag in this file and `README.md` has to move with it, and `tests/test_docs_versions.py` fails and names the file when one does not.
 - Node 24 (`service-node/package.json`) with `prom-client`, on `node:24.20.0`.
+- OpenTelemetry Collector `otel/opentelemetry-collector-contrib:0.160.0` and Tempo `grafana/tempo:3.0.3` — the trace path. The contrib distribution rather than the core one because the connector the metrics rework needs ships only there. Neither publishes a port and neither carries a healthcheck: both images ship no shell, so there is no probe to run inside them, and publishing nothing is what excuses them from the rule derived from `ports:`.
 - Go 1.25 (`service-go/go.mod`) with `prometheus/client_golang`, built by `golang:1.26.5` and run on `alpine:3.24.1` — Alpine because its BusyBox `wget --spider` is the healthcheck probe. Nothing in `tox.ini` sees Go: `--cov=app --cov=noisy --cov=worker` does not reach it and black/isort/flake8 only read Python, so its checks are a CI job of their own.
 - No mypy, no ruff, and no custom config for black or isort. flake8's only setting is `max-line-length = 88` in `tox.ini`.
 
@@ -81,16 +82,25 @@ Part of the default `envlist` (`py311, lint, safety`). It audits `base.txt` and 
 ### Infra checks
 
 ```bash
-pytest tests/test_compose_config.py tests/test_prometheus_config.py tests/test_grafana_provisioning.py tests/test_docs_versions.py
+pytest tests/test_compose_config.py tests/test_prometheus_config.py tests/test_collector_config.py tests/test_grafana_provisioning.py tests/test_docs_versions.py
 
 docker compose --profile '*' config -q      # compose file parses and resolves
 docker run --rm --entrypoint promtool \
   -v "$PWD/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
   prom/prometheus:v3.13.2 \
   check config /etc/prometheus/prometheus.yml
+
+docker run --rm \
+  -v "$PWD/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+  otel/opentelemetry-collector-contrib:0.160.0 \
+  validate --config=/etc/otelcol-contrib/config.yaml
+
+docker run --rm -v "$PWD/tempo.yaml:/etc/tempo.yaml:ro" \
+  grafana/tempo:3.0.3 \
+  -config.file=/etc/tempo.yaml -config.verify=true
 ```
 
-The four test files ride along in the normal `tox -e py311` run and need no Docker. Two of them are purely **structural** — the configuration files parse and carry the fields the stack depends on. `tests/test_prometheus_config.py` goes further than that: besides the scrape job and the retention bounds, it runs each drop rule's regex against real label values in both directions, because a regex that drops everything passes a test that only checks it drops raw paths. `tests/test_grafana_provisioning.py` goes further too: since the dashboard rebuild it also asserts panel types, unique panel ids, non-overlapping `gridPos`, `refId` unique within each panel, datasource references by uid, the `job` variable, and that no scrape job name appears in any query — the names it forbids read from the `prometheus.io/job` labels in `docker-compose.yml`, since `prometheus.yml` no longer names a service. What none of them do is prove that a query returned data or that a panel drew — only a browser answers that, so don't read a green run as a dashboard review.
+The five test files ride along in the normal `tox -e py311` run and need no Docker. Three of them are purely **structural** — the configuration files parse and carry the fields the stack depends on. `tests/test_prometheus_config.py` goes further than that: besides the scrape job and the retention bounds, it runs each drop rule's regex against real label values in both directions, because a regex that drops everything passes a test that only checks it drops raw paths. `tests/test_grafana_provisioning.py` goes further too: since the dashboard rebuild it also asserts panel types, unique panel ids, non-overlapping `gridPos`, `refId` unique within each panel, datasource references by uid, the `job` variable, and that no scrape job name appears in any query — the names it forbids read from the `prometheus.io/job` labels in `docker-compose.yml`, since `prometheus.yml` no longer names a service. What none of them do is prove that a query returned data or that a panel drew — only a browser answers that, so don't read a green run as a dashboard review.
 
 `tests/test_compose_config.py` reaches every Dockerfile in the repo through `rglob`, but not equally: the base-image pinning rule applies to all of them (bare `major.minor.patch` only — every suffixed tag, an `-alpine` or `-slim` variant included, is rejected, and so are `scratch` and distroless), while the rule that installed packages are pinned understands `pip` and `npm`, so a Dockerfile in a third language passes it **vacuously**. For `service-go` what stands in for it is `go.sum` — a hash per module, stronger than pip's `==` — plus the assertion that both `go.mod` and `go.sum` exist and are non-empty. That guarantee is why the image resolves dependencies through `go mod download`; a `go install pkg@latest` would escape every check here. For `service-node` the same role is played by `package-lock.json` and `npm ci`, asserted the same way: `npm ci` installs exactly the lockfile and fails when the two have drifted, and a plain `npm install` fails the test. What follows the pin separator has to be a version — `express@latest` and `express@^5.0.0` are rejected alongside a bare `express`. Every one of these readers greps the instructions with the comments stripped — prose about an install command reads exactly like the command — and every `Dockerfile` walk skips `node_modules`, which exists after a local `npm ci` and never in CI. `tests/test_docs_versions.py` sees this service now: its `pinned_images` fixture reads the `FROM` of every `Dockerfile` alongside the compose `image:` keys, so a base tag bumped without the prose fails. It maps a repository to the **set** of tags the stack gives it and asserts that set has one member, because `Dockerfile` and `worker/Dockerfile` both pin `python` and a single mapping would let the last file read win. The repositories it matches are bare names now, so the scan anchors on a left boundary: without it, `service-node:8004` in prose reads as a `node` image on tag `8004`.
 

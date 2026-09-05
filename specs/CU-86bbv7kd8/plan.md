@@ -80,7 +80,8 @@ measurements this feature needs are tasks, and they are marked as such below.
   path, and so survives the existing drop rule. If it does not, the rule deletes part of Tempo's
   metrics and the symptom is an empty panel, not an error.
 - That the Collector image ships no shell — which would make the decision not to publish a port also
-  the decision that avoids a healthcheck nobody can write.
+  the decision that avoids a healthcheck nobody can write. **Resolved in task 1: neither image ships
+  one**, the Collector's nor Tempo's, and both run as uid 10001.
 - That Python auto-instrumentation covers FastAPI **and** the httpx client with no code, and that
   Node covers both sides of `node:http` through `--require`. Go has no auto-instrumentation:
   `otelhttp` is hand-written on the server and on the client. That is what makes Go the last and
@@ -89,7 +90,9 @@ measurements this feature needs are tasks, and they are marked as such below.
   `http.response.status_code`) need an explicit opt-in in at least one of the three SDKs.
 - That the Collector validates its own configuration through a subcommand, which would give the CI
   `infra` job the semantic check `promtool` gives `prometheus.yml`. If it does not, the structural
-  test in pytest is all there is, and that goes in writing.
+  test in pytest is all there is, and that goes in writing. **Resolved in task 1: both binaries do**
+  — `validate --config=…` and `-config.verify=true`, each exiting non-zero on a file its process
+  would refuse. Both are steps in the `infra` job now.
 
 ## Affected files
 
@@ -106,6 +109,7 @@ measurements this feature needs are tasks, and they are marked as such below.
 | `worker/load_driver.py` | `/chain` in `URLS` |
 | `prometheus.yml` | Only if the measurement requires it |
 | `tests/test_collector_config.py` | New: structural assertions on the two configuration files |
+| `.github/workflows/python-app.yml` | The two config validators, in the shape the `promtool` step already has |
 | `tests/test_chain.py` | The new route's status code and body |
 | `tests/test_compose_config.py`, `tests/test_load_driver.py`, `tests/test_grafana_provisioning.py` | The two new services, the new list entry, the new datasource |
 | `CLAUDE.md` | The telemetry path, the shared identity, and the correction of the sentences saying Go and Node read no environment |
@@ -116,7 +120,7 @@ measurements this feature needs are tasks, and they are marked as such below.
 One commit per task, with the checkbox ticked in the same commit. Any sentence in `CLAUDE.md` or
 `README.md` that a task makes false is corrected in that task's commit.
 
-- [ ] The Collector and Tempo in `docker-compose.yml` with their two configuration files, the four
+- [x] The Collector and Tempo in `docker-compose.yml` with their two configuration files, the four
       scrape labels, no published port, the `tempo_data` volume — and the structural assertions on
       both files. Nothing exports yet: what this proves is that two services nobody wrote join the
       scrape on their own. — `feat(compose): add the collector and the trace store`
