@@ -145,9 +145,12 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       datasource URL, and Tempo answers HTTP/1.1 on 3200, so both retry with backoff forever — four
       log lines a minute against a datasource whose every query works. Both are turned off in
       `jsonData`; turning off `search` alone leaves the metrics channel dialing.
-- [ ] The crossing, untraced: `/chain` on all three services, in `URLS`, with its tests. This is the
+- [x] The crossing, untraced: `/chain` on all three services, in `URLS`, with its tests. This is the
       baseline the next three tasks are a difference against. —
       `feat: make one request cross all three services`
+      **One entry in `URLS`, not three:** the app's, which drives all three services in one request.
+      Listing the other two would fill the trace store with one- and two-service traces of the same
+      name; calling them directly is the manual proof of propagation, not traffic.
 - [ ] OTel on the app: packages, the wrapped start command, the variables in the compose block.
       Recompiling `requirements/` needs `pip<26`. — `feat(app): emit traces over OTLP`
 - [ ] OTel on `service-node`, through `--require`. — `feat(service-node): emit traces over OTLP`

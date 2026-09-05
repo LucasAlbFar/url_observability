@@ -21,14 +21,16 @@ The `/load/*` endpoints each stress a different resource on purpose, so the dash
 | `GET /load/cpu-bound` | Blocking CPU-heavy loop | CPU by service |
 | `GET /load/stress/{seconds}` | Blocking busy-wait for N seconds | CPU by service |
 | `GET /load/memory-spike` | Allocates a large in-memory list | Resident memory |
+| `GET /chain` | Calls `service-go`, which calls `service-node` | Throughput by route — and the only request that crosses services |
 
-The Go service (`:8003`) and the Node service (`:8004`) serve the same three paths, deliberately — a route that exists on all three is what makes their series merge visible:
+The Go service (`:8003`) and the Node service (`:8004`) serve the same paths, deliberately — a route that exists on all three is what makes their series merge visible:
 
 | Endpoint | What it does |
 | --- | --- |
 | `GET /health` | Returns the same `{"status": "ok"}` body the app does |
 | `GET /load/io-bound` | Sleeps 2s |
 | `GET /load/cpu-bound` | Spins for roughly as long as the FastAPI one takes |
+| `GET /chain` | The Go one calls the Node one and wraps its answer; the Node one answers and ends the chain |
 
 **Three services, three label conventions, on purpose.** Each one emits what its own library gives it, and nothing is renamed to make a panel light up. The dashboard's *Services* row groups by `job` and draws all three; its *Routes* and *Requests* rows each hold whichever services carry that label, so the Node service appears in neither. That is the measured cost of a new convention rather than a defect — it is recorded in `specs/CU-86bbpx4by/plan.md`.
 
@@ -318,14 +320,14 @@ Notes:
 ```text
 app/
   main.py                 # FastAPI app, instrumentation, router registration
-  api/endpoints/          # one module per route group (example, health, load)
+  api/endpoints/          # one module per route group (chain, example, health, load)
   core/config.py          # pydantic-settings Settings singleton
 service-go/
-  main.go                 # the Go service: /health, /load/*, /metrics on :8003
+  main.go                 # the Go service: /health, /load/*, /chain, /metrics on :8003
   main_test.go            # its tests — run by `go test`, not by pytest
   go.mod / go.sum         # module definition and committed checksums
 service-node/
-  main.js                 # the Node service: /health, /load/*, /metrics on :8004
+  main.js                 # the Node service: /health, /load/*, /chain, /metrics on :8004
   main.test.js            # its tests — run by `npm test`, not by pytest
   package.json / package-lock.json   # manifest and committed lockfile
 noisy/

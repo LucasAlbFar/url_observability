@@ -82,10 +82,18 @@ function cpuBound(response) {
   );
 }
 
+// chain is where the crossing ends: this service calls nobody, so the
+// last span of a trace is the one that closes it. The other two hops
+// wrap what they receive; this one only names itself.
+function chain(response) {
+  writeJSON(response, 200, '{"service":"service-node"}');
+}
+
 const routes = {
   "/health": health,
   "/load/io-bound": ioBound,
   "/load/cpu-bound": cpuBound,
+  "/chain": chain,
 };
 
 // Every request is labelled by the route that matched, never by the path

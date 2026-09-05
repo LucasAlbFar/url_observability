@@ -10,7 +10,9 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"time"
@@ -41,6 +43,14 @@ var (
 		Help:    "Request duration in seconds, by response code and method.",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"code", "method"})
+)
+
+// The next hop of the chain, and the client that makes it. A var rather
+// than a const so a test can point it at a local stub: it is not
+// configuration, and this service still reads no environment.
+var (
+	nextChain   = "http://service-node:8004/chain"
+	chainClient = &http.Client{Timeout: 10 * time.Second}
 )
 
 func instrument(next http.HandlerFunc) http.Handler {
@@ -79,11 +89,47 @@ func cpuBound(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, fmt.Sprintf(`{"message":"CPU-bound task completed","result":%d}`, result))
 }
 
+// chain calls the next service and returns what it answered, wrapped.
+// It is the middle hop: the one that shows a trace context surviving a
+// service rather than merely leaving one.
+func chain(w http.ResponseWriter, r *http.Request) {
+	body, err := call(nextChain)
+	if err != nil {
+		// 502 rather than 500, for the reason the app returns one: the
+		// failure is downstream, and the code says where to look.
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		fmt.Fprintf(w, "{\"detail\":%q}\n", err.Error())
+		return
+	}
+	writeJSON(w, fmt.Sprintf(`{"service":"service-go","next":%s}`, body))
+}
+
+// call fetches a JSON body, failing on anything but 200 so a downstream
+// error is not wrapped as if it were an answer.
+func call(url string) ([]byte, error) {
+	response, err := chainClient.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s: %s", url, response.Status)
+	}
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, err
+	}
+	return bytes.TrimSpace(body), nil
+}
+
 func newMux() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle("/health", instrument(health))
 	mux.Handle("/load/io-bound", instrument(ioBound))
 	mux.Handle("/load/cpu-bound", instrument(cpuBound))
+	mux.Handle("/chain", instrument(chain))
 	mux.Handle("/metrics", promhttp.Handler())
 	return mux
 }

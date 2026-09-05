@@ -108,3 +108,50 @@ func counterValue(t *testing.T, mux *http.ServeMux) int {
 	}
 	return total
 }
+
+// The chain hop is the one route that calls out, so it is asserted
+// against a stub rather than against the real neighbour: what matters
+// here is that this service wraps the answer it got, and reports a
+// downstream failure as one rather than as its own.
+func TestChainWrapsWhatTheNextServiceAnswered(t *testing.T) {
+	next := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, `{"service":"service-node"}`)
+	}))
+	defer next.Close()
+
+	restore := nextChain
+	nextChain = next.URL
+	defer func() { nextChain = restore }()
+
+	rec := httptest.NewRecorder()
+	newMux().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/chain", nil))
+
+	want := `{"service":"service-go","next":{"service":"service-node"}}` + "\n"
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if got := rec.Body.String(); got != want {
+		t.Errorf("body = %q, want %q", got, want)
+	}
+}
+
+func TestChainReportsADownstreamFailureAsAGatewayError(t *testing.T) {
+	next := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer next.Close()
+
+	restore := nextChain
+	nextChain = next.URL
+	defer func() { nextChain = restore }()
+
+	rec := httptest.NewRecorder()
+	newMux().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/chain", nil))
+
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadGateway)
+	}
+	if got := rec.Body.String(); !strings.Contains(got, "500") {
+		t.Errorf("body does not name the downstream status: %q", got)
+	}
+}

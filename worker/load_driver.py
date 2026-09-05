@@ -12,6 +12,13 @@ URLS = [
     "http://app:8002/load/cpu-bound",
     "http://app:8002/load/memory-spike",
     "http://app:8002/load/stress/1",
+    # The entry point of the chain, and the only one of the three /chain
+    # routes listed here. Calling it drives all three services in one
+    # request; listing the other two as well would fill the trace store
+    # with one- and two-service traces of the same name, and the
+    # crossing is what this route exists to show. Calling them directly
+    # is the manual proof that the context propagates, not traffic.
+    "http://app:8002/chain",
     "http://service-go:8003/health",
     "http://service-go:8003/load/io-bound",
     "http://service-go:8003/load/cpu-bound",
