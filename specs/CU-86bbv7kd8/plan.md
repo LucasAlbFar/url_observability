@@ -211,8 +211,12 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       The environment correction went in with the commit that broke the sentence, as the rule above
       says; what is left here is the pillar itself, the crossing, the four rules, and the table of
       what each language's SDK costs.
-- [ ] `README.md`: bringing the stack up with traces and following one request across three
+- [x] `README.md`: bringing the stack up with traces and following one request across three
       services. — `docs: explain how to follow a request across services`
+      The new section is a recipe against the running stack: the `curl`, the Explore search, the
+      seven spans, and the direct call to the middle of the chain as the negative proof. Four
+      places went stale with it — the profile table's "all six", the two-volume teardown table, the
+      images `--rmi all` deletes, and the layout tree.
 - [ ] Run the verification steps and record each outcome here. No commit beyond the tick. —
       `docs(specs): record the verification outcomes`
 
