@@ -49,6 +49,10 @@ SCRAPE_LABEL = "prometheus.io/scrape"
 JOB_LABEL = "prometheus.io/job"
 PORT_LABEL = "prometheus.io/port"
 DOCKER_SOCKET = "/var/run/docker.sock"
+# The trace half of a service's identity, and the service nothing may
+# wait for.
+OTEL_NAME = "OTEL_SERVICE_NAME"
+COLLECTOR_SERVICE = "otel-collector"
 
 
 @pytest.fixture(scope="session")
@@ -178,6 +182,19 @@ def socket_mounts(service):
                 yield rest.endswith(":ro")
         elif volume.get("source") == DOCKER_SOCKET:
             yield bool(volume.get("read_only"))
+
+
+def environment(service):
+    """Return a service's environment as a mapping.
+
+    Compose accepts it as a mapping or as a `key=value` list, and
+    reading only one form makes the other look like a service that
+    declares nothing.
+    """
+    declared = service.get("environment", {})
+    if isinstance(declared, list):
+        declared = dict(entry.split("=", 1) for entry in declared)
+    return declared
 
 
 def test_compose_carries_no_obsolete_version_key(compose):
@@ -415,3 +432,33 @@ def test_prometheus_reads_the_docker_socket_unprivileged(compose):
     assert all(read_only), service["volumes"]
     assert service.get("group_add"), service.get("group_add")
     assert "user" not in service
+
+
+def test_a_traced_service_shares_one_name_with_the_scrape(compose, compose_labels):
+    """Confirm both pillars call a service by the same name.
+
+    `job` keys the series in prometheus_data and `service.name` keys a
+    trace. Nothing fails when they diverge — every query that crosses
+    the two pillars simply needs a translation written by hand, and the
+    two values are declared in the same compose block so that diverging
+    takes ignoring the neighbouring line.
+    """
+    checked = 0
+    for name, service in compose["services"].items():
+        declared = environment(service).get(OTEL_NAME)
+        if not declared:
+            continue
+        checked += 1
+        assert declared == compose_labels[name].get(JOB_LABEL), name
+    assert checked, "no service declares its trace identity"
+
+
+def test_no_service_waits_for_the_collector(compose):
+    """Confirm telemetry cannot hold an application down.
+
+    A `depends_on` here trades application availability for telemetry
+    availability, which is the inverse of what this stack is for: the
+    Collector going down has to leave every service answering.
+    """
+    for name, service in compose["services"].items():
+        assert COLLECTOR_SERVICE not in service.get("depends_on", {}), name

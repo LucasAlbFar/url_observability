@@ -151,8 +151,21 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       **One entry in `URLS`, not three:** the app's, which drives all three services in one request.
       Listing the other two would fill the trace store with one- and two-service traces of the same
       name; calling them directly is the manual proof of propagation, not traffic.
-- [ ] OTel on the app: packages, the wrapped start command, the variables in the compose block.
+- [x] OTel on the app: packages, the wrapped start command, the variables in the compose block.
       Recompiling `requirements/` needs `pip<26`. — `feat(app): emit traces over OTLP`
+      **Three things measured here.** The stable convention names arrive with
+      `OTEL_SEMCONV_STABILITY_OPT_IN=http`: the server span carries `http.request.method`,
+      `http.response.status_code`, `http.route`, `url.path`, `server.address`, and the client span
+      the same three plus `url.full`. `OTEL_PYTHON_EXCLUDED_URLS=metrics` keeps the scrape out of
+      the trace store — one trace every five seconds otherwise, which is most of what it would
+      hold. And the ASGI instrumentation's internal `http send` spans **cannot** be turned off by
+      environment: `exclude_spans` is a constructor argument, so auto-instrumentation has no way to
+      pass it, and each app trace carries two of them.
+
+      **The ceiling decision is vindicated by the traffic:** Tempo went from 551 samples per scrape
+      to **1253** once traces began arriving. At the old `sample_limit: 1000` it would now be at
+      `up=0`. The app itself stayed at its recorded 146 — with both non-trace exporters off, the
+      SDK adds no metric series at all.
 - [ ] OTel on `service-node`, through `--require`. — `feat(service-node): emit traces over OTLP`
 - [ ] OTel on `service-go`, hand-written on both the server and the client — the expensive one, and
       last because the other two settle the conventions it has to match. —

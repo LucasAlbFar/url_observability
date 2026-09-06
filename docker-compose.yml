@@ -6,6 +6,34 @@ services:
       - "8002:8002"
     environment:
       - DEBUG=True
+      # The tracing half of the identity, declared beside the scrape
+      # labels rather than compiled in: OTEL_SERVICE_NAME carries the
+      # same value as prometheus.io/job below, so `job` and
+      # `service.name` name one service. A test asserts they agree.
+      - OTEL_SERVICE_NAME=fastapi-app
+      # http/protobuf on 4318, not gRPC on 4317: one connection does not
+      # justify grpcio in the image. The Collector accepts both.
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_TRACES_EXPORTER=otlp
+      # Off, both of them. Prometheus still pulls /metrics and nothing
+      # here logs; leaving either at its default would send a second
+      # copy of the metrics down a path no dashboard reads.
+      - OTEL_METRICS_EXPORTER=none
+      - OTEL_LOGS_EXPORTER=none
+      # The semantic convention, pinned rather than defaulted. `http`
+      # selects the stable names — http.request.method,
+      # http.response.status_code, http.route — over the pre-1.0 ones
+      # this SDK still emits by default. The failure it prevents is
+      # silent: a query written against one set matches nothing against
+      # the other, with no error anywhere.
+      - OTEL_SEMCONV_STABILITY_OPT_IN=http
+      # The scrape is not application traffic, and at one scrape every
+      # five seconds it would be most of what the trace store holds.
+      # This is the same rule the Go and Node services follow by leaving
+      # /metrics uninstrumented; the app's instrumentation is automatic,
+      # so the exclusion is declared instead.
+      - OTEL_PYTHON_EXCLUDED_URLS=metrics
     labels:
       # The scrape contract. `job` and `port` are not derived from the compose
       # service name on purpose: `job` keys the series already in
