@@ -65,6 +65,20 @@ services:
     profiles: ["core", "load"]
     ports:
       - "8003:8003"
+    # The only environment this service reads, and it reads none of it
+    # by name: the OTel SDK does. Same shape as the other two, with
+    # OTEL_SERVICE_NAME carrying the value of prometheus.io/job below.
+    environment:
+      - OTEL_SERVICE_NAME=service-go
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=none
+      - OTEL_LOGS_EXPORTER=none
+      # Declared for the same reason as in the other two blocks, and it
+      # decides less here: this service pins the convention in an import
+      # path, `semconv/v1.43.0`, which is the version otelhttp emits.
+      - OTEL_SEMCONV_STABILITY_OPT_IN=http
     labels:
       prometheus.io/scrape: "true"
       prometheus.io/job: "service-go"

@@ -329,6 +329,7 @@ service-go/
 service-node/
   main.js                 # the Node service: /health, /load/*, /chain, /metrics on :8004
   main.test.js            # its tests — run by `npm test`, not by pytest
+  tracing.mjs             # the OTel bootstrap, loaded by `node --import`
   package.json / package-lock.json   # manifest and committed lockfile
 noisy/
   raw_path_emitter.py     # the bad citizen: raw-path series on :8005, `chaos` profile only

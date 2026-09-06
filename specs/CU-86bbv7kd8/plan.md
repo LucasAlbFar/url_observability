@@ -184,9 +184,27 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       the instrumentation has nothing to read a route template from and names every span `GET`.
       Two lines in `instrument()` set `http.route` and the span name, so the trace reads
       `GET /chain`. The span is absent when the SDK is not loaded, which is how the tests run.
-- [ ] OTel on `service-go`, hand-written on both the server and the client — the expensive one, and
+- [x] OTel on `service-go`, hand-written on both the server and the client — the expensive one, and
       last because the other two settle the conventions it has to match. —
       `feat(service-go): emit traces over OTLP`
+      **The propagator is not a default in this SDK**, and its absence is invisible: without
+      `SetTextMapPropagator` the incoming `traceparent` is ignored, every hop starts its own trace,
+      and the symptom is three one-service traces where there should be one of three. It is the
+      whole reason the crossing was built and watched first.
+
+      **`otelhttp.WithRouteTag` is gone in v0.71.0**, so `http.route` is set by hand here as it is
+      in the Node service — same missing route template, same two lines. The convention version is
+      pinned in the import path, `semconv/v1.43.0`, which is what otelhttp v0.71.0 emits itself.
+
+      **The batcher's last five seconds are dropped on a restart**: the process is killed rather
+      than shut down. Accepted — signal handling in a service whose point is being small buys back
+      five seconds of demonstration traffic.
+
+      **One trace, three services**, measured: `fastapi-app` SERVER + CLIENT (plus the two ASGI
+      spans), `service-go` SERVER + CLIENT, `service-node` SERVER, every server span named
+      `GET /chain` and carrying `http.route=/chain`. Calling `/chain` directly on `service-go`
+      produces the two-service trace, so the propagation reads as a difference rather than a
+      claim.
 - [ ] `CLAUDE.md`: the telemetry path, the shared identity, the pinned convention version, and the
       environment correction. Conclusions only — the derivation stays in this file. —
       `docs: document the tracing pillar`
