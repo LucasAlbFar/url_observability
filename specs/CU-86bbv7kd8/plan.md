@@ -166,7 +166,24 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       to **1253** once traces began arriving. At the old `sample_limit: 1000` it would now be at
       `up=0`. The app itself stayed at its recorded 146 — with both non-trace exporters off, the
       SDK adds no metric series at all.
-- [ ] OTel on `service-node`, through `--require`. — `feat(service-node): emit traces over OTLP`
+- [x] OTel on `service-node`, through `--require`. — `feat(service-node): emit traces over OTLP`
+      **`--import`, not `--require`, and the difference is a silent failure.** This service is an ES
+      module, and on Node 24 the instrumentation's patch of the CommonJS `require` never reaches an
+      `import http from "node:http"`. Measured: with `--require` alone the SDK starts, logs that it
+      patched `http`, and produces **no spans at all** — no error and no warning, an empty trace
+      store. `tracing.mjs` registers `@opentelemetry/instrumentation/hook.mjs` through
+      `node:module`'s `register`, which is what closes it; `--experimental-loader` also works and
+      warns that it may be removed.
+
+      **The SDK is assembled by hand rather than through `auto-instrumentations-node`**: this
+      service serves `node:http` and nothing else, the bundle installs some forty instrumentations
+      (82 MB of `node_modules` against 55 MB), and it is also the only place the scrape can be kept
+      out of the trace store — this SDK has no environment variable for excluding a URL.
+
+      **The route is set by hand too, for the reason the metric labels are.** With no framework,
+      the instrumentation has nothing to read a route template from and names every span `GET`.
+      Two lines in `instrument()` set `http.route` and the span name, so the trace reads
+      `GET /chain`. The span is absent when the SDK is not loaded, which is how the tests run.
 - [ ] OTel on `service-go`, hand-written on both the server and the client — the expensive one, and
       last because the other two settle the conventions it has to match. —
       `feat(service-go): emit traces over OTLP`

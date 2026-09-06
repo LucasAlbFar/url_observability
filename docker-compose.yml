@@ -89,6 +89,21 @@ services:
     profiles: ["core", "load"]
     ports:
       - "8004:8004"
+    # The only environment this service reads, and it reads none of it
+    # itself: the SDK does, in tracing.cjs. Same shape as the app's,
+    # with OTEL_SERVICE_NAME carrying the value of prometheus.io/job
+    # below.
+    environment:
+      - OTEL_SERVICE_NAME=service-node
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=none
+      - OTEL_LOGS_EXPORTER=none
+      # The stable HTTP names, for the reason the app pins them: a
+      # dashboard written against one set of names matches nothing
+      # against the other, and says nothing about why.
+      - OTEL_SEMCONV_STABILITY_OPT_IN=http
     labels:
       prometheus.io/scrape: "true"
       prometheus.io/job: "service-node"
