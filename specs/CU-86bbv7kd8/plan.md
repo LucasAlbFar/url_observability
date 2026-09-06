@@ -205,9 +205,12 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       `GET /chain` and carrying `http.route=/chain`. Calling `/chain` directly on `service-go`
       produces the two-service trace, so the propagation reads as a difference rather than a
       claim.
-- [ ] `CLAUDE.md`: the telemetry path, the shared identity, the pinned convention version, and the
+- [x] `CLAUDE.md`: the telemetry path, the shared identity, the pinned convention version, and the
       environment correction. Conclusions only — the derivation stays in this file. —
       `docs: document the tracing pillar`
+      The environment correction went in with the commit that broke the sentence, as the rule above
+      says; what is left here is the pillar itself, the crossing, the four rules, and the table of
+      what each language's SDK costs.
 - [ ] `README.md`: bringing the stack up with traces and following one request across three
       services. — `docs: explain how to follow a request across services`
 - [ ] Run the verification steps and record each outcome here. No commit beyond the tick. —
