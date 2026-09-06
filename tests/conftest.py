@@ -78,6 +78,26 @@ def compose_labels(compose):
 
 
 @pytest.fixture(scope="session")
+def compose_environments(compose):
+    """Return each compose service's environment, keyed by service name.
+
+    Beside `compose_labels` and normalising the same way, because the
+    same two shapes are accepted here — a mapping or a `key=value`
+    list — and two modules read it: the shared identity check in
+    test_compose_config.py, and the OTLP endpoint check in
+    test_collector_config.py. One reader normalising and the other not
+    is how a service silently stops being covered.
+    """
+    environments = {}
+    for name, service in compose["services"].items():
+        declared = service.get("environment", {})
+        if isinstance(declared, list):
+            declared = dict(entry.split("=", 1) for entry in declared)
+        environments[name] = declared
+    return environments
+
+
+@pytest.fixture(scope="session")
 def pinned_images(repo_root, compose):
     """Map each pinned repository to every tag the stack gives it.
 

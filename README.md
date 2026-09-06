@@ -184,7 +184,7 @@ Pick the group you need:
 | Command | Brings up | Use it for |
 | --- | --- | --- |
 | `docker compose --profile core up -d` | `app`, `service-go`, `service-node`, `prometheus`, `grafana`, `otel-collector`, `tempo` | dashboards and traces, without synthetic traffic |
-| `docker compose --profile load up -d` | `app`, `service-go`, `service-node`, `loadgen` | exercising the APIs, without the observability side |
+| `docker compose --profile load up -d` | `app`, `service-go`, `service-node`, `loadgen` | exercising the APIs, without the observability side — the three services log a failed span export every few seconds, since the Collector is in `core` |
 | `docker compose --profile core --profile load up -d` | all eight | the full demo |
 | `docker compose --profile core --profile load --profile chaos up -d` | all nine | the full demo **plus** the badly behaved service |
 

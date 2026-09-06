@@ -104,7 +104,7 @@ services:
     ports:
       - "8004:8004"
     # The only environment this service reads, and it reads none of it
-    # itself: the SDK does, in tracing.cjs. Same shape as the app's,
+    # itself: the SDK does, in tracing.mjs. Same shape as the app's,
     # with OTEL_SERVICE_NAME carrying the value of prometheus.io/job
     # below.
     environment:

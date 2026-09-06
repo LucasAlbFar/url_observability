@@ -218,10 +218,10 @@ Grafana auto-provisions its datasources and `grafana/dashboards/services.json` f
 
 ## Testing conventions
 
-- `tests/conftest.py` provides `client`, `test_settings`, `repo_root`, `compose`, `compose_labels`, `pinned_images` and `driven_services` — `repo_root` is session-scoped and returns the repository root, for tests that read files rather than call code.
+- `tests/conftest.py` provides `client`, `test_settings`, `repo_root`, `compose`, `compose_labels`, `compose_environments`, `pinned_images` and `driven_services` — `repo_root` is session-scoped and returns the repository root, for tests that read files rather than call code.
 - One test file per module (`test_config.py`, `test_example.py`, `test_health.py`, `test_main.py`, `test_load.py`, `test_load_driver.py`, `test_noisy.py`), asserting exact status code + JSON body.
 - The Go tests live beside the source in `service-go/main_test.go`, not under `tests/`, and run from `go test` rather than from pytest — the coverage gate never sees them.
-- Four files break that rule on purpose: `test_compose_config.py`, `test_prometheus_config.py`, `test_grafana_provisioning.py` and `test_docs_versions.py` have no Python module behind them — they parse `docker-compose.yml`, `prometheus.yml`, the provisioned Grafana files, and the image versions quoted in `CLAUDE.md` and `README.md`. See "Infra checks" for what they do and do not cover.
+- Five files break that rule on purpose: `test_compose_config.py`, `test_prometheus_config.py`, `test_collector_config.py`, `test_grafana_provisioning.py` and `test_docs_versions.py` have no Python module behind them — they parse `docker-compose.yml`, `prometheus.yml`, the Collector and Tempo configuration, the provisioned Grafana files, and the image versions quoted in `CLAUDE.md` and `README.md`. See "Infra checks" for what they do and do not cover.
 - Async worker tests use `pytest-asyncio` with `unittest.mock.AsyncMock`/`patch` to mock `httpx.AsyncClient.get` (both success and exception paths) and `monkeypatch` to run `main(cycles=1)` instead of an infinite loop — follow this pattern rather than making real network calls in tests.
 
 ## Feature specs & plans

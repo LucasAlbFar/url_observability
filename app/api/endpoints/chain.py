@@ -26,8 +26,11 @@ async def chain():
             response = await client.get(NEXT)
             response.raise_for_status()
             following = response.json()
-    except httpx.HTTPError as error:
+    except (httpx.HTTPError, ValueError) as error:
         # 502 rather than 500: the failure is downstream, and that
         # difference is what says which service to go and look at.
+        # ValueError is in the list for the same reason: a 200 carrying
+        # a body that is not JSON is the next service misbehaving, and
+        # letting the decode error escape reports it as this one's.
         raise HTTPException(status_code=502, detail=f"{NEXT}: {error}")
     return {"service": "fastapi-app", "next": following}

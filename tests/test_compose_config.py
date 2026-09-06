@@ -184,19 +184,6 @@ def socket_mounts(service):
             yield bool(volume.get("read_only"))
 
 
-def environment(service):
-    """Return a service's environment as a mapping.
-
-    Compose accepts it as a mapping or as a `key=value` list, and
-    reading only one form makes the other look like a service that
-    declares nothing.
-    """
-    declared = service.get("environment", {})
-    if isinstance(declared, list):
-        declared = dict(entry.split("=", 1) for entry in declared)
-    return declared
-
-
 def test_compose_carries_no_obsolete_version_key(compose):
     """Confirm the key current Compose ignores with a warning is gone."""
     assert "version" not in compose
@@ -434,7 +421,9 @@ def test_prometheus_reads_the_docker_socket_unprivileged(compose):
     assert "user" not in service
 
 
-def test_a_traced_service_shares_one_name_with_the_scrape(compose, compose_labels):
+def test_a_traced_service_shares_one_name_with_the_scrape(
+    compose_environments, compose_labels
+):
     """Confirm both pillars call a service by the same name.
 
     `job` keys the series in prometheus_data and `service.name` keys a
@@ -444,12 +433,12 @@ def test_a_traced_service_shares_one_name_with_the_scrape(compose, compose_label
     takes ignoring the neighbouring line.
     """
     checked = 0
-    for name, service in compose["services"].items():
-        declared = environment(service).get(OTEL_NAME)
-        if not declared:
+    for name, declared in compose_environments.items():
+        identity = declared.get(OTEL_NAME)
+        if not identity:
             continue
         checked += 1
-        assert declared == compose_labels[name].get(JOB_LABEL), name
+        assert identity == compose_labels[name].get(JOB_LABEL), name
     assert checked, "no service declares its trace identity"
 
 

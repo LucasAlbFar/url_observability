@@ -13,6 +13,8 @@ infra job runs the Collector's `validate` and Tempo's `-config.verify`
 for that.
 """
 
+from urllib.parse import urlparse
+
 import pytest
 import yaml
 
@@ -20,6 +22,8 @@ COLLECTOR_SERVICE = "otel-collector"
 TEMPO_SERVICE = "tempo"
 TEMPO_VOLUME = "tempo_data"
 PORT_LABEL = "prometheus.io/port"
+OTLP_ENDPOINT = "OTEL_EXPORTER_OTLP_ENDPOINT"
+OTLP_PROTOCOL = "OTEL_EXPORTER_OTLP_PROTOCOL"
 # An endpoint bound to one of these accepts nothing from another
 # container, which is every sender and every scraper in this stack.
 LOOPBACK = ("localhost", "127.0.0.1", "::1", "")
@@ -141,3 +145,38 @@ def test_the_trace_store_writes_inside_its_named_volume(tempo_config, compose):
     assert trace["backend"] == "local", trace["backend"]
     for path in (trace["local"]["path"], trace["wal"]["path"]):
         assert path.startswith(f"{target}/"), path
+
+
+def test_the_traced_services_send_where_the_collector_listens(
+    collector_config, compose, compose_environments
+):
+    """Confirm each sender's endpoint is a receiver the Collector has.
+
+    The crossing nothing else checks, and the quietest of them all:
+    move either side and every test in this file still passes, both
+    binaries still accept their configuration, the Collector still
+    boots clean, and the spans go nowhere with no error anywhere.
+
+    The protocol decides which receiver to check against — `grpc` on
+    4317, anything else on the http one — because the two ports are
+    declared in the same block and picking the wrong one is exactly the
+    mistake this asserts against.
+    """
+    protocols = collector_config["receivers"]["otlp"]["protocols"]
+    listening = {
+        name: host_and_port(protocol["endpoint"])[1]
+        for name, protocol in protocols.items()
+    }
+    checked = 0
+    for name, declared in compose_environments.items():
+        endpoint = declared.get(OTLP_ENDPOINT)
+        if not endpoint:
+            continue
+        checked += 1
+        parsed = urlparse(endpoint)
+        assert parsed.hostname in compose["services"], (name, endpoint)
+        protocol = declared.get(OTLP_PROTOCOL, "")
+        expected = "grpc" if protocol.startswith("grpc") else "http"
+        assert expected in listening, (name, protocol, sorted(listening))
+        assert parsed.port == listening[expected], (name, endpoint, listening)
+    assert checked, "no service exports OTLP"

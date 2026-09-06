@@ -12,6 +12,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -168,9 +169,15 @@ func chain(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// 502 rather than 500, for the reason the app returns one: the
 		// failure is downstream, and the code says where to look.
+		//
+		// json.Marshal rather than %q, which is Go quoting and not JSON
+		// encoding: an error carrying a non-printable byte comes out as
+		// \xNN, which no JSON parser accepts. On the one path where the
+		// message is the whole diagnostic.
+		detail, _ := json.Marshal(err.Error())
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadGateway)
-		fmt.Fprintf(w, "{\"detail\":%q}\n", err.Error())
+		fmt.Fprintf(w, `{"detail":%s}`+"\n", detail)
 		return
 	}
 	writeJSON(w, fmt.Sprintf(`{"service":"service-go","next":%s}`, body))
