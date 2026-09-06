@@ -268,7 +268,9 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
     `docker compose --profile core --profile load down` was still readable after the next `up`, with
     all seven spans and all three services. `tempo_data` is one of three named volumes now, and only
     `--volumes` erases it.
-11. **A green CI run** — *not run.* The branch has not been pushed; that is the user's call.
+11. **A green CI run** — all four jobs on PR #10 at `0c69d65`: `build`, `infra`, `node`, `go`, in
+    1m41s. Worth knowing for the next branch: the workflow triggers on `push` to `main` and
+    `pull_request` against it, so pushing a feature branch runs nothing until the PR exists.
 12. **`git diff --stat main...HEAD`** names 33 files. Two were outside the "Affected files" table
     and are in it now: `service-node/tracing.mjs`, which only exists because `--require` does not
     work for an ES module, and `tests/test_docs_versions.py`, whose tag scanner read `node:http` in
