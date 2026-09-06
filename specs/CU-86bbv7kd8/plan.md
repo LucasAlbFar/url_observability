@@ -113,7 +113,9 @@ measurements this feature needs are tasks, and they are marked as such below.
 | `worker/load_driver.py` | `/chain` in `URLS` |
 | `prometheus.yml` | Only if the measurement requires it |
 | `grafana/dashboards/services.json` | Only with `prometheus.yml`: a panel draws the ceiling as a threshold |
+| `service-node/tracing.mjs` | New: the OTel bootstrap `node --import` loads |
 | `tests/test_collector_config.py` | New: structural assertions on the two configuration files |
+| `tests/test_docs_versions.py` | The tag scanner, so `node:http` in prose is not read as an image |
 | `.github/workflows/python-app.yml` | The two config validators, in the shape the `promtool` step already has |
 | `tests/test_chain.py` | The new route's status code and body |
 | `tests/test_compose_config.py`, `tests/test_load_driver.py`, `tests/test_grafana_provisioning.py` | The two new services, the new list entry, the new datasource |
@@ -217,8 +219,60 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       seven spans, and the direct call to the middle of the chain as the negative proof. Four
       places went stale with it — the profile table's "all six", the two-volume teardown table, the
       images `--rmi all` deletes, and the layout tree.
-- [ ] Run the verification steps and record each outcome here. No commit beyond the tick. —
+- [x] Run the verification steps and record each outcome here. No commit beyond the tick. —
       `docs(specs): record the verification outcomes`
+
+**Verification, run end to end on 2026-09-06. Each numbered step, with its outcome:**
+
+1. **`tox` green** — `py311`, `lint` and `safety` in 54s. 78 tests, coverage 100%, no vulnerability
+   in either requirements file.
+2. **Nine services** — `docker compose --profile '*' config -q` clean, and `config --services`
+   resolves `app grafana loadgen noisy otel-collector prometheus service-go service-node tempo`.
+3. **`promtool check config` accepts `prometheus.yml`**, and both new files pass their own
+   validators — the Collector's `validate` and Tempo's `-config.verify=true`, which the `infra` job
+   now runs.
+4. **The crossing** — `GET localhost:8002/chain` returns 200 with
+   `{"service":"fastapi-app","next":{"service":"service-go","next":{"service":"service-node"}}}`.
+5. **The trace, in a browser.** Explore on the `tempo` datasource draws it: header
+   `fastapi-app: GET /chain`, **200**, **Services 3**, **Route /chain**, **7 spans**, 896.14ms. The
+   waterfall nests them in the order the request took them — `fastapi-app GET /chain` → its client
+   `GET` → `service-go GET /chain` → its client `HTTP GET` → `service-node GET /chain` — with the
+   app's two ASGI `http send` spans alongside. Opening the Node span shows `http.request.method`,
+   `http.response.status_code`, `http.route=/chain`, from
+   `@opentelemetry/instrumentation-http 0.222.0`. The trace used was
+   `639fbc8b…`, recorded **before** the restart in step 10, so the browser confirms that step too.
+6. **Propagation as a difference**, also in the browser: the same query on the trace from a direct
+   call to `service-go` draws `service-go: GET /chain`, **Services 2**, **3 spans**. Same route,
+   same name, one hop fewer, one header's difference.
+7. **Five targets at `up=1`** — `fastapi-app`, `service-go`, `service-node`, `otel-collector`,
+   `tempo`.
+8. **The metrics intact, and every difference accounted for.** Series per job: app **153** against a
+   baseline of 136, Go **68** against 68, Node **161** against 128.
+   - The app's +17 is exactly the `/chain` handler: `count({job="fastapi-app",handler="/chain"})`
+     returns 17.
+   - The Go service's 0 is the point of its convention: `client_golang` labels by `code`/`method`
+     and has no route label, so a new route costs no series at all.
+   - The Node service's +33 is +15 for `route="/chain"` — its four routes cost 15 series each — and
+     +18 in `nodejs_*` runtime gauges, which report one series per heap space, GC kind and active
+     resource type. The SDK's export timer and socket show up there as new
+     `nodejs_active_resources` types; no metric name was added.
+   - **No OTel metric name reached the TSDB at all**, on any of the three: the prefixes are
+     `http`/`process`/`python`/`scrape`/`up`, `go`/`http`/`process`/`promhttp`/`scrape`/`up` and
+     `http`/`nodejs`/`process`/`scrape`/`up`. `OTEL_METRICS_EXPORTER=none` is doing what it says,
+     and `target_info` is absent.
+9. **The Collector stopped** — all three services answer `/health` 200, `/chain` still returns
+   **200** rather than failing, `rate(http_requests_total[1m])` keeps drawing for all three jobs, and
+   no container is left unhealthy. The Collector's target leaves the target list rather than
+   reporting `up=0`, which is discovery behaving as documented rather than a defect.
+10. **Traces survive a restart** — a trace recorded before
+    `docker compose --profile core --profile load down` was still readable after the next `up`, with
+    all seven spans and all three services. `tempo_data` is one of three named volumes now, and only
+    `--volumes` erases it.
+11. **A green CI run** — *not run.* The branch has not been pushed; that is the user's call.
+12. **`git diff --stat main...HEAD`** names 33 files. Two were outside the "Affected files" table
+    and are in it now: `service-node/tracing.mjs`, which only exists because `--require` does not
+    work for an ES module, and `tests/test_docs_versions.py`, whose tag scanner read `node:http` in
+    the new prose as an image tag.
 
 **The measurement, 2026-09-05, against the `core` stack.** Samples from
 `scrape_samples_post_metric_relabeling` and `scrape_samples_scraped` on `/api/v1/query`; the label
