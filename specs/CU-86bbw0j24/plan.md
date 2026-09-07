@@ -254,10 +254,44 @@ task makes dead.
       against `label_limit: 20`, and the derived series now carry exactly the four the design named
       plus `__name__`, `job` and `instance`. No collision: all five targets stayed at `up=1`, which
       is what a collapsed pair would have broken.
-- [ ] **The comparison, under load:** latency, throughput and error rate from both sources, per
+- [x] **The comparison, under load:** latency, throughput and error rate from both sources, per
       service and per route, with sample age read explicitly rather than trusted from an instant
       query. Record the numbers and the decision to retire. Nothing is switched off before this task
       is ticked. — verification
+
+      Measured 2026-09-07, `core` + `load`, `rate(...[5m])` unless stated.
+
+      **Throughput converges.** Two runs minutes apart: `fastapi-app` +0.9% both times,
+      `service-go` +0.5% and +1.6%, `service-node` 0.0% both. Per route on the app every value is
+      0.1356 or 0.1390 — one scrape's worth apart — and which source is the higher of the two flips
+      between runs, so the residual is window jitter rather than a bias either way.
+
+      **Latency agrees where buckets are not in the way.** The mean of `/load/io-bound` — sum over
+      count, which needs no bucket — reads 2.0019309s against 2.0018993s in one run and 2.0018866s
+      against 2.0018798s in the other: the two sources differ by **tens of microseconds**, an order
+      of magnitude below the difference between consecutive runs of the same source. That is the evidence that the two sources measure the same
+      thing. The p95 does *not* agree, and that is the bucket debt rather than a disagreement: the
+      app reads a flat **1.000s** for a route whose true mean is 2.002s, while the new source reads
+      2.95s. Both are interpolations; only one of them is below the mean it describes. The Go and
+      Node services read 2.149/2.147 old against 2.765/2.746 new, the same effect at finer
+      resolution.
+
+      **Errors agree exactly, on a counted burst.** Twelve 404s to each service, counters snapshotted
+      before and after: the app moved 12 on `handler="none"` and 12 on `http_route="unmatched"`;
+      `service-node` moved 12 on both of its labels. **`service-go` moved on neither** — it has no
+      404 series in the old source and no span in the new, which is the recorded debt seen from both
+      sides at once. A 502 burst crossed both sources the same way.
+
+      **One defect found here and fixed in `otel-collector-config.yaml`.** At the connector's default
+      `metrics_flush_interval: 60s` the derived counter is flat for a minute and then jumps — steps
+      measured at t=25, 85, 145 against a 5s scrape. Every rate window shorter than the flush reads
+      wrong: `[20s]` gave 3.07 req/s against a true 0.80, `[30s]` gave 1.84. Grafana derives
+      `$__rate_interval` from the 5s scrape, so that is exactly what the dashboard would have asked
+      for. Set to 5s; the counter now advances every scrape and every window from `[1m]` up agrees
+      with the old source.
+
+      **Decision: retire.** The two sources agree on what they both can express, and where they
+      differ the new one is the more accurate of the two.
 - [ ] The instrumented catch-all in `service-go`, under the same `unmatched` value the Node service
       uses, with its test. `/metrics` stays registered explicitly, so the longer pattern still wins
       over `/`. — `feat(service-go): trace and count unmatched paths`
