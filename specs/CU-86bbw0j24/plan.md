@@ -324,9 +324,16 @@ task makes dead.
       `TestClient` follows redirects, so the test reported a clean 200. Found by curling the running
       container. It is a route returning `generate_latest()` now, and the test passes
       `follow_redirects=False`, which is what makes the mutation back to a mount fail.
-- [ ] The same in `service-go`: the two collectors and the `promhttp.InstrumentHandler*` wrapping go,
+- [x] The same in `service-go`: the two collectors and the `promhttp.InstrumentHandler*` wrapping go,
       `promhttp.Handler()` and the route attribute stay. —
       `refactor(service-go): retire the HTTP metrics instrumentation`
+
+      `instrument` now wraps one pillar rather than two, and the test that asserted the counter moved
+      became its inverse: serving a request must publish no request series at all, since a library
+      left in place but unused keeps publishing the convention. Verified on the running container —
+      `/metrics` answers 200 with 44 process and runtime series and no `http_request*`, and both the
+      route and the 404 still answer. Two mutations checked: reintroducing the counter fails the
+      inverse test, and labelling the span by the raw path still fails the route-value test.
 - [ ] The same in `service-node`: the two hand-written collectors go, `collectDefaultMetrics` and
       `/metrics` stay. The `route` drop rule and its `PATH_LABELS` entry go with it, and so does the
       499-on-close convention, which was a property of the counter. —
