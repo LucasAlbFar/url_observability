@@ -389,10 +389,18 @@ task makes dead.
       61.9 KB and is 166 KB; the target count said 6 and is 5. Raising `sample_limit` to widen
       Tempo's margin was rejected: it is one number for every target, and the three applications
       reading 16 to 96 would be loosened by the same factor.
-- [ ] `CLAUDE.md`: one convention instead of three, the new metric path, the rewritten `job`, and the
+- [x] `CLAUDE.md`: one convention instead of three, the new metric path, the rewritten `job`, and the
       correction of every sentence describing the split — the three-convention table, the two
       convention rows, the two drop rules, the 499 counting, and the debts this closes. Conclusions
       only; the derivation stays here. — `docs: document the single metric convention`
+
+      Most of the corrections went in with the commits that broke the sentences, as the rule above
+      says. What is left here is the positive half: a **One instrumentation, two signals** section
+      with the five rules the connector arrangement now depends on — server spans only, explicit
+      dimensions with a route default, one bucket list in seconds, the flush at the scrape interval,
+      and one port carrying two things. Plus three fixes the incremental edits had left: the drop
+      rules still said "three today", the `job` exception was written before the rule it excepts,
+      and *The tracing pillar* was still called that while describing both signals.
 - [ ] `README.md`, to the extent it describes the dashboard and the guard. —
       `docs: update the dashboard tour`
 - [ ] Run the verification steps and record each outcome here. No commit beyond the tick. —
