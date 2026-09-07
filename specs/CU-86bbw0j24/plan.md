@@ -401,8 +401,19 @@ task makes dead.
       and one port carrying two things. Plus three fixes the incremental edits had left: the drop
       rules still said "three today", the `job` exception was written before the rule it excepts,
       and *The tracing pillar* was still called that while describing both signals.
-- [ ] `README.md`, to the extent it describes the dashboard and the guard. —
+- [x] `README.md`, to the extent it describes the dashboard and the guard. —
       `docs: update the dashboard tour`
+
+      The dashboard tour, the Collector's bullet — it carries metrics now, not only traces — the
+      three-conventions paragraph, and the guard walkthrough's label and numbers.
+
+      **Writing that walkthrough is what found a regression the plan never anticipated.** `noisy`
+      emitted `handler="/users/1"`, the app's convention, and the drop rule that caught it was
+      removed with that convention in the app's retirement. Measured with the chaos profile up: 400
+      samples scraped and **400 stored**, where the guard used to store 0 — layer one had stopped
+      covering the only service in the stack that misbehaves, and nothing failed. `noisy` emits
+      `http_route` now, the one label the stack still puts a path in, and the guard is back to 550
+      scraped and 0 stored. Fixed in its own commit, not this one.
 - [ ] Run the verification steps and record each outcome here. No commit beyond the tick. —
       `docs(specs): record the verification outcomes`
 
