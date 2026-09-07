@@ -1,12 +1,11 @@
 """A service that emits raw paths on purpose.
 
 Every other service in this stack is immune to the failure the
-cardinality guard prevents, and immune deliberately: the FastAPI app
-labels by route template and files every unmatched path under
-`handler="none"`, the Node service labels every unmatched path
-`route="unmatched"`, and the Go service exports no path label at all.
-So there is nothing here to guard against, and a guard nobody has
-watched fire is a guard nobody has tested.
+cardinality guard prevents, and immune deliberately: the request
+metrics are derived from spans, and all three services name a span
+after the route that matched, filing every unmatched path under one
+fixed `unmatched`. So there is nothing here to guard against, and a
+guard nobody has watched fire is a guard nobody has tested.
 
 This module is the missing bad citizen. It reports one series per user
 id — `/users/1`, `/users/2`, `/users/3` — and reports more of them on
@@ -42,11 +41,17 @@ STEP = 50
 # body, well inside the 4MB the scrape allows. At a 5s interval the
 # plateau arrives in about eight minutes.
 CEILING = 5000
-# The app's convention, on purpose. The drop rule selects on the shape
-# of a path-carrying label's value, and `handler` is one of the two
-# this stack has; a service inventing a third name here would test the
-# rule against a label the rule was not written for.
-SAMPLE = 'http_requests_total{{handler="/users/{id}",method="GET",status="200"}} 1'
+# The stack's convention, on purpose. The drop rule selects on the shape
+# of a path-carrying label's value, and `http_route` is the one label
+# this stack puts a path in; a service inventing another name here would
+# test the rule against a label the rule was not written for — which is
+# what this file did until the three instrumentation conventions were
+# replaced and `handler` stopped being guarded.
+SAMPLE = (
+    "traces_span_metrics_calls_total{{"
+    'http_route="/users/{id}",http_request_method="GET",'
+    'http_response_status_code="200"}} 1'
+)
 CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 
 
@@ -66,8 +71,8 @@ class RawPathMetrics:
     def render(self):
         """Return the body for one scrape, then widen the next one."""
         lines = [
-            "# HELP http_requests_total Requests served, by handler.",
-            "# TYPE http_requests_total counter",
+            "# HELP traces_span_metrics_calls_total Requests served, by route.",
+            "# TYPE traces_span_metrics_calls_total counter",
         ]
         lines.extend(SAMPLE.format(id=index) for index in range(self._paths))
         self._paths = min(self._paths + self._step, self._ceiling)
