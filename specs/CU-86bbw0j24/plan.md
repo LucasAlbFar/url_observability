@@ -445,7 +445,9 @@ task makes dead.
 10. **The Collector stopped:** all three answer `/health` and `/chain` with 200, no container goes
     unhealthy, and after 100s the request series are gone while the resource series are 5s old. The
     asymmetry the spec accepted, observed.
-11. **A CI run** — not run. It needs a push to the branch, which was not authorised.
+11. **A CI run, green on all four jobs** — `build`, `go`, `node` and `infra`, in 1m11s, on PR #11.
+    A push to the branch produces nothing: the workflow triggers on `push` to `main` and on
+    `pull_request` against it, so this step needs the PR, not the branch.
 12. **`git diff --stat main...HEAD` names 22 files, and the table named 20.** The two extra are
     `noisy/raw_path_emitter.py` and `tests/test_noisy.py` — the regression the README walkthrough
     uncovered. The table above is corrected rather than the step waved through: the plan did not
