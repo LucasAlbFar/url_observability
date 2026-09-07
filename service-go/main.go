@@ -206,6 +206,17 @@ func call(ctx context.Context, url string) ([]byte, error) {
 	return bytes.TrimSpace(body), nil
 }
 
+// notFound answers what no route claimed, and exists to be
+// instrumented: the mux's own 404 carries neither counter nor span, so
+// until this handler was wired an unknown path was absent from both
+// pillars. The body is the one the Node service answers with, the way
+// /health is identical across the three.
+func notFound(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotFound)
+	fmt.Fprintln(w, `{"detail":"Not Found"}`)
+}
+
 func newMux() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle("/health", instrument("/health", health))
@@ -216,6 +227,11 @@ func newMux() *http.ServeMux {
 	// graphs, and at one every five seconds it would be most of what the
 	// trace store holds.
 	mux.Handle("/metrics", promhttp.Handler())
+	// Everything else, under one label value rather than one per path —
+	// the same `unmatched` the Node service reports. Registered last and
+	// as "/", which every pattern above outranks by being longer, so the
+	// scrape is not swallowed by it.
+	mux.Handle("/", instrument("unmatched", notFound))
 	return mux
 }
 

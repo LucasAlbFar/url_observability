@@ -147,7 +147,7 @@ Measurements and the reasoning behind each of these: `specs/CU-86bb30dec/plan.md
 | *5xx / 4xx error rate* | No — the two targets select `status` and `code` |
 | Rows *Routes (`handler`)* and *Requests (`code`)* | No |
 
-Measured against the running stack in `specs/CU-86bbpx4by/plan.md`, which also records the cost in series. Two details from that measurement are worth carrying: a series with **no** `handler` label matches `handler!="/metrics"`, which is why the Node service reaches the throughput panel at all; and the 4xx panel draws the app alone, because the Go service does not instrument its unmatched handler and so counts no 404 anywhere.
+Measured against the running stack in `specs/CU-86bbpx4by/plan.md`, which also records the cost in series. Two details from that measurement are worth carrying: a series with **no** `handler` label matches `handler!="/metrics"`, which is why the Node service reaches the throughput panel at all; and the 4xx panel drew the app alone until the Go service was given an instrumented catch-all, which is what let it count a 404 at all.
 
 **The dashboard.** `grafana/dashboards/services.json` — `Services Overview`, uid `services-overview` — is eighteen panels in four rows: *Services* groups by `job`; *Routes (`handler`)* and *Requests (`code`)* each hold whichever services carry that label; *Cardinality* shows how much each target writes. Three rules, all asserted by `tests/test_grafana_provisioning.py`:
 

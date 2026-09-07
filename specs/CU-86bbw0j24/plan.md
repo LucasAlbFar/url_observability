@@ -292,9 +292,21 @@ task makes dead.
 
       **Decision: retire.** The two sources agree on what they both can express, and where they
       differ the new one is the more accurate of the two.
-- [ ] The instrumented catch-all in `service-go`, under the same `unmatched` value the Node service
+- [x] The instrumented catch-all in `service-go`, under the same `unmatched` value the Node service
       uses, with its test. `/metrics` stays registered explicitly, so the longer pattern still wins
       over `/`. — `feat(service-go): trace and count unmatched paths`
+
+      **The obvious test does not cover this.** Asserting that three unknown paths add one series to
+      `/metrics` passes whether the catch-all is labelled `unmatched` or by the raw path, because
+      this service's counter carries no route label at all — the leak would only ever show in the
+      derived metrics. The assertion had to move to the span: an in-memory exporter, and
+      `http.route` read off the three spans. The raw-path mutation escapes the first form and fails
+      the second.
+
+      Verified against the running stack: `/nada-aqui` answers 404 with the Node service's body,
+      `/metrics` still answers 200, and all three services now report under
+      `http_route="unmatched"` in the derived source. `go.mod` and `go.sum` did not move —
+      `tracetest` ships in the SDK module the service already required.
 - [ ] The HTTP instrumentation out of the app; `/metrics` and the `process_*` series stay, now with
       the test that says so. The `handler` drop rule and its `PATH_LABELS` entry go with it. —
       `refactor(app): retire the HTTP metrics instrumentation`

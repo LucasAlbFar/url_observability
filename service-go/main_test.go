@@ -6,6 +6,11 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 )
 
 // The three application routes, each asserted on its exact status and
@@ -107,6 +112,70 @@ func counterValue(t *testing.T, mux *http.ServeMux) int {
 		total += int(value)
 	}
 	return total
+}
+
+// The path no route claims. Two assertions, and the second is the one
+// that would fail silently: registering the catch-all as "/" must not
+// take /metrics with it, and a swallowed scrape is a target at up=0
+// rather than a test failure.
+func TestUnmatchedPathIsAnsweredAndCounted(t *testing.T) {
+	mux := newMux()
+	before := counterValue(t, mux)
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/no-such-path", nil))
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+	if got, want := rec.Body.String(), `{"detail":"Not Found"}`+"\n"; got != want {
+		t.Errorf("body = %q, want %q", got, want)
+	}
+	if after := counterValue(t, mux); after != before+1 {
+		t.Errorf("http_requests_total = %d after one 404, want %d", after, before+1)
+	}
+}
+
+// Every unknown path reports under one route value, so a scan of the
+// address space costs one series rather than one per path.
+//
+// Asserted on the span, not on /metrics, and the difference is the whole
+// point: this service's counter carries no route label at all, so a
+// catch-all labelled by the raw path moves no series here and the
+// metrics-side assertion passes while the leak is real. What carries the
+// value is `http.route`, which is what the derived request metrics are
+// built from.
+func TestUnmatchedPathsShareOneRouteValue(t *testing.T) {
+	spans := recordSpans(t)
+
+	mux := newMux()
+	for _, path := range []string{"/one", "/two", "/three"} {
+		mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
+	}
+
+	routes := map[string]int{}
+	for _, span := range spans.GetSpans() {
+		for _, attr := range span.Attributes {
+			if attr.Key == semconv.HTTPRouteKey {
+				routes[attr.Value.AsString()]++
+			}
+		}
+	}
+	if len(routes) != 1 || routes["unmatched"] != 3 {
+		t.Errorf("route values = %v, want three spans under one \"unmatched\"", routes)
+	}
+}
+
+// recordSpans swaps the global tracer provider for one that keeps every
+// span in memory, and puts the previous one back when the test ends.
+func recordSpans(t *testing.T) *tracetest.InMemoryExporter {
+	t.Helper()
+
+	exporter := tracetest.NewInMemoryExporter()
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter)))
+	t.Cleanup(func() { otel.SetTracerProvider(previous) })
+	return exporter
 }
 
 // The chain hop is the one route that calls out, so it is asserted
