@@ -82,6 +82,12 @@ connectors:
     # The default is never: a route called once would be exported for
     # the life of the process.
     metrics_expiration: 5m
+    # The scrape interval, not the 60s default. Measured: at the default
+    # the counter is flat for a minute and then jumps, so every rate
+    # window shorter than 60s reads inflated or empty — and Grafana's
+    # $__rate_interval is derived from a 5s scrape, so that is what the
+    # dashboard would ask for.
+    metrics_flush_interval: 5s
 
 exporters:
   # `otlp_grpc`, not the `otlp` alias: 0.160 still accepts the alias
