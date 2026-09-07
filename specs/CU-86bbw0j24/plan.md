@@ -108,7 +108,7 @@ measurements this feature needs are tasks, and are marked as such below.
   (551 idle and 1253 with traces flowing are **Tempo's** readings, not the Collector's; this bullet
   attributed them to the wrong target until the measurement below.)
 - **Whether the two sources converge.** The acceptance criterion, and the only evidence that
-  switching off is safe. By instant query, for the reason under "Edge cases".
+  switching off is safe. Read sample age explicitly, for the reason under "Edge cases".
 - **How the app keeps `/metrics` without the instrumentator.** Either `Instrumentator().expose(app)`
   with no `.instrument(app)`, or `prometheus_client.make_asgi_app()` mounted directly — in which case
   `prometheus-client` becomes a direct entry in `requirements/base.in` and the instrumentator leaves
@@ -240,12 +240,24 @@ task makes dead.
       `fastapi-app` records `http_route="unmatched"` through the connector's `default`, proving the
       fallback works where no route template exists; `service-node` records the same value from its
       own handler; **`service-go` records nothing at all**, having no span to derive from.
-- [ ] The `job` rewrite and a drop rule on the new route label, with their assertions and
+- [x] The `job` rewrite and a drop rule on the new route label, with their assertions and
       `PATH_LABELS`. Three rules stand here on purpose — the two they replace die with the
       conventions they guard. — `feat(prometheus): key the derived metrics by their own service`
-- [ ] **The comparison, under load and by instant query:** latency, throughput and error rate from
-      both sources, per service and per route. Record the numbers and the decision to retire. Nothing
-      is switched off before this task is ticked. — verification
+
+      **The rewrite reads `service_name`, not `exported_job`.** Both carry the originating service,
+      but only `service_name` is absent from the Collector's own telemetry: measured, 54 internal
+      series arrive under `exported_job=otelcol-contrib` with no `service_name`, so the other choice
+      would have renamed the Collector out of its own dashboard row — undoing what sharing one port
+      was for.
+
+      **The labeldrop the measurement asked for is in.** Labels per sample fell from 14 to **7**
+      against `label_limit: 20`, and the derived series now carry exactly the four the design named
+      plus `__name__`, `job` and `instance`. No collision: all five targets stayed at `up=1`, which
+      is what a collapsed pair would have broken.
+- [ ] **The comparison, under load:** latency, throughput and error rate from both sources, per
+      service and per route, with sample age read explicitly rather than trusted from an instant
+      query. Record the numbers and the decision to retire. Nothing is switched off before this task
+      is ticked. — verification
 - [ ] The instrumented catch-all in `service-go`, under the same `unmatched` value the Node service
       uses, with its test. `/metrics` stays registered explicitly, so the longer pattern still wins
       over `/`. — `feat(service-go): trace and count unmatched paths`
@@ -281,8 +293,10 @@ task makes dead.
   and every threshold in the dashboard change meaning silently.
 - **The `prometheus` exporter keeps a series alive for `metric_expiration`** after its last sample —
   a route that stops being called keeps being exported for that window.
-- **`query_range` carries the last sample forward for five minutes**, so a switched-off source draws
-  a plateau until retention clears it. Conclude by instant query.
+- **Prometheus carries the last sample forward for five minutes**, and an instant query is *not*
+  exempt: the lookback delta is the same five minutes, so a dead series still answers. Measured
+  while re-keying `job` — 16 stale series read as live. The instrument is
+  `time() - timestamp(<selector>)`, which returns the real age of the sample.
 - **The ceiling and the panel threshold are one number in two files**, and a test fails when they
   disagree.
 - **The guard now protects a target that speaks for three services.** Tripping the Collector's
@@ -319,8 +333,8 @@ task makes dead.
 6. **The route on the graph is the route in the trace:** the same value in the panel and in the span,
    for all three services.
 7. **The Go service's unmatched paths appear** in the error panel beside the other two.
-8. **No series of the retired instrumentation receives a new sample** — by instant query, not
-   `query_range`.
+8. **No series of the retired instrumentation receives a new sample** — read by
+   `time() - timestamp(...)`, since both query forms carry the last sample forward for five minutes.
 9. **The resource metrics are intact:** CPU and resident memory still draw per service.
 10. **The Collector stopped:** the three services still answer `/health` and `/chain`, the request
     panels empty and the resource panels do not.

@@ -31,8 +31,9 @@ global:
   # one is what bounds them; this is the backstop for what no rule anticipated.
   sample_limit: 4000
   # Labels per sample, __name__ included, plus the `job` and `instance` this
-  # file attaches. Largest measured: 8 at the exporter (Tempo), so 10 at
-  # ingest. 20 leaves room for a service with a richer convention.
+  # file attaches. Largest measured: 7 at ingest, on the derived metrics —
+  # which reached 14 before the labeldrop above, the closest anything has come
+  # to a limit here. 20 leaves room for a service with a richer convention.
   label_limit: 20
   # Longest label name measured: 19 (`service.instance.id`, from the
   # Collector — the first dotted label name in this stack, which Prometheus 3
@@ -128,19 +129,44 @@ scrape_configs:
     # rule naming a service would work, would be easier to write, and would put
     # back in this file the list of services that discovery took out of it.
     #
-    # Two rules because there is no wildcard over label values: `source_labels`
-    # names labels explicitly, and labeldrop/labelkeep match label *names*. The
-    # two path-carrying labels in this stack are `handler` (the FastAPI
-    # instrumentator) and `route` (the Node service); the Go service has none. A
-    # fourth convention would need a third rule — the cost of three live
-    # conventions, recorded for the feature that unifies them.
+    # One rule per path-carrying label, because there is no wildcard over label
+    # values: `source_labels` names labels explicitly, and labeldrop/labelkeep
+    # match label *names*. Three live today — `handler` (the FastAPI
+    # instrumentator), `route` (the Node service) and `http_route` (derived from
+    # the spans) — and only the third survives the retirement of the other two.
     #
     # What this cannot reach: an id in a label of a service's own naming. That
     # is what the ceiling is for.
     metric_relabel_configs:
+      # The derived request metrics arrive from one target that answers for
+      # three services, so without this every one of them is keyed by the
+      # Collector and every `by (job)` panel collapses into one line.
+      #
+      # The selection is on presence, and never a service name. It reads
+      # `service_name` rather than `exported_job` because that is the label
+      # separating a measurement *about* a service from the exporter's own
+      # telemetry: the Collector republishes its internal metrics on the same
+      # port under `exported_job=otelcol-contrib` with no `service_name`, so the
+      # other choice would rename its 54 own series out of its dashboard row.
+      #
+      # The cost, stated: for these series `job` stops meaning "the target that
+      # was scraped", while `instance` still names the Collector.
+      - source_labels: [service_name]
+        regex: (.+)
+        target_label: job
+      # What the OTLP-to-Prometheus translation attaches and nothing here reads:
+      # the scope triplet, the Collector's instance uuid — which changes on every
+      # restart, so keeping it re-keys the series — and the two names the rule
+      # above already folded into `job`. Measured at 14 labels per sample against
+      # `label_limit: 20`, the tightest of the five limits.
+      - regex: exported_job|exported_instance|service_name|collector_instance_id|otel_scope_.*
+        action: labeldrop
       - source_labels: [handler]
         regex: '(.*/)?([0-9]+|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(/.*)?'
         action: drop
       - source_labels: [route]
+        regex: '(.*/)?([0-9]+|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(/.*)?'
+        action: drop
+      - source_labels: [http_route]
         regex: '(.*/)?([0-9]+|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(/.*)?'
         action: drop
