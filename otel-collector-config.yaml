@@ -69,11 +69,20 @@ connectors:
     # route needs a default because a request that matched none carries
     # no http.route, and a series missing the label escapes every
     # presence selector.
+    # Every one carries a `default`, and that is the invariant rather
+    # than three separate judgements: a span missing an attribute
+    # produces a series missing that label, which escapes every presence
+    # selector and reappears as a group with no name. The route's value
+    # is the one the two services without a framework already report;
+    # the others say only that nobody said — `unset` rather than 499,
+    # which would claim the client hung up.
     dimensions:
       - name: http.route
         default: unmatched
       - name: http.request.method
+        default: unset
       - name: http.response.status_code
+        default: unset
     # `span.name` is unbounded wherever a span is not named by a route,
     # which the app's two internal ASGI spans already are. `span.kind`
     # is a constant after the filter, and `status.code` restates the

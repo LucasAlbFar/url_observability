@@ -200,8 +200,15 @@ def test_the_internal_scrape_does_not_republish_a_second_target(collector_config
         assert standing, (name, pipeline)
         for processor in standing:
             dropped = collector_config["processors"][processor]["metrics"]["metric"]
-            assert any("up" in condition for condition in dropped), dropped
-            assert any("scrape_" in condition for condition in dropped), dropped
+            # Matched as whole conditions rather than as substrings: `up`
+            # occurs inside `^group_` and inside half the OTTL functions,
+            # so a rule dropping something else entirely would satisfy a
+            # containment check.
+            assert 'name == "up"' in dropped, dropped
+            assert any(
+                condition.startswith("IsMatch(name,") and "scrape_" in condition
+                for condition in dropped
+            ), dropped
 
 
 def test_the_request_metrics_are_derived_from_the_spans(
@@ -231,23 +238,63 @@ def test_the_request_metrics_are_derived_from_the_spans(
         raise AssertionError("no metrics pipeline reads the connector")
 
 
+def span_filters(collector_config):
+    """Return the processors that actually drop spans, by name.
+
+    A filter processor is only a span filter if it carries a `traces:`
+    section. One holding `metrics:` alone is a no-op over spans, and
+    matching on the name would accept it.
+    """
+    return {
+        name: processor.get("traces", {}).get("span", [])
+        for name, processor in collector_config["processors"].items()
+        if name.split("/")[0] == "filter" and processor.get("traces", {}).get("span")
+    }
+
+
+def test_every_derived_dimension_carries_a_default(collector_config):
+    """Confirm no dimension can produce a series missing its own label.
+
+    A span without the attribute yields a series without the label, and
+    such a series escapes every presence selector: it is absent from the
+    error panels, and it draws under an empty legend where the dashboard
+    groups by it. The route's default is load-bearing today — the app
+    has no route for a 404 — and the other two are the same rule applied
+    before something needs it.
+    """
+    checked = 0
+    for name, connector in collector_config["connectors"].items():
+        for dimension in connector.get("dimensions", []):
+            checked += 1
+            assert dimension.get("default"), (name, dimension)
+    assert checked, "no connector declares a dimension"
+
+
 def test_only_server_spans_are_counted(collector_config):
     """Confirm the filter guards the connector and nothing else.
 
-    Missing, every /chain hop is counted twice and throughput comes out
+    Missing, every /chain hop is counted twice — a client span on the
+    caller and a server span on the callee — and throughput comes out
     multiplied. On the trace store's branch the same filter would decide
     what Tempo holds.
+
+    Read on the condition rather than on the processor's name: a filter
+    holding only a `metrics:` section validates, boots, sits in this
+    pipeline and drops no span at all, and a test comparing names would
+    call that guarded.
     """
+    counting = span_filters(collector_config)
+    assert counting, "no processor filters spans"
+    assert any(
+        "kind" in condition
+        for conditions in counting.values()
+        for condition in conditions
+    ), counting
+
     connectors = set(collector_config["connectors"])
-    filters = {
-        name
-        for name in collector_config["processors"]
-        if name.split("/")[0] == "filter"
-    }
-    assert filters, "no filter processor declared"
     for name, pipeline in pipelines(collector_config, "traces"):
         counted = bool(connectors & set(pipeline["exporters"]))
-        filtered = bool(filters & set(pipeline.get("processors", [])))
+        filtered = bool(set(counting) & set(pipeline.get("processors", [])))
         assert counted == filtered, (name, pipeline)
 
 

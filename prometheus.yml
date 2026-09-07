@@ -33,13 +33,14 @@ global:
   sample_limit: 4000
   # Labels per sample, __name__ included, plus the `job` and `instance` this
   # file attaches. Largest measured: 10 (Tempo), 8 on the derived metrics —
-  # which reached 14 before the labeldrop above, the closest anything has come
-  # to a limit here. 20 leaves room for a service with a richer convention.
+  # which reached 14 before the labeldrop in metric_relabel_configs below — the
+  # closest anything has come to a limit here. 20 leaves room for a service
+  # with a richer convention.
   label_limit: 20
   # Longest label name measured: 25 (`http_response_status_code`, from the
   # derived metrics). The dotted names the Collector used to bring —
   # `service.instance.id` and its neighbours, which PromQL reaches only as
-  # {"service.instance.id"=…} — are dropped by the labeldrop above.
+  # {"service.instance.id"=…} — are dropped by that same labeldrop.
   label_name_length_limit: 64
   # Longest label value measured: 71 (a Tempo metric name; __name__ counts
   # here too, which is why the longest value is not a label at all). The
