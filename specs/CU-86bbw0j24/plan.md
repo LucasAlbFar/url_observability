@@ -351,10 +351,24 @@ task makes dead.
       restart: the last `http_requests_total` series aged to 92s and kept aging, while all three
       services report on the derived source at 4s — verification step 8, by sample age rather than
       by an instant query.
-- [ ] The dashboard: the two convention rows become one, the error panels lose their second target,
+- [x] The dashboard: the two convention rows become one, the error panels lose their second target,
       the route variable reads the new label, and the layout closes the gap the removed row leaves.
       Between the retirements above and this commit the old rows draw a plateau, not traffic. —
       `feat(grafana): draw one convention instead of three`
+
+      Eighteen panels in four rows became **fifteen in three**. `Requests (code)` and its two panels
+      are gone, `Routes (handler)` is now `Requests (http_route)`, both error panels carry one target,
+      and the `handler` variable is `http_route`.
+
+      **The rule `CLAUDE.md` said was asserted was not.** It claimed three dashboard rules were
+      covered by `tests/test_grafana_provisioning.py`; no test read a bucket grouping or a presence
+      selector. The bucket rule is asserted now — it is the one whose violation draws a plausible
+      line — and the presence rule was dropped rather than restated, having existed only to keep
+      three conventions apart.
+
+      Every panel query run against Prometheus, since a green suite proves none of them returns
+      data: all fifteen return series, and the 5xx panel drew both erring services once a 502 was
+      provoked. Grafana reloaded with no provisioning error and serves the fifteen panels.
 - [ ] The ceiling, **only if the measurement requires it**, with the headroom re-justified beside the
       value and the panel threshold in the same commit. No commit if it does not. —
       `feat(prometheus): re-fit the ceiling to the derived metrics`

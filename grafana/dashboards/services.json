@@ -90,7 +90,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Excludes the app's own /metrics route, which it instruments and the Go service does not: counting it would put a fifth of one service's traffic on a panel whose job is to compare the two. The negative matcher is safe here because it keeps series that carry no handler label at all, which is every service that does not label routes.",
+      "description": "Every request the three services serve, derived from their spans. No exclusion for /metrics: a scrape is never traced, in any of the three, so it cannot reach this panel.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -130,7 +130,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (job) (rate(http_requests_total{job=~\"$job\", handler!=\"/metrics\"}[$__rate_interval]))",
+          "expr": "sum by (job) (rate(traces_span_metrics_calls_total{job=~\"$job\"}[$__rate_interval]))",
           "legendFormat": "{{job}}",
           "range": true,
           "refId": "A"
@@ -198,7 +198,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Two targets, one per label convention: the app labels status by class and the Go service labels code by exact code. A single selector cannot do it, and a negative form would match the series that lack the label.",
+      "description": "One target, because one convention. This panel carried two until the request metrics were derived from the spans: the app labelled a status by class and the Go service by exact code, and no single selector reached both.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -238,21 +238,10 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (job) (rate(http_requests_total{job=~\"$job\", status=~\"5..\"}[$__rate_interval]))",
+          "expr": "sum by (job) (rate(traces_span_metrics_calls_total{job=~\"$job\", http_response_status_code=~\"5..\"}[$__rate_interval]))",
           "legendFormat": "{{job}}",
           "range": true,
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "editorMode": "code",
-          "expr": "sum by (job) (rate(http_requests_total{job=~\"$job\", code=~\"5..\"}[$__rate_interval]))",
-          "legendFormat": "{{job}}",
-          "range": true,
-          "refId": "B"
         }
       ],
       "title": "5xx error rate",
@@ -263,7 +252,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Two targets, one per label convention, like the 5xx panel.",
+      "description": "One target, because one convention. This panel carried two until the request metrics were derived from the spans: the app labelled a status by class and the Go service by exact code, and no single selector reached both.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -303,21 +292,10 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (job) (rate(http_requests_total{job=~\"$job\", status=~\"4..\"}[$__rate_interval]))",
+          "expr": "sum by (job) (rate(traces_span_metrics_calls_total{job=~\"$job\", http_response_status_code=~\"4..\"}[$__rate_interval]))",
           "legendFormat": "{{job}}",
           "range": true,
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "editorMode": "code",
-          "expr": "sum by (job) (rate(http_requests_total{job=~\"$job\", code=~\"4..\"}[$__rate_interval]))",
-          "legendFormat": "{{job}}",
-          "range": true,
-          "refId": "B"
         }
       ],
       "title": "4xx error rate",
@@ -386,7 +364,7 @@
       },
       "id": 8,
       "panels": [],
-      "title": "Routes (handler)",
+      "title": "Requests (`http_route`)",
       "type": "row"
     },
     {
@@ -394,7 +372,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "The FastAPI app exposes four latency buckets — 0.1, 0.5, 1.0 and +Inf — so any route slower than one second lands in +Inf and this panel reads a flat 1s for it. Measured 2026-08-23: /load/io-bound takes 2s and reads 1s here. Widening the buckets is an instrumentation change and is deliberately outside this dashboard. Grouped by job so that bucket sets from different services are never summed. The app publishes four bounds and the Go service twelve, and the app's four are a subset of them — so a merged sum would carry bounds the app never reports, every bucket below 0.1 would count one service only, and the quantile would describe neither.",
+      "description": "One bucket list for all three services, defined in the Collector's connector. It replaces the app's four bounds against the Go service's twelve, and with them the flat 1s this panel read for every route slower than a second. Still grouped by job: merging bucket sets across services is what produced bounds a service never reported.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -434,8 +412,8 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le, job, handler) (rate(http_request_duration_seconds_bucket{job=~\"$job\", handler!=\"\", handler=~\"$handler\", handler!=\"/metrics\"}[$__rate_interval])))",
-          "legendFormat": "{{job}} — {{handler}}",
+          "expr": "histogram_quantile(0.95, sum by (le, job, http_route) (rate(traces_span_metrics_duration_seconds_bucket{job=~\"$job\", http_route=~\"$http_route\"}[$__rate_interval])))",
+          "legendFormat": "{{job}} — {{http_route}}",
           "range": true,
           "refId": "A"
         }
@@ -448,7 +426,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Selected by the presence of the handler label, never by job name, so any service that labels its routes appears here on its own. Without handler!=\"\" the regex would also match services that carry no handler label at all, collapsing them into one unlabelled group — measured 2026-08-23.",
+      "description": "Grouped by the route the span carries, which is the same string the trace shows for that request.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -488,8 +466,8 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (job, handler) (rate(http_requests_total{job=~\"$job\", handler!=\"\", handler=~\"$handler\", handler!=\"/metrics\"}[$__rate_interval]))",
-          "legendFormat": "{{job}} — {{handler}}",
+          "expr": "sum by (job, http_route) (rate(traces_span_metrics_calls_total{job=~\"$job\", http_route=~\"$http_route\"}[$__rate_interval]))",
+          "legendFormat": "{{job}} — {{http_route}}",
           "range": true,
           "refId": "A"
         }
@@ -502,7 +480,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "The app labels status by class, so these read 2xx and 4xx, not 200 and 404.",
+      "description": "The exact response code, not a class: the derived metrics report 404 and 502 rather than the 4xx and 5xx the app's instrumentator grouped them into.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -542,8 +520,8 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (job, handler, status) (rate(http_requests_total{job=~\"$job\", handler!=\"\", handler=~\"$handler\", handler!=\"/metrics\"}[$__rate_interval]))",
-          "legendFormat": "{{job}} — {{handler}} — {{status}}",
+          "expr": "sum by (job, http_route, http_response_status_code) (rate(traces_span_metrics_calls_total{job=~\"$job\", http_route=~\"$http_route\"}[$__rate_interval]))",
+          "legendFormat": "{{job}} — {{http_route}} — {{http_response_status_code}}",
           "range": true,
           "refId": "A"
         }
@@ -558,127 +536,6 @@
         "w": 24,
         "x": 0,
         "y": 26
-      },
-      "id": 12,
-      "panels": [],
-      "title": "Requests (code)",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "description": "Selected by the presence of the code label. Grouped by job so that bucket sets from different services are never summed. The app publishes four bounds and the Go service twelve, and the app's four are a subset of them — so a merged sum would carry bounds the app never reports, every bucket below 0.1 would count one service only, and the quantile would describe neither.",
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "drawStyle": "line",
-            "fillOpacity": 8,
-            "lineWidth": 1,
-            "showPoints": "never"
-          },
-          "min": 0,
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 27
-      },
-      "id": 13,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le, job, code) (rate(http_request_duration_seconds_bucket{job=~\"$job\", code!=\"\"}[$__rate_interval])))",
-          "legendFormat": "{{job}} — {{code}}",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "p95 by code",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "description": "The Go service labels code by exact code and method in lowercase, which is what its client library emits. No attempt is made to reconcile that with the app's classes.",
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "drawStyle": "line",
-            "fillOpacity": 8,
-            "lineWidth": 1,
-            "showPoints": "never"
-          },
-          "min": 0,
-          "unit": "reqps"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 27
-      },
-      "id": 14,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "editorMode": "code",
-          "expr": "sum by (job, code, method) (rate(http_requests_total{job=~\"$job\", code!=\"\"}[$__rate_interval]))",
-          "legendFormat": "{{job}} — {{method}} {{code}}",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Throughput by code and method",
-      "type": "timeseries"
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 35
       },
       "id": 15,
       "panels": [],
@@ -723,7 +580,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 36
+        "y": 27
       },
       "id": 16,
       "options": {
@@ -776,7 +633,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 36
+        "y": 27
       },
       "id": 17,
       "options": {
@@ -829,7 +686,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 36
+        "y": 27
       },
       "id": 18,
       "options": {
@@ -907,13 +764,13 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "definition": "label_values(http_requests_total{job=~\"$job\", handler!=\"\", handler!=\"/metrics\"}, handler)",
+        "definition": "label_values(traces_span_metrics_calls_total{job=~\"$job\"}, http_route)",
         "includeAll": true,
         "label": "Route",
         "multi": true,
-        "name": "handler",
+        "name": "http_route",
         "options": [],
-        "query": "label_values(http_requests_total{job=~\"$job\", handler!=\"\", handler!=\"/metrics\"}, handler)",
+        "query": "label_values(traces_span_metrics_calls_total{job=~\"$job\"}, http_route)",
         "refresh": 1,
         "regex": "",
         "regexApplyTo": "value",
