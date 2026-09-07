@@ -192,7 +192,7 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
 `README.md` that a task makes false is corrected in that task's commit; so is the drop rule that a
 task makes dead.
 
-- [ ] The `spanmetrics` connector, the server-span filter, the metrics pipeline and the `prometheus`
+- [x] The `span_metrics` connector, the server-span filter, the metrics pipeline and the `prometheus`
       exporter in the Collector, with its internal telemetry on the same port and the compose label
       pointing at it — plus the structural assertions on both. Nothing is switched off: what this
       proves is that a second source exists beside the first. —
@@ -273,7 +273,7 @@ task makes dead.
    services.
 3. `promtool check config` accepts `prometheus.yml`, and the Collector validator accepts the new
    configuration.
-4. **Six targets at `up=1`**, the Collector included: its internal telemetry is still read, on the
+4. **Five targets at `up=1`**, the Collector included: its internal telemetry is still read, on the
    port that now also publishes the derived metrics.
 5. **One request, one line:** under load, latency, throughput and error rate for all three services
    come from a single query with no duplicate target.

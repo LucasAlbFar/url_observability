@@ -150,7 +150,7 @@ Two things are deliberately absent from the store. `/metrics` is never traced �
 - Docker Compose, with every service behind a `core` or `load` profile
 - Prometheus `prom/prometheus:v3.13.2` and Grafana `grafana/grafana:12.4.7`, both pinned — no image tracks `latest`
 - OpenTelemetry SDKs in all three services — `opentelemetry-distro` (Python), `@opentelemetry/sdk-node`, `go.opentelemetry.io/otel` — all exporting OTLP over http/protobuf
-- OpenTelemetry Collector `otel/opentelemetry-collector-contrib:0.160.0` and Tempo `grafana/tempo:3.0.3`, the trace path — scraped like everything else, and reachable only from inside the compose network
+- OpenTelemetry Collector `otel/opentelemetry-collector-contrib:0.160.0` and Tempo `grafana/tempo:3.0.3`, the telemetry path — scraped like everything else, and reachable only from inside the compose network
 
 Exact Python pins live in `requirements/base.txt` / `requirements/dev.txt`. [CLAUDE.md](CLAUDE.md) covers the conventions for working on the code.
 
@@ -375,7 +375,7 @@ worker/
   load_driver.py          # standalone async load generator (calls every service's endpoints)
 grafana/                  # provisioned datasources + "Services Overview" dashboard
 prometheus.yml            # scrape settings, the label-discovery job, the cardinality guard
-otel-collector-config.yaml  # the trace path: OTLP in, Tempo out
+otel-collector-config.yaml  # OTLP in; traces to Tempo, request metrics out on 8888
 tempo.yaml                # the trace store: one receiver, local blocks on a named volume
 docker-compose.yml        # the nine services, their profiles and named volumes
 tests/                    # pytest suite: one file per module, plus five that check config

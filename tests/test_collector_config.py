@@ -1,4 +1,4 @@
-"""Structural checks on the trace path's two configuration files.
+"""Structural checks on the telemetry path's two configuration files.
 
 The shape tests/test_prometheus_config.py has — the files parse and
 carry the fields the stack depends on — plus what is new here: values
@@ -61,6 +61,33 @@ def mount_target(compose, service, volume):
     return None
 
 
+def pipelines(collector_config, kind):
+    """Yield (name, pipeline) for every pipeline of one signal.
+
+    Read by prefix rather than by name: a pipeline of a given signal is
+    either `traces` or `traces/<something>`, and a test that named them
+    would stop seeing the next one added.
+    """
+    for name, pipeline in collector_config["service"]["pipelines"].items():
+        if name == kind or name.startswith(f"{kind}/"):
+            yield name, pipeline
+
+
+def published_exporters(collector_config, compose_labels):
+    """Return the exporters bound to the port the scrape label names.
+
+    The crossing that decides whether the Collector is a target at all.
+    """
+    wanted = label_port(compose_labels, COLLECTOR_SERVICE)
+    found = {}
+    for name, exporter in collector_config["exporters"].items():
+        endpoint = exporter.get("endpoint", "")
+        host, _, port = str(endpoint).rpartition(":")
+        if port.isdigit() and int(port) == wanted and host not in LOOPBACK:
+            found[name] = exporter
+    return found
+
+
 def test_the_collector_receives_otlp_off_loopback(collector_config):
     """Confirm the receiver accepts connections from other containers."""
     protocols = collector_config["receivers"]["otlp"]["protocols"]
@@ -94,20 +121,134 @@ def test_the_collector_sends_traces_to_the_trace_store(
 def test_the_collector_publishes_its_metrics_where_prometheus_looks(
     collector_config, compose_labels
 ):
-    """Confirm the Collector's own telemetry is reachable and declared.
+    """Confirm something answers on the port the label advertises.
 
-    The default is `localhost:8888`, which is a refused connection from
-    the Prometheus container. Declaring the reader is what makes the
-    target answer, and the port has to be the one the label advertises.
+    A port that drifts from `prometheus.io/port` is a target sitting at
+    `up=0`. Found by endpoint rather than by name: the name is what a
+    rewrite may change, the port is what Prometheus depends on.
+    """
+    exporters = published_exporters(collector_config, compose_labels)
+    assert exporters, label_port(compose_labels, COLLECTOR_SERVICE)
+    served = {
+        name
+        for _, pipeline in pipelines(collector_config, "metrics")
+        for name in pipeline["exporters"]
+    }
+    assert set(exporters) <= served, (sorted(exporters), sorted(served))
+
+
+def test_the_collectors_own_telemetry_reaches_that_same_port(
+    collector_config, compose_labels
+):
+    """Confirm the Collector did not fall out of its own dashboard.
+
+    One port per container means the internal reader is loopback-only
+    and reaches Prometheus through a receiver that scrapes it back. Drop
+    that receiver and the Collector still exports and still boots clean,
+    reporting nothing about itself.
     """
     readers = collector_config["service"]["telemetry"]["metrics"]["readers"]
     assert readers
-    exposed = set()
-    for reader in readers:
-        exporter = reader["pull"]["exporter"]["prometheus"]
-        assert exporter["host"] not in LOOPBACK, exporter
-        exposed.add(int(exporter["port"]))
-    assert label_port(compose_labels, COLLECTOR_SERVICE) in exposed, exposed
+    internal = {
+        int(reader["pull"]["exporter"]["prometheus"]["port"]) for reader in readers
+    }
+    scraped = {
+        host_and_port(target)[1]
+        for receiver in collector_config["receivers"].values()
+        for scrape in receiver.get("config", {}).get("scrape_configs", [])
+        for static in scrape.get("static_configs", [])
+        for target in static["targets"]
+    }
+    assert internal <= scraped, (sorted(internal), sorted(scraped))
+
+    reading = {
+        name
+        for name, receiver in collector_config["receivers"].items()
+        if receiver.get("config", {}).get("scrape_configs")
+    }
+    published = set(published_exporters(collector_config, compose_labels))
+    for _, pipeline in pipelines(collector_config, "metrics"):
+        if reading & set(pipeline["receivers"]):
+            assert published & set(pipeline["exporters"]), pipeline
+            break
+    else:
+        raise AssertionError("no metrics pipeline reads the internal telemetry")
+
+
+def test_the_internal_scrape_does_not_republish_a_second_target(collector_config):
+    """Confirm the self-scrape's own `up` and `scrape_*` are dropped.
+
+    Republished, they make Prometheus read two targets for one
+    container. The drop has to be a filter: the receiver adds them
+    outside the reach of `metric_relabel_configs`.
+    """
+    reading = {
+        name
+        for name, receiver in collector_config["receivers"].items()
+        if receiver.get("config", {}).get("scrape_configs")
+    }
+    assert reading, "nothing scrapes the internal telemetry"
+    filters = {
+        name
+        for name in collector_config["processors"]
+        if name.split("/")[0] == "filter"
+    }
+    for name, pipeline in pipelines(collector_config, "metrics"):
+        if not reading & set(pipeline["receivers"]):
+            continue
+        standing = filters & set(pipeline.get("processors", []))
+        assert standing, (name, pipeline)
+        for processor in standing:
+            dropped = collector_config["processors"][processor]["metrics"]["metric"]
+            assert any("up" in condition for condition in dropped), dropped
+            assert any("scrape_" in condition for condition in dropped), dropped
+
+
+def test_the_request_metrics_are_derived_from_the_spans(
+    collector_config, compose_labels
+):
+    """Confirm the connector sits between the two signals.
+
+    A traces pipeline has to feed it and a metrics pipeline has to carry
+    what it emits. Either half missing validates, boots, and produces no
+    request metric at all.
+    """
+    connectors = set(collector_config["connectors"])
+    assert connectors
+    fed = {
+        name
+        for _, pipeline in pipelines(collector_config, "traces")
+        for name in pipeline["exporters"]
+    }
+    assert connectors <= fed, (sorted(connectors), sorted(fed))
+
+    published = set(published_exporters(collector_config, compose_labels))
+    for _, pipeline in pipelines(collector_config, "metrics"):
+        if connectors & set(pipeline["receivers"]):
+            assert published & set(pipeline["exporters"]), pipeline
+            break
+    else:
+        raise AssertionError("no metrics pipeline reads the connector")
+
+
+def test_only_server_spans_are_counted(collector_config):
+    """Confirm the filter guards the connector and nothing else.
+
+    Missing, every /chain hop is counted twice and throughput comes out
+    multiplied. On the trace store's branch the same filter would decide
+    what Tempo holds.
+    """
+    connectors = set(collector_config["connectors"])
+    filters = {
+        name
+        for name in collector_config["processors"]
+        if name.split("/")[0] == "filter"
+    }
+    assert filters, "no filter processor declared"
+    for name, pipeline in pipelines(collector_config, "traces"):
+        counted = bool(connectors & set(pipeline["exporters"]))
+        filtered = bool(filters & set(pipeline.get("processors", [])))
+        assert counted == filtered, (name, pipeline)
 
 
 def test_the_trace_store_receives_otlp_off_loopback(tempo_config):
