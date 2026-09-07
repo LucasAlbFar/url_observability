@@ -17,7 +17,7 @@ import yaml
 from noisy import raw_path_emitter
 from noisy.raw_path_emitter import FIRST, STEP, create_server
 
-RAW_PATH = re.compile(r'handler="/users/\d+"')
+RAW_PATH = re.compile(r'http_route="/users/\d+"')
 
 
 @pytest.fixture
@@ -50,8 +50,8 @@ def test_metrics_are_served_in_the_exposition_format(origin):
     status, body = scrape(origin)
 
     assert status == 200
-    assert body.startswith("# HELP http_requests_total")
-    assert "# TYPE http_requests_total counter" in body
+    assert body.startswith("# HELP traces_span_metrics_calls_total")
+    assert "# TYPE traces_span_metrics_calls_total counter" in body
 
 
 def test_every_path_is_raw(origin):

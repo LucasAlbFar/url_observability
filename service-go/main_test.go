@@ -3,9 +3,13 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
+
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 )
 
 // The three application routes, each asserted on its exact status and
@@ -67,46 +71,81 @@ func TestMetricsResponds(t *testing.T) {
 	}
 }
 
-// The request metrics are declared by this service rather than inherited
-// from the library, so the middleware that feeds them is worth an
-// assertion: an instrumented route must move the counter it names.
-func TestInstrumentedRouteCountsRequests(t *testing.T) {
+// The inverse of the assertion this file used to carry. This service
+// published `code`/`method` against the app's `handler`/`status`, and
+// that disagreement is what the derived metrics replaced — so serving a
+// request must now move no request series at all. Left in place but
+// unused, the library would keep publishing the convention.
+func TestNoRequestSeriesIsPublished(t *testing.T) {
 	mux := newMux()
-	before := counterValue(t, mux)
 
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
-
-	if after := counterValue(t, mux); after != before+1 {
-		t.Errorf("http_requests_total = %d after one request, want %d", after, before+1)
+	for _, path := range []string{"/health", "/no-such-path"} {
+		mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
 	}
-}
-
-// counterValue counts the http_requests_total sample lines on /metrics.
-// Reading the endpoint rather than the collector keeps the assertion on
-// what a scrape would see.
-func counterValue(t *testing.T, mux *http.ServeMux) int {
-	t.Helper()
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
-
-	total := 0
-	for _, line := range strings.Split(rec.Body.String(), "\n") {
-		if !strings.HasPrefix(line, "http_requests_total{") {
-			continue
+	for _, name := range []string{"http_requests_total", "http_request_duration_seconds"} {
+		if strings.Contains(rec.Body.String(), name) {
+			t.Errorf("%s is still published", name)
 		}
-		fields := strings.Fields(line)
-		if len(fields) != 2 {
-			t.Fatalf("unexpected sample line: %q", line)
-		}
-		value, err := strconv.ParseFloat(fields[1], 64)
-		if err != nil {
-			t.Fatalf("parsing %q: %v", fields[1], err)
-		}
-		total += int(value)
 	}
-	return total
+}
+
+// The path no route claims, answered rather than left to the mux's own
+// 404 — which carries no span, and so no derived metric either.
+func TestUnmatchedPathIsAnswered(t *testing.T) {
+	rec := httptest.NewRecorder()
+	newMux().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/no-such-path", nil))
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+	if got, want := rec.Body.String(), `{"detail":"Not Found"}`+"\n"; got != want {
+		t.Errorf("body = %q, want %q", got, want)
+	}
+}
+
+// Every unknown path reports under one route value, so a scan of the
+// address space costs one series rather than one per path.
+//
+// Asserted on the span, not on /metrics, and the difference is the whole
+// point: this service's counter carries no route label at all, so a
+// catch-all labelled by the raw path moves no series here and the
+// metrics-side assertion passes while the leak is real. What carries the
+// value is `http.route`, which is what the derived request metrics are
+// built from.
+func TestUnmatchedPathsShareOneRouteValue(t *testing.T) {
+	spans := recordSpans(t)
+
+	mux := newMux()
+	for _, path := range []string{"/one", "/two", "/three"} {
+		mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
+	}
+
+	routes := map[string]int{}
+	for _, span := range spans.GetSpans() {
+		for _, attr := range span.Attributes {
+			if attr.Key == semconv.HTTPRouteKey {
+				routes[attr.Value.AsString()]++
+			}
+		}
+	}
+	if len(routes) != 1 || routes["unmatched"] != 3 {
+		t.Errorf("route values = %v, want three spans under one \"unmatched\"", routes)
+	}
+}
+
+// recordSpans swaps the global tracer provider for one that keeps every
+// span in memory, and puts the previous one back when the test ends.
+func recordSpans(t *testing.T) *tracetest.InMemoryExporter {
+	t.Helper()
+
+	exporter := tracetest.NewInMemoryExporter()
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter)))
+	t.Cleanup(func() { otel.SetTracerProvider(previous) })
+	return exporter
 }
 
 // The chain hop is the one route that calls out, so it is asserted

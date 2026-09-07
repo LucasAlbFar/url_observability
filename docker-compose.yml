@@ -227,10 +227,9 @@ services:
       start_period: 90s
 
   otel-collector:
-    # The contrib distribution rather than the core one: the connector
-    # the metrics rework needs ships only here, and starting on core
-    # would mean moving a repository name through this file and both
-    # documents later for nothing gained now.
+    # The contrib distribution rather than the core one: the
+    # `spanmetrics` connector this stack's request metrics come from
+    # ships only here, and so does the filter processor that guards it.
     image: otel/opentelemetry-collector-contrib:0.160.0
     profiles: ["core"]
     volumes:
@@ -238,8 +237,10 @@ services:
     labels:
       prometheus.io/scrape: "true"
       prometheus.io/job: "otel-collector"
-      # The port its own telemetry is published on, declared in the
-      # config file rather than defaulted — see the comment there.
+      # One port for two things, because the contract gives one per
+      # container: the request metrics derived from every service's
+      # spans, and the Collector's own telemetry. See the comment
+      # beside the `prometheus` exporter in the config file.
       prometheus.io/port: "8888"
     restart: unless-stopped
     # No `ports:` and no healthcheck, for the reason the noisy service

@@ -11,6 +11,7 @@ browser can answer that.
 
 import itertools
 import json
+import re
 
 import pytest
 import yaml
@@ -246,6 +247,31 @@ def queries(dashboard):
         for text in (query, variable.get("definition")):
             if isinstance(text, str):
                 yield text
+
+
+def test_every_bucket_grouping_keeps_the_job_label(dashboards):
+    """Confirm no quantile is computed across services.
+
+    `histogram_quantile` reads a set of `le` bounds, and summing the sets
+    of two services produces a histogram with bounds neither of them
+    reports: every bucket below the lower service's smallest bound counts
+    one service only, and the quantile describes neither. It draws a
+    line either way, which is why this is a test rather than a comment.
+
+    The stack has one bucket list today, defined in the Collector — so
+    this currently guards against the next service that arrives with its
+    own, rather than against a difference already present.
+    """
+    checked = 0
+    for name, dashboard in dashboards:
+        for query in queries(dashboard):
+            for grouping in re.findall(r"by\s*\(([^)]*)\)", query):
+                labels = {label.strip() for label in grouping.split(",")}
+                if "le" not in labels:
+                    continue
+                checked += 1
+                assert "job" in labels, (name, query)
+    assert checked, "no panel groups by a bucket bound"
 
 
 def test_no_query_names_a_scrape_job(dashboards, scrape_job_names):

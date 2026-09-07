@@ -1,13 +1,13 @@
 // service-node is the third observed service in the stack.
 //
 // It exists to prove a service joins the observability stack by
-// declaring labels on its own container, with no edit to prometheus.yml.
-// Two consequences of that purpose are visible here and are deliberate:
-// it serves the same paths the other two services serve, so a route name
-// collides across three services; and it labels a request the way this
-// library leaves the author to label it, which agrees with neither of
-// the other two. The disagreement is the measurement this service was
-// added to produce, not an oversight to tidy up.
+// declaring labels on its own container, with no edit to prometheus.yml,
+// and it serves the same paths the other two services serve, so a route
+// name collides across three services — deliberately, and still true.
+// What is no longer true is the labelling: this service used to name a
+// request `route`/`status_code`/`method`, agreeing with neither of the
+// other two, and that measured disagreement is what the request metrics
+// derived from spans replaced.
 import http from "node:http";
 
 import { trace } from "@opentelemetry/api";
@@ -23,24 +23,6 @@ const PORT = 8004;
 // process_cpu_seconds_total and process_resident_memory_bytes are what
 // the dashboard's resource panels read. They arrive from this one call.
 client.collectDefaultMetrics();
-
-// prom-client does not instrument HTTP, so unlike client_golang and the
-// FastAPI instrumentator it hands the author the label names. These are
-// a third convention on purpose: `handler`/`status` would imitate the
-// app and `code`/`method` the Go service, and either would defeat the
-// reason this service exists. The metric names are the shared part —
-// they are the Prometheus convention, which both other libraries follow.
-const requests = new client.Counter({
-  name: "http_requests_total",
-  help: "Requests served, by route, response code and method.",
-  labelNames: ["route", "status_code", "method"],
-});
-
-const duration = new client.Histogram({
-  name: "http_request_duration_seconds",
-  help: "Request duration in seconds, by route, response code and method.",
-  labelNames: ["route", "status_code", "method"],
-});
 
 function writeJSON(response, statusCode, body) {
   response.writeHead(statusCode, { "Content-Type": "application/json" });
@@ -99,49 +81,29 @@ const routes = {
 };
 
 // Every request is labelled by the route that matched, never by the path
-// that arrived. An unmatched path is one label value rather than one per
-// URL somebody tried — the difference between a bounded series count and
-// the cardinality failure a later feature exists to prevent.
+// that arrived — one label value for every unmatched path rather than
+// one per URL somebody tried. What carries that value now is the span
+// alone: this service keeps no counter of its own, and the request
+// metrics are derived from these spans in the Collector.
+//
+// The 499-on-close convention left with the counter. It existed so a
+// request the client abandoned was not counted as the 200 it never
+// sent, and counting is no longer done here; what the derived metrics
+// see is whatever status the span carries.
 function instrument(route, handler) {
   return (request, response) => {
-    // The same value on the span. Without it the trace shows `GET` and
-    // no route at all: there is no framework here for the
-    // instrumentation to read a route template from, so the one place
-    // that knows it is this function — the tracing half of the same
-    // sentence the metric labels above make. The span is absent when
-    // the SDK is not loaded, which is how the tests run.
+    // Without this the trace shows `GET` and no route at all: there is
+    // no framework here for the instrumentation to read a route
+    // template from, so the one place that knows it is this function.
+    // It is also the label the derived metrics group by, so removing it
+    // empties the route from both pillars at once. The span is absent
+    // when the SDK is not loaded, which is how the tests run.
     const span = trace.getActiveSpan();
     if (span) {
       span.setAttribute("http.route", route);
       span.updateName(`${request.method} ${route}`);
     }
 
-    const end = duration.startTimer();
-    let recorded = false;
-
-    const record = () => {
-      if (recorded) {
-        return;
-      }
-      recorded = true;
-      const labels = {
-        route,
-        method: request.method,
-        // `finish` means the response was sent; `close` alone means the
-        // client hung up first. 499 is nginx's code for exactly that,
-        // borrowed so an abandoned request cannot be counted as the 200
-        // it never sent. Dropping it instead — which listening only for
-        // `finish` does — makes a failing request vanish from the
-        // graphs, which is the opposite of the point.
-        status_code: response.writableFinished ? response.statusCode : 499,
-      };
-      end(labels);
-      requests.inc(labels);
-    };
-
-    // Both fire for a response that completes, so the first one wins.
-    response.on("finish", record);
-    response.on("close", record);
     handler(response);
   };
 }
@@ -152,6 +114,8 @@ function notFound(response) {
 
 // /metrics is served by the library and is not instrumented, matching
 // the Go service: a scrape should not be traffic in its own graphs.
+// What it carries is the default registry — the process and runtime
+// collectors, which no span can produce.
 // Nothing here rejects: an unhandled rejection ends the process on
 // current Node, and writing the header before awaiting would leave a
 // scrape hanging until Prometheus times out if a collector threw.
@@ -166,6 +130,16 @@ async function metrics(response) {
   }
 }
 
+// The label a request reports under: the route that matched, or one
+// fixed value for every path nobody serves. Exported because it is the
+// property worth asserting and the only place it is decided — what it
+// returns reaches the span, and from there the derived request metrics.
+// Returning `path` here is the cardinality failure this service would
+// otherwise demonstrate the wrong way.
+export function routeFor(path) {
+  return path in routes ? path : "unmatched";
+}
+
 export function createServer() {
   return http.createServer((request, response) => {
     const path = new URL(request.url, "http://localhost").pathname;
@@ -175,12 +149,7 @@ export function createServer() {
       return;
     }
 
-    const handler = routes[path];
-    if (handler) {
-      instrument(path, handler)(request, response);
-      return;
-    }
-    instrument("unmatched", notFound)(request, response);
+    instrument(routeFor(path), routes[path] ?? notFound)(request, response);
   });
 }
 

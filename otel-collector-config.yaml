@@ -1,6 +1,7 @@
-# The trace path. Services push OTLP here and this forwards to Tempo;
-# metrics stay on Prometheus's pull, untouched. Whether the two paths
-# become one is the metrics rework's question, not this file's.
+# Both pillars now. Services push OTLP here; traces go on to Tempo, and
+# the same spans are counted into the request metrics Prometheus pulls
+# off the port below. One instrumentation, one label convention, and a
+# route on a graph that is the same string the trace carries.
 
 receivers:
   otlp:
@@ -12,10 +13,90 @@ receivers:
       http:
         endpoint: 0.0.0.0:4318
 
+  # The Collector's own telemetry, read back off its loopback port so
+  # the exporter below can republish it on the one port the discovery
+  # contract allows this container.
+  prometheus/internal:
+    config:
+      scrape_configs:
+        - job_name: otel-collector-internal
+          scrape_interval: 15s
+          static_configs:
+            - targets: [127.0.0.1:8887]
+
 processors:
   # Defaults: batching is what keeps one export per span from becoming
   # one connection per span. Nothing here needs tuning at this volume.
   batch: {}
+
+  # That scrape synthesises its own `up` and `scrape_*`; republished,
+  # Prometheus reads them as a second target for this container. It has
+  # to be dropped here — the receiver adds them outside the reach of
+  # `metric_relabel_configs`.
+  filter/internal_scrape_metrics:
+    error_mode: ignore
+    metrics:
+      metric:
+        - name == "up"
+        - IsMatch(name, "^scrape_")
+
+  # Server spans only, which is why the connector reads a pipeline of
+  # its own: every /chain hop also produces a client span, and counting
+  # both doubles the throughput of every route.
+  filter/server_spans:
+    error_mode: ignore
+    traces:
+      span:
+        - kind.string != "Server"
+
+connectors:
+  # The request metrics, derived from the spans rather than from three
+  # libraries that disagree about how to label a request. `span_metrics`,
+  # not the `spanmetrics` alias, for the reason the Tempo exporter is
+  # spelled out: 0.160 logs a deprecation for the alias on every boot.
+  span_metrics:
+    histogram:
+      # Seconds, not the default milliseconds, or every panel unit and
+      # threshold changes meaning silently.
+      unit: s
+      explicit:
+        # One list for all three services, where the app reported four
+        # bounds and the Go service twelve. The bounds above 1s are what
+        # end the app's p95 reading a flat 1s for anything slower.
+        buckets:
+          [5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2s, 3s, 5s, 10s]
+    # Explicit; `service.name` is added by the connector itself. The
+    # route needs a default because a request that matched none carries
+    # no http.route, and a series missing the label escapes every
+    # presence selector.
+    # Every one carries a `default`, and that is the invariant rather
+    # than three separate judgements: a span missing an attribute
+    # produces a series missing that label, which escapes every presence
+    # selector and reappears as a group with no name. The route's value
+    # is the one the two services without a framework already report;
+    # the others say only that nobody said — `unset` rather than 499,
+    # which would claim the client hung up.
+    dimensions:
+      - name: http.route
+        default: unmatched
+      - name: http.request.method
+        default: unset
+      - name: http.response.status_code
+        default: unset
+    # `span.name` is unbounded wherever a span is not named by a route,
+    # which the app's two internal ASGI spans already are. `span.kind`
+    # is a constant after the filter, and `status.code` restates the
+    # response code.
+    exclude_dimensions: [span.name, span.kind, status.code]
+    # The default is never: a route called once would be exported for
+    # the life of the process.
+    metrics_expiration: 5m
+    # The scrape interval, not the 60s default. Measured: at the default
+    # the counter is flat for a minute and then jumps, so every rate
+    # window shorter than 60s reads inflated or empty — and Grafana's
+    # $__rate_interval is derived from a 5s scrape, so that is what the
+    # dashboard would ask for.
+    metrics_flush_interval: 5s
 
 exporters:
   # `otlp_grpc`, not the `otlp` alias: 0.160 still accepts the alias
@@ -27,21 +108,39 @@ exporters:
       # verify and nothing leaves the host.
       insecure: true
 
+  # The one published port, carrying both the derived metrics and the
+  # internal telemetry. 8888 is what prometheus.io/port already
+  # advertised, so the label did not move — the telemetry did.
+  prometheus:
+    endpoint: 0.0.0.0:8888
+
 service:
   pipelines:
+    # Unchanged, and deliberately not the pipeline the connector reads:
+    # the filter on that branch would otherwise decide what Tempo holds.
     traces:
       receivers: [otlp]
       processors: [batch]
       exporters: [otlp_grpc/tempo]
+    traces/spanmetrics:
+      receivers: [otlp]
+      processors: [filter/server_spans]
+      exporters: [span_metrics]
+    metrics/derived:
+      receivers: [span_metrics]
+      exporters: [prometheus]
+    metrics/internal:
+      receivers: [prometheus/internal]
+      processors: [filter/internal_scrape_metrics]
+      exporters: [prometheus]
   telemetry:
     metrics:
       readers:
         - pull:
             exporter:
               prometheus:
-                # Declared because the default is localhost:8888, and
-                # Prometheus scrapes from another container: left at the
-                # default the target refuses the connection and sits at
-                # up=0 with nothing on this side to say why.
-                host: 0.0.0.0
-                port: 8888
+                # Loopback on purpose: this is no longer what
+                # Prometheus scrapes, only what the receiver above
+                # reads back.
+                host: 127.0.0.1
+                port: 8887

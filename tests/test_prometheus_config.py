@@ -14,15 +14,16 @@ import yaml
 
 SCRAPE_META = "__meta_docker_container_label_prometheus_io_scrape"
 PROJECT_FILTER = "com.docker.compose.project"
-# The labels a service can put a URL path in. Hand-written, and this is
-# the one place in this ticket where that is the honest answer: the set
-# comes from three instrumentation libraries, not from any file in this
-# repo, so there is nothing to derive it from. `handler` is the FastAPI
-# instrumentator's, `route` the Node service's; the Go service exports
-# no path label. A fourth convention needs a fourth entry here and a
-# third rule in prometheus.yml — the cost of three live conventions,
-# owed to the feature that unifies them.
-PATH_LABELS = ("handler", "route")
+# The labels a service can put a URL path in. One, now that the three
+# instrumentation conventions were replaced by metrics derived from the
+# spans: `http_route`, which every service reports under. Still
+# hand-written, because the name comes from the OTel semantic convention
+# rather than from any file in this repo.
+PATH_LABELS = ("http_route",)
+# The label naming the service a derived measurement is about. Only the
+# series that carry it are re-keyed, which is what leaves the exporter's
+# own telemetry under the job of the target that served it.
+ORIGIN_LABEL = "service_name"
 # The ceiling and the label limits. Every one fails the whole scrape
 # for the target that trips it, so each has to be present and each has
 # to be a positive number — a zero or a missing key is not a loose
@@ -204,6 +205,49 @@ def test_a_drop_rule_covers_every_path_carrying_label(prometheus_config):
     assert covered, "no drop rule declared"
     for label in PATH_LABELS:
         assert label in covered, label
+
+
+def rewrite_rules(prometheus_config):
+    """Yield every metric_relabel rule that writes a label."""
+    for job in prometheus_config["scrape_configs"]:
+        for rule in job.get("metric_relabel_configs", []):
+            if rule.get("target_label"):
+                yield job["job_name"], rule
+
+
+def test_the_derived_metrics_are_keyed_by_their_own_service(prometheus_config):
+    """Confirm one target answering for three does not collapse to one.
+
+    The derived request metrics all arrive from the Collector, so
+    without this rule every `by (job)` panel draws a single line and the
+    dashboard loses the only dimension separating services.
+    """
+    keyed = [
+        rule
+        for _, rule in rewrite_rules(prometheus_config)
+        if rule["target_label"] == "job"
+    ]
+    assert keyed, "nothing re-keys the derived metrics"
+    assert any(ORIGIN_LABEL in rule.get("source_labels", []) for rule in keyed), keyed
+
+
+def test_the_rewrite_selects_on_presence_rather_than_on_a_value(prometheus_config):
+    """Confirm the rewrite names no service, the way the drop rules do not.
+
+    A regex listing the services would work and would put back in this
+    file the list discovery took out of it. It also has to select on
+    presence: an empty value makes `replace` delete `job` outright, and
+    a target carrying none is scraped, stored and invisible to every
+    panel that groups by it.
+    """
+    for name, rule in rewrite_rules(prometheus_config):
+        if rule["target_label"] != "job":
+            continue
+        if ORIGIN_LABEL not in rule.get("source_labels", []):
+            continue
+        pattern = rule.get("regex", "(.*)")
+        assert re.compile(pattern).fullmatch("service-go"), (name, pattern)
+        assert not re.compile(pattern).fullmatch(""), (name, pattern)
 
 
 def test_no_drop_rule_selects_on_a_target_label(prometheus_config):

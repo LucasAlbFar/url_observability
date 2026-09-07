@@ -4,15 +4,15 @@ Three small services — one FastAPI, one Go, one Node — instrumented end-to-e
 
 ## How it works
 
-- **`app`** — a FastAPI service (`app/main.py`) instrumented via `prometheus-fastapi-instrumentator`, which exposes a `/metrics` endpoint.
-- **`service-go`** — a small Go service (`service-go/main.go`) instrumented via `prometheus/client_golang`. It exists to test the claim the stack is language-agnostic, so it mirrors the app's paths and keeps its own library's metric labels (`code`/`method`, not `handler`/`status`) instead of imitating them. Ten metric names end up exported by both it and the app, separated only by the `job` label.
-- **`service-node`** — a small Node service (`service-node/main.js`) instrumented via `prom-client`. It exists to prove a service joins the observability stack by declaring labels on its own container, with no edit to `prometheus.yml` — it was added that way. Its labels are a third convention again (`route`/`status_code`/`method`), because `prom-client` does not instrument HTTP and leaves the naming to whoever writes the middleware.
+- **`app`** — a FastAPI service (`app/main.py`) whose request metrics are derived from its traces; its `/metrics` endpoint carries the process and runtime series.
+- **`service-go`** — a small Go service (`service-go/main.go`) exposing `/metrics` through `prometheus/client_golang`. It exists to test the claim the stack is language-agnostic, so it mirrors the app's paths; its request metrics, like the other two services', are derived from its traces. What it still exports on its own are the process and runtime series, which collide with the app's and are separated only by the `job` label.
+- **`service-node`** — a small Node service (`service-node/main.js`) exposing `/metrics` through `prom-client`. It exists to prove a service joins the observability stack by declaring labels on its own container, with no edit to `prometheus.yml` — it was added that way. Its request metrics, like the other two services', are derived from its traces; what `prom-client` still gives it are the process and `nodejs_*` collectors.
 - **`noisy`** — a deliberately badly behaved service (`noisy/raw_path_emitter.py`), behind the `chaos` profile and **off by default**. It labels one series per user id — `/users/1`, `/users/2` — and reports fifty more of them on every scrape, which is the cardinality failure the guard in `prometheus.yml` exists to stop. Nothing else in the stack misbehaves, so without it the guard could never be watched firing. See [Watching the guard fire](#watching-the-guard-fire).
 - **`loadgen`** — a standalone async script (`worker/load_driver.py`) that continuously calls every service's `/load/*` endpoints over HTTP, purely to generate traffic for the metrics/dashboards. It also calls `/chain` on the app, which is the one request that crosses all three services.
-- **`otel-collector`** — receives OTLP from the three services and forwards it to Tempo. It publishes no port: the senders and Prometheus reach it over the compose network. Nothing declares `depends_on` for it, so it can go down without taking an application with it.
+- **`otel-collector`** — receives OTLP from the three services, forwards it to Tempo, and derives every request metric in the stack from those same spans, publishing them on 8888 for Prometheus to pull. It declares no published port: the senders and Prometheus reach it over the compose network. Nothing declares `depends_on` for it, so it can go down without taking an application with it.
 - **`tempo`** — stores the traces, on a named volume so they survive a `down`. Reached through Grafana rather than directly; it publishes no port either.
 - **`prometheus`** — finds what to scrape by reading the Docker socket every 15s, and scrapes whatever it finds every 5s. No address is written down: a service opts in with labels in its own compose block (see [Joining the scrape](#joining-the-scrape)). The scrape interval and the retention window (7 days, capped at 512 MB) live in `prometheus.yml`; the container's command line only points it at that file and at the volume its TSDB writes to.
-- **`grafana`** — auto-provisioned with a Prometheus datasource and a ready-made "Services Overview" dashboard. Eighteen panels in four rows: *Services* compares them side by side (targets up, throughput, CPU, resident memory, 4xx/5xx); *Routes* and *Requests* each hold whichever services use that label convention — routes for the app, response codes for the Go service; and *Cardinality* shows how much each target writes, how much the guard discards, and how fast each one is adding series. Two dropdowns sit at the top: `Service` filters every panel on the dashboard, and `Route` narrows the *Routes* row to particular endpoints.
+- **`grafana`** — auto-provisioned with a Prometheus datasource and a ready-made "Services Overview" dashboard. Fifteen panels in three rows: *Services* compares them side by side (targets up, throughput, CPU, resident memory, 4xx/5xx); *Requests* breaks the same traffic down by route, p95 and response code; and *Cardinality* shows how much each target writes, how much the guard discards, and how fast each one is adding series. Two dropdowns sit at the top: `Service` filters every panel, and `Route` narrows the *Requests* row to particular endpoints. It was eighteen panels in four rows while three services labelled a request three different ways.
 
 The `/load/*` endpoints each stress a different resource on purpose, so the dashboard has something to plot. On the FastAPI app (`:8002`):
 
@@ -34,7 +34,7 @@ The Go service (`:8003`) and the Node service (`:8004`) serve the same paths, de
 | `GET /load/cpu-bound` | Spins for roughly as long as the FastAPI one takes |
 | `GET /chain` | The Go one calls the Node one and wraps its answer; the Node one answers and ends the chain |
 
-**Three services, three label conventions, on purpose.** Each one emits what its own library gives it, and nothing is renamed to make a panel light up. The dashboard's *Services* row groups by `job` and draws all three; its *Routes* and *Requests* rows each hold whichever services carry that label, so the Node service appears in neither. That is the measured cost of a new convention rather than a defect — it is recorded in `specs/CU-86bbpx4by/plan.md`.
+**One convention, and it used to be three.** Each service emitted what its own library gave it — `handler`/`status` in the app, `code`/`method` in Go, `route`/`status_code` in Node — so no single query reached all three and the dashboard needed a row per convention. The request metrics are derived from spans now: one instrumentation, one set of labels, and the route on a graph is the same string the trace shows. The cost of the split, measured while it was live, is in `specs/CU-86bbpx4by/plan.md`; what replaced it is in `specs/CU-86bbw0j24/plan.md`.
 
 ### Joining the scrape
 
@@ -80,7 +80,7 @@ curl -sG --data-urlencode 'query=scrape_samples_post_metric_relabeling{job="nois
   localhost:9090/api/v1/query
 ```
 
-The first number climbs every scrape until it levels off at 5000. The second stays at **0**, and the three well-behaved targets are untouched at 146, 63 and 156. That gap is the guard: `metric_relabel_configs` drops any series whose `handler` or `route` value carries a raw path segment, and it runs before anything is stored.
+The first number climbs every scrape until it levels off at 5000. The second stays at **0**, and the well-behaved targets are untouched — 16, 48 and 96 for the three services, 343 for the Collector that carries their request metrics. That gap is the guard: `metric_relabel_configs` drops any series whose `http_route` value carries a raw path segment, and it runs before anything is stored.
 
 The ceiling underneath it — `sample_limit` in `global:` — catches what no drop rule anticipated. To see it fire, lower it in `prometheus.yml` below a real service's sample count, then restart Prometheus so it rereads the file. There is no reload endpoint: the container runs without `--web.enable-lifecycle`, so `POST /-/reload` answers `403 Lifecycle API is not enabled`.
 
@@ -142,7 +142,7 @@ Two things are deliberately absent from the store. `/metrics` is never traced �
 - Go 1.25 with `prometheus/client_golang`, built by `golang:1.26.5` and run on `alpine:3.24.1`
 - Node 24 with `prom-client`, on `node:24.20.0`
 - FastAPI 0.139 (Uvicorn), Pydantic 2 / pydantic-settings
-- prometheus-fastapi-instrumentator
+- prometheus-client
 - pytest, pytest-asyncio, pytest-cov (80% coverage gate)
 - black, isort, flake8
 - pip-audit (dependency vulnerability scanning)
@@ -150,7 +150,7 @@ Two things are deliberately absent from the store. `/metrics` is never traced �
 - Docker Compose, with every service behind a `core` or `load` profile
 - Prometheus `prom/prometheus:v3.13.2` and Grafana `grafana/grafana:12.4.7`, both pinned — no image tracks `latest`
 - OpenTelemetry SDKs in all three services — `opentelemetry-distro` (Python), `@opentelemetry/sdk-node`, `go.opentelemetry.io/otel` — all exporting OTLP over http/protobuf
-- OpenTelemetry Collector `otel/opentelemetry-collector-contrib:0.160.0` and Tempo `grafana/tempo:3.0.3`, the trace path — scraped like everything else, and reachable only from inside the compose network
+- OpenTelemetry Collector `otel/opentelemetry-collector-contrib:0.160.0` and Tempo `grafana/tempo:3.0.3`, the telemetry path — scraped like everything else, and reachable only from inside the compose network
 
 Exact Python pins live in `requirements/base.txt` / `requirements/dev.txt`. [CLAUDE.md](CLAUDE.md) covers the conventions for working on the code.
 
@@ -375,7 +375,7 @@ worker/
   load_driver.py          # standalone async load generator (calls every service's endpoints)
 grafana/                  # provisioned datasources + "Services Overview" dashboard
 prometheus.yml            # scrape settings, the label-discovery job, the cardinality guard
-otel-collector-config.yaml  # the trace path: OTLP in, Tempo out
+otel-collector-config.yaml  # OTLP in; traces to Tempo, request metrics out on 8888
 tempo.yaml                # the trace store: one receiver, local blocks on a named volume
 docker-compose.yml        # the nine services, their profiles and named volumes
 tests/                    # pytest suite: one file per module, plus five that check config

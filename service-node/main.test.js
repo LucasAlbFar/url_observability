@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 
-import { createServer } from "./main.js";
+import { createServer, routeFor } from "./main.js";
 
 let server;
 let origin;
@@ -73,61 +73,41 @@ test("/metrics serves the default registry", async () => {
   assert.match(body, /process_resident_memory_bytes/);
 });
 
-// The request metrics are declared by this service rather than inherited
-// from the library, so the middleware that feeds them is worth an
-// assertion: an instrumented route must move the counter it names.
-test("an instrumented route counts the request", async () => {
-  const before = await counterTotal();
-
+// The inverse of the assertion this file used to carry. This service
+// named a request `route`/`status_code`/`method`, agreeing with neither
+// of the other two, and that disagreement is what the derived metrics
+// replaced — so serving a request must now move no request series at
+// all. A library left in place but still counting would keep publishing
+// the convention.
+test("no request series is published", async () => {
   await fetch(origin + "/health");
+  await fetch(origin + "/one");
 
-  assert.equal(await counterTotal(), before + 1);
+  const body = await fetch(origin + "/metrics").then((r) => r.text());
+
+  assert.ok(!body.includes("http_requests_total"));
+  assert.ok(!body.includes("http_request_duration_seconds"));
 });
 
 // A path nobody serves must not become a label value of its own: that is
 // the cardinality failure this service would otherwise demonstrate the
 // wrong way.
-test("an unmatched path is labelled by one fixed value", async () => {
-  await fetch(origin + "/one");
-  await fetch(origin + "/two");
+//
+// Asserted on the span, not on /metrics, because /metrics no longer
+// carries a route at all — the value now travels on `http.route`, which
+// is what the derived request metrics group by. The tests run without
+// the SDK loaded, so the span is read from a provider registered here.
+// Asserted on the label rather than on /metrics, because /metrics no
+// longer carries a route at all: the value travels on the span, and the
+// derived request metrics group by it. Driving the server over HTTP
+// cannot see it — the active span inside the handler is the one the HTTP
+// instrumentation opens, not one a client-side test can reach.
+test("an unmatched path is labelled by one fixed value", () => {
+  assert.equal(routeFor("/health"), "/health");
+  assert.equal(routeFor("/chain"), "/chain");
 
-  const lines = await sampleLines("http_requests_total");
-  const unmatched = lines.filter((line) => line.includes('route="unmatched"'));
-
-  assert.equal(unmatched.length, 1);
-  assert.ok(!lines.some((line) => line.includes('route="/one"')));
+  for (const path of ["/one", "/two", "/three"]) {
+    assert.equal(routeFor(path), "unmatched");
+  }
 });
 
-// Reading the endpoint rather than the registry keeps every assertion on
-// what a scrape would actually see.
-async function sampleLines(metric) {
-  const body = await fetch(origin + "/metrics").then((r) => r.text());
-  return body
-    .split("\n")
-    .filter((line) => line.startsWith(`${metric}{`));
-}
-
-async function counterTotal() {
-  const lines = await sampleLines("http_requests_total");
-  return lines.reduce((total, line) => total + Number(line.split(" ").pop()), 0);
-}
-
-// A client that hangs up mid-request is exactly the request an
-// observability demo must not lose, and listening only for `finish`
-// loses it.
-test("a request the client abandons is still counted", async () => {
-  const before = await counterTotal();
-  const controller = new AbortController();
-
-  const abandoned = fetch(origin + "/load/io-bound", {
-    signal: controller.signal,
-  });
-  setTimeout(() => controller.abort(), 100);
-  await assert.rejects(abandoned);
-  // The server sees the socket close on its own schedule.
-  await new Promise((resolve) => setTimeout(resolve, 200));
-
-  assert.equal(await counterTotal(), before + 1);
-  const lines = await sampleLines("http_requests_total");
-  assert.ok(lines.some((line) => line.includes('status_code="499"')));
-});

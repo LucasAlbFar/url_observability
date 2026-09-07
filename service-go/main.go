@@ -1,12 +1,12 @@
 // Command service-go is the second observed service in the stack.
 //
 // It exists to prove the observability stack attaches to something that
-// is not the FastAPI app. Two consequences of that purpose are visible
-// here and are deliberate: it serves the same paths the FastAPI app
-// serves, so a route name collides across services; and it does not
-// imitate that app's metric names, so the two services disagree about
-// how a request is labelled. Both are the defect this service was added
-// to expose, not oversights to tidy up.
+// is not the FastAPI app, and it serves the same paths that app serves,
+// so a route name collides across services — deliberately, and still
+// true. What is no longer true is the metric names: this service used to
+// publish its own `code`/`method` convention against the app's
+// `handler`/`status`, and that disagreement is what the request metrics
+// derived from spans replaced.
 package main
 
 import (
@@ -19,8 +19,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
@@ -40,24 +38,6 @@ import (
 // is configurable, for the same reason the load generator reads no
 // environment: one list of addresses, in one place.
 const addr = ":8003"
-
-// Registered on the default registry, which already carries the process
-// and Go runtime collectors. The labels are the ones promhttp fills in
-// by itself. There is no route label: client_golang does not have one,
-// and adding a `handler` label to match the FastAPI instrumentator would
-// defeat the reason this service exists.
-var (
-	requests = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "http_requests_total",
-		Help: "Requests served, by response code and method.",
-	}, []string{"code", "method"})
-
-	duration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "http_request_duration_seconds",
-		Help:    "Request duration in seconds, by response code and method.",
-		Buckets: prometheus.DefBuckets,
-	}, []string{"code", "method"})
-)
 
 // The next hop of the chain, and the client that makes it. A var rather
 // than a const so a test can point it at a local stub: it is not
@@ -104,21 +84,19 @@ func startTracing(ctx context.Context) error {
 	return nil
 }
 
-// instrument wraps a handler in both pillars. The route is passed in
-// because neither library can work it out: `client_golang` does not
-// label by route at all, and otelhttp is handed a mux with no pattern
-// to read, so it names every span after the method alone. Setting
-// http.route here is the same sentence the Node service writes for the
-// same reason, and the formatter makes the name `GET /chain` the way
-// all three services now report it.
+// instrument wraps a handler in the trace, which is now the only pillar
+// this service feeds per request: the counters it used to keep were
+// replaced by metrics derived from these very spans. The route is passed
+// in because otelhttp is handed a mux with no pattern to read, so it
+// names every span after the method alone. Setting http.route here is
+// the same sentence the Node service writes for the same reason, it
+// makes the span name `GET /chain`, and it is the label the derived
+// metrics carry — remove it and the route disappears from both pillars
+// at once.
 func instrument(route string, next http.HandlerFunc) http.Handler {
-	metered := promhttp.InstrumentHandlerCounter(
-		requests,
-		promhttp.InstrumentHandlerDuration(duration, next),
-	)
 	routed := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		oteltrace.SpanFromContext(r.Context()).SetAttributes(semconv.HTTPRoute(route))
-		metered.ServeHTTP(w, r)
+		next.ServeHTTP(w, r)
 	})
 	return otelhttp.NewHandler(
 		routed,
@@ -206,16 +184,33 @@ func call(ctx context.Context, url string) ([]byte, error) {
 	return bytes.TrimSpace(body), nil
 }
 
+// notFound answers what no route claimed, and exists to be
+// instrumented: the mux's own 404 carries neither counter nor span, so
+// until this handler was wired an unknown path was absent from both
+// pillars. The body is the one the Node service answers with, the way
+// /health is identical across the three.
+func notFound(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotFound)
+	fmt.Fprintln(w, `{"detail":"Not Found"}`)
+}
+
 func newMux() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle("/health", instrument("/health", health))
 	mux.Handle("/load/io-bound", instrument("/load/io-bound", ioBound))
 	mux.Handle("/load/cpu-bound", instrument("/load/cpu-bound", cpuBound))
 	mux.Handle("/chain", instrument("/chain", chain))
-	// Uninstrumented in both pillars: a scrape is not traffic in its own
-	// graphs, and at one every five seconds it would be most of what the
-	// trace store holds.
+	// The default registry, which is the process and Go runtime
+	// collectors now that this service counts no request of its own.
+	// Untraced: a scrape is not traffic in its own graphs, and at one
+	// every five seconds it would be most of what the trace store holds.
 	mux.Handle("/metrics", promhttp.Handler())
+	// Everything else, under one label value rather than one per path —
+	// the same `unmatched` the Node service reports. Registered last and
+	// as "/", which every pattern above outranks by being longer, so the
+	// scrape is not swallowed by it.
+	mux.Handle("/", instrument("unmatched", notFound))
 	return mux
 }
 
