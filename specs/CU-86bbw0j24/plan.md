@@ -369,9 +369,26 @@ task makes dead.
       Every panel query run against Prometheus, since a green suite proves none of them returns
       data: all fifteen return series, and the 5xx panel drew both erring services once a 502 was
       provoked. Grafana reloaded with no provisioning error and serves the fifteen panels.
-- [ ] The ceiling, **only if the measurement requires it**, with the headroom re-justified beside the
+- [x] The ceiling, **only if the measurement requires it**, with the headroom re-justified beside the
       value and the panel threshold in the same commit. No commit if it does not. —
       `feat(prometheus): re-fit the ceiling to the derived metrics`
+
+      **No value moved. Every justification beside one did.** Measured 2026-09-07 in the final
+      state, samples per scrape: Tempo 1510, Collector **343**, `service-node` 96, `service-go` 48,
+      `fastapi-app` **16**. The three applications fell from 156, 78 and 146 — the app hardest,
+      having lost a histogram with six routes' worth of buckets — while the Collector rose 279 → 343
+      carrying all of it. The stack now stores **2013** samples per scrape against 2167 before the
+      feature: a whole new source, and 154 fewer samples, because one convention replaced three.
+
+      The panel threshold did not move either, `sample_limit` being unchanged, so the test tying the
+      two holds untouched.
+
+      What the re-measurement found was six stale numbers quoted beside the five limits, all of them
+      inherited rather than re-read: the sample ceiling claimed ~7x headroom against Tempo's 551
+      when it is **2.6x** against 1510; the longest label name was 19 and is 25; the largest body
+      61.9 KB and is 166 KB; the target count said 6 and is 5. Raising `sample_limit` to widen
+      Tempo's margin was rejected: it is one number for every target, and the three applications
+      reading 16 to 96 would be loosened by the same factor.
 - [ ] `CLAUDE.md`: one convention instead of three, the new metric path, the rewritten `job`, and the
       correction of every sentence describing the split — the three-convention table, the two
       convention rows, the two drop rules, the 499 counting, and the debts this closes. Conclusions
