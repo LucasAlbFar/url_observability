@@ -126,6 +126,7 @@ measurements this feature needs are tasks, and are marked as such below.
 | `service-node/main.js`, `main.test.js` | The two hand-written collectors go; `collectDefaultMetrics` and `/metrics` stay |
 | `requirements/base.in`, `base.txt`, `dev.txt` | Only if the app's `/metrics` stops coming from the instrumentator |
 | `grafana/dashboards/services.json` | Two convention rows become one, the error panels lose their second target, the route variable moves to the new label |
+| `noisy/raw_path_emitter.py`, `tests/test_noisy.py` | Not foreseen: it misbehaved in a convention the retirements removed the guard for |
 | `tests/test_prometheus_config.py` | `PATH_LABELS`, and the `job` rewrite |
 | `tests/test_collector_config.py` | The metrics pipeline and the port it publishes, against the compose label |
 | `tests/test_main.py` | That `/metrics` still answers after the instrumentator goes |
@@ -414,8 +415,41 @@ task makes dead.
       covering the only service in the stack that misbehaves, and nothing failed. `noisy` emits
       `http_route` now, the one label the stack still puts a path in, and the guard is back to 550
       scraped and 0 stored. Fixed in its own commit, not this one.
-- [ ] Run the verification steps and record each outcome here. No commit beyond the tick. —
+- [x] Run the verification steps and record each outcome here. No commit beyond the tick. —
       `docs(specs): record the verification outcomes`
+
+**Verification, run end to end on 2026-09-07. Each numbered step, with its outcome:**
+
+1. **`tox` green** — `py311`, `lint` and `safety` in 84s. 89 tests, coverage 100%, no vulnerability
+   in either requirements file.
+2. **Nine services** — `config -q` clean, and `config --services` resolves `app grafana loadgen
+   noisy otel-collector prometheus service-go service-node tempo`.
+3. **All three validators accept their files** — `promtool check config`, the Collector's `validate`
+   and Tempo's `-config.verify=true`.
+4. **Five targets at `up=1`**, the Collector among them on 8888 — the port that now carries both the
+   derived metrics and its own telemetry, which is still being read: `otelcol_process_uptime_total`
+   arrives under `job=otel-collector`.
+5. **One request, one line.** Throughput, p95 and the error rate each come from a single query
+   returning all three services: 0.790/0.661/0.654 req/s, 2.709/2.768/2.759s p95.
+6. **The route on the graph is the route in the trace.** One `/chain` trace carries
+   `http.route=/chain` on the server span of all three services, and
+   `traces_span_metrics_calls_total{http_route="/chain"}` exists for all three jobs. The templated
+   form survives too: a span reading `/load/stress/{seconds}` rather than a path with a number in it.
+7. **The Go service's unmatched paths appear beside the other two.** One query over 4xx/5xx returns
+   five series, `unmatched`/404 for `fastapi-app`, `service-go` **and** `service-node` — the first
+   time the Go service has counted a 404 at all.
+8. **No series of the retired instrumentation exists**, let alone receives a sample:
+   `http_requests_total` and `http_request_duration_seconds_bucket` return zero series.
+9. **The resource metrics are intact** — `process_cpu_seconds_total` and
+   `process_resident_memory_bytes` on all three services plus Tempo.
+10. **The Collector stopped:** all three answer `/health` and `/chain` with 200, no container goes
+    unhealthy, and after 100s the request series are gone while the resource series are 5s old. The
+    asymmetry the spec accepted, observed.
+11. **A CI run** — not run. It needs a push to the branch, which was not authorised.
+12. **`git diff --stat main...HEAD` names 22 files, and the table named 20.** The two extra are
+    `noisy/raw_path_emitter.py` and `tests/test_noisy.py` — the regression the README walkthrough
+    uncovered. The table above is corrected rather than the step waved through: the plan did not
+    foresee that retiring a convention takes the guard for the one service that abuses it.
 
 ## Edge cases
 
