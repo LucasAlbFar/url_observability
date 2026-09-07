@@ -334,10 +334,23 @@ task makes dead.
       `/metrics` answers 200 with 44 process and runtime series and no `http_request*`, and both the
       route and the 404 still answer. Two mutations checked: reintroducing the counter fails the
       inverse test, and labelling the span by the raw path still fails the route-value test.
-- [ ] The same in `service-node`: the two hand-written collectors go, `collectDefaultMetrics` and
+- [x] The same in `service-node`: the two hand-written collectors go, `collectDefaultMetrics` and
       `/metrics` stay. The `route` drop rule and its `PATH_LABELS` entry go with it, and so does the
       499-on-close convention, which was a property of the counter. —
       `refactor(service-node): retire the HTTP metrics instrumentation`
+
+      **The route assertion could not move to the span here, the way it did in Go.** The Go test
+      drives the mux in process, so the span the handler writes on is the one the test opened; over
+      real HTTP the active span inside the handler is the one the HTTP instrumentation opens, which
+      no client-side test reaches. Registering an in-memory SDK does not fix that, and it cost a
+      dependency for nothing. What the property actually is — which label a path reports under — is
+      now decided in an exported `routeFor`, asserted directly. Both mutations fail it: returning
+      the raw path, and reintroducing a counter.
+
+      `PATH_LABELS` is down to one entry and `prometheus.yml` to one drop rule. Measured after the
+      restart: the last `http_requests_total` series aged to 92s and kept aging, while all three
+      services report on the derived source at 4s — verification step 8, by sample age rather than
+      by an instant query.
 - [ ] The dashboard: the two convention rows become one, the error panels lose their second target,
       the route variable reads the new label, and the layout closes the gap the removed row leaves.
       Between the retirements above and this commit the old rows draw a plateau, not traffic. —

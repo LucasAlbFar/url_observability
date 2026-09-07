@@ -14,11 +14,12 @@ import yaml
 
 SCRAPE_META = "__meta_docker_container_label_prometheus_io_scrape"
 PROJECT_FILTER = "com.docker.compose.project"
-# The labels a service can put a URL path in. Hand-written, because the
-# set comes from instrumentation libraries rather than from any file in
-# this repo. `route` is the Node service's, still retiring; `http_route`
-# is derived from the spans and is the one that outlives it.
-PATH_LABELS = ("route", "http_route")
+# The labels a service can put a URL path in. One, now that the three
+# instrumentation conventions were replaced by metrics derived from the
+# spans: `http_route`, which every service reports under. Still
+# hand-written, because the name comes from the OTel semantic convention
+# rather than from any file in this repo.
+PATH_LABELS = ("http_route",)
 # The label naming the service a derived measurement is about. Only the
 # series that carry it are re-keyed, which is what leaves the exporter's
 # own telemetry under the job of the target that served it.
