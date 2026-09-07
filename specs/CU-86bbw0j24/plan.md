@@ -102,10 +102,11 @@ measurements this feature needs are tasks, and are marked as such below.
 - **Whether the dot becomes an underscore.** `http.route` should arrive as `http_route`. If it
   arrives dotted, the drop rule and every panel have to cite it as `{"http.route"=…}`, and the guard
   gains a label PromQL reaches only quoted.
-- **What the Collector reads after the change.** It carried 551 samples per scrape idle and 1253 with
-  traces flowing; it now also carries the request series of three services and its own telemetry on
-  one port. Measure against `sample_limit: 4000` **before** writing any new value — and measure the
-  fall on the other side, since the three services lose their HTTP series.
+- **What the Collector reads after the change.** It now carries the request series of three services
+  and its own telemetry on one port. Measure against `sample_limit: 4000` **before** writing any new
+  value — and measure the fall on the other side, since the three services lose their HTTP series.
+  (551 idle and 1253 with traces flowing are **Tempo's** readings, not the Collector's; this bullet
+  attributed them to the wrong target until the measurement below.)
 - **Whether the two sources converge.** The acceptance criterion, and the only evidence that
   switching off is safe. By instant query, for the reason under "Edge cases".
 - **How the app keeps `/metrics` without the instrumentator.** Either `Instrumentator().expose(app)`
@@ -197,10 +198,48 @@ task makes dead.
       pointing at it — plus the structural assertions on both. Nothing is switched off: what this
       proves is that a second source exists beside the first. —
       `feat(collector): derive request metrics from spans`
-- [ ] **Measurement, before any new value is written:** the Collector's samples per scrape against
+- [x] **Measurement, before any new value is written:** the Collector's samples per scrape against
       `sample_limit`, under which label the originating service and the route arrive and in what
       spelling, and which mechanism folds the internal telemetry. Record the numbers and the query
       behind each one here. — verification
+
+      Measured 2026-09-07 against the running stack under `core` + `load`, every number by instant
+      query on `/api/v1/query`.
+
+      **Samples per scrape: the Collector went from 43 to 279**, and Tempo's 1508 is still the
+      largest target by five times. `scrape_samples_post_metric_relabeling` per job, the before
+      taken from the same series at `time=` three hours back. The 279 decompose as **224 derived
+      from spans, 51 internal telemetry, 9** for `up`, `scrape_*` and `target_info` —
+      `count({job="otel-collector",__name__=~"traces_span_metrics.*"})` and its two complements.
+      Against `sample_limit: 4000` that is 14x headroom, so **no limit moves.**
+
+      **The tightest limit is no longer the sample count.** Labels per sample reached **14** against
+      `label_limit: 20`, where the largest before was 8 at the exporter and 10 at ingest. Six spare,
+      and five of the fourteen are labels nothing asked for: `collector_instance_id`,
+      `otel_scope_name`, `otel_scope_schema_url`, `otel_scope_version`, and a `service_name` that
+      repeats `exported_job`. A `labeldrop` is layer one's shape and belongs in the next task. The
+      other two limits are untouched: longest label name **25** (`http_response_status_code`)
+      against 64, longest value **85** against 256, and the body is **97 KB** against 4MB.
+
+      **The originating service arrives as `exported_job`.** The exporter emits `job` derived from
+      `service.name`, Prometheus renames the collision, and `service_name` carries the same value a
+      second time — so the rewrite has two labels to choose from and reads the one that is not a
+      duplicate. **The route arrives as `http_route`**, underscored: the dotted spelling that would
+      have forced `{"http.route"=…}` through the guard and every panel did not happen.
+
+      **The internal telemetry is folded by the self-scrape**, not by the OTLP loop: a `prometheus`
+      receiver reads the pull reader on a loopback port and the exporter republishes it on 8888, so
+      `prometheus.io/port` never moved. What the plan did not foresee is the cost — the receiver
+      synthesises its **own** `up` and `scrape_*`, and republishing them made Prometheus read two
+      targets for one container: `up{job="otel-collector"}` returned two series, and the Cardinality
+      row drew 51 beside 279. `metric_relabel_configs` on that scrape does not reach them, because
+      the receiver adds them outside the relabel path; a `filter` on the pipeline does. Both halves
+      are asserted now.
+
+      **The 404 debt is confirmed from the new source.** Five unmatched paths on each service:
+      `fastapi-app` records `http_route="unmatched"` through the connector's `default`, proving the
+      fallback works where no route template exists; `service-node` records the same value from its
+      own handler; **`service-go` records nothing at all**, having no span to derive from.
 - [ ] The `job` rewrite and a drop rule on the new route label, with their assertions and
       `PATH_LABELS`. Three rules stand here on purpose — the two they replace die with the
       conventions they guard. — `feat(prometheus): key the derived metrics by their own service`
