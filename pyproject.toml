@@ -10,7 +10,7 @@ fastapi = { extras = ["standard-no-fastapi-cloud-cli"], version = "^0.139.2" }
 uvicorn = { extras = ["standard"], version = "^0.51.0" }
 pydantic = "^2.13.4"
 pydantic-settings = "^2.14.2"
-prometheus-fastapi-instrumentator = "^8.0.2"
+prometheus-client = "^0.25.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^9.1.1"
