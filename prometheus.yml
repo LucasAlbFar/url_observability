@@ -131,9 +131,9 @@ scrape_configs:
     #
     # One rule per path-carrying label, because there is no wildcard over label
     # values: `source_labels` names labels explicitly, and labeldrop/labelkeep
-    # match label *names*. Three live today — `handler` (the FastAPI
-    # instrumentator), `route` (the Node service) and `http_route` (derived from
-    # the spans) — and only the third survives the retirement of the other two.
+    # match label *names*. Two left — `route` (the Node service) and
+    # `http_route` (derived from the spans); the app's `handler` went with the
+    # library that produced it.
     #
     # What this cannot reach: an id in a label of a service's own naming. That
     # is what the ceiling is for.
@@ -161,9 +161,6 @@ scrape_configs:
       # `label_limit: 20`, the tightest of the five limits.
       - regex: exported_job|exported_instance|service_name|collector_instance_id|otel_scope_.*
         action: labeldrop
-      - source_labels: [handler]
-        regex: '(.*/)?([0-9]+|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(/.*)?'
-        action: drop
       - source_labels: [route]
         regex: '(.*/)?([0-9]+|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(/.*)?'
         action: drop

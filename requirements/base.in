@@ -1,6 +1,10 @@
 fastapi[standard-no-fastapi-cloud-cli]
 uvicorn
-prometheus-fastapi-instrumentator
+# The exposition only. The HTTP metrics this app used to publish are
+# derived from its spans now, so `prometheus-fastapi-instrumentator`
+# left with them; what /metrics still carries is the process and runtime
+# collectors this library registers by default.
+prometheus-client
 pydantic
 pydantic-settings
 

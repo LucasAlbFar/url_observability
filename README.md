@@ -4,7 +4,7 @@ Three small services — one FastAPI, one Go, one Node — instrumented end-to-e
 
 ## How it works
 
-- **`app`** — a FastAPI service (`app/main.py`) instrumented via `prometheus-fastapi-instrumentator`, which exposes a `/metrics` endpoint.
+- **`app`** — a FastAPI service (`app/main.py`) whose request metrics are derived from its traces; its `/metrics` endpoint carries the process and runtime series.
 - **`service-go`** — a small Go service (`service-go/main.go`) instrumented via `prometheus/client_golang`. It exists to test the claim the stack is language-agnostic, so it mirrors the app's paths and keeps its own library's metric labels (`code`/`method`, not `handler`/`status`) instead of imitating them. Ten metric names end up exported by both it and the app, separated only by the `job` label.
 - **`service-node`** — a small Node service (`service-node/main.js`) instrumented via `prom-client`. It exists to prove a service joins the observability stack by declaring labels on its own container, with no edit to `prometheus.yml` — it was added that way. Its labels are a third convention again (`route`/`status_code`/`method`), because `prom-client` does not instrument HTTP and leaves the naming to whoever writes the middleware.
 - **`noisy`** — a deliberately badly behaved service (`noisy/raw_path_emitter.py`), behind the `chaos` profile and **off by default**. It labels one series per user id — `/users/1`, `/users/2` — and reports fifty more of them on every scrape, which is the cardinality failure the guard in `prometheus.yml` exists to stop. Nothing else in the stack misbehaves, so without it the guard could never be watched firing. See [Watching the guard fire](#watching-the-guard-fire).
@@ -142,7 +142,7 @@ Two things are deliberately absent from the store. `/metrics` is never traced �
 - Go 1.25 with `prometheus/client_golang`, built by `golang:1.26.5` and run on `alpine:3.24.1`
 - Node 24 with `prom-client`, on `node:24.20.0`
 - FastAPI 0.139 (Uvicorn), Pydantic 2 / pydantic-settings
-- prometheus-fastapi-instrumentator
+- prometheus-client
 - pytest, pytest-asyncio, pytest-cov (80% coverage gate)
 - black, isort, flake8
 - pip-audit (dependency vulnerability scanning)

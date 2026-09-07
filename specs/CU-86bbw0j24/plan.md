@@ -307,9 +307,23 @@ task makes dead.
       `/metrics` still answers 200, and all three services now report under
       `http_route="unmatched"` in the derived source. `go.mod` and `go.sum` did not move —
       `tracetest` ships in the SDK module the service already required.
-- [ ] The HTTP instrumentation out of the app; `/metrics` and the `process_*` series stay, now with
+- [x] The HTTP instrumentation out of the app; `/metrics` and the `process_*` series stay, now with
       the test that says so. The `handler` drop rule and its `PATH_LABELS` entry go with it. —
       `refactor(app): retire the HTTP metrics instrumentation`
+
+      **The dependency left with the convention.** `prometheus-fastapi-instrumentator` is out of
+      `requirements/base.in` and `prometheus-client` is in, since the only thing still needed from
+      that side is the exposition. Recompiling had to happen in a container: the project venv's
+      `pip-compile` dies against its own pip, and `python:3.11.15` ships pip 24. `--no-index` no
+      longer means what the old header recorded — in pip-tools 7.6 it disables PyPI outright, so the
+      files are compiled with `--no-emit-index-url` and the header says so. No pin moved and the two
+      files agree on every shared package.
+
+      **`app.mount("/metrics", make_asgi_app())` is wrong and the obvious test hides it.** A mount
+      answers **307** and redirects to `/metrics/`, so every scrape pays a round trip — and
+      `TestClient` follows redirects, so the test reported a clean 200. Found by curling the running
+      container. It is a route returning `generate_latest()` now, and the test passes
+      `follow_redirects=False`, which is what makes the mutation back to a mount fail.
 - [ ] The same in `service-go`: the two collectors and the `promhttp.InstrumentHandler*` wrapping go,
       `promhttp.Handler()` and the route attribute stay. —
       `refactor(service-go): retire the HTTP metrics instrumentation`

@@ -16,10 +16,9 @@ SCRAPE_META = "__meta_docker_container_label_prometheus_io_scrape"
 PROJECT_FILTER = "com.docker.compose.project"
 # The labels a service can put a URL path in. Hand-written, because the
 # set comes from instrumentation libraries rather than from any file in
-# this repo. `handler` is the FastAPI instrumentator's and `route` the
-# Node service's, both retiring; `http_route` is derived from the spans
-# and is the one that survives them.
-PATH_LABELS = ("handler", "route", "http_route")
+# this repo. `route` is the Node service's, still retiring; `http_route`
+# is derived from the spans and is the one that outlives it.
+PATH_LABELS = ("route", "http_route")
 # The label naming the service a derived measurement is about. Only the
 # series that carry it are re-keyed, which is what leaves the exporter's
 # own telemetry under the job of the target that served it.
