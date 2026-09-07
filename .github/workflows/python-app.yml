@@ -119,3 +119,28 @@ jobs:
           -v "$PWD/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
           "$image" \
           check config /etc/prometheus/prometheus.yml
+    # The same shape for the same reason: two configuration files only
+    # their own binary can judge, and a structural test in pytest
+    # cannot say whether the process would refuse them at boot.
+    - name: Validate the Collector config
+      run: |
+        image=$(docker compose --profile '*' config --format json \
+          | jq -r '.services["otel-collector"].image')
+        [ -n "$image" ] && [ "$image" != "null" ] \
+          || { echo "could not resolve the collector image"; exit 1; }
+        echo "using $image"
+        docker run --rm \
+          -v "$PWD/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+          "$image" validate --config=/etc/otelcol-contrib/config.yaml
+    # `-config.verify=true`, with the value: the flag is declared as
+    # taking one, so a bare `-config.verify` prints the usage text and
+    # exits 2 — a failure that reads as a broken config file.
+    - name: Validate the Tempo config
+      run: |
+        image=$(docker compose --profile '*' config --format json \
+          | jq -r '.services.tempo.image')
+        [ -n "$image" ] && [ "$image" != "null" ] \
+          || { echo "could not resolve the tempo image"; exit 1; }
+        echo "using $image"
+        docker run --rm -v "$PWD/tempo.yaml:/etc/tempo.yaml:ro" \
+          "$image" -config.file=/etc/tempo.yaml -config.verify=true

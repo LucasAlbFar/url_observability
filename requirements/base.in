@@ -3,3 +3,13 @@ uvicorn
 prometheus-fastapi-instrumentator
 pydantic
 pydantic-settings
+
+# The tracing pillar. `opentelemetry-distro` brings the SDK and the
+# `opentelemetry-instrument` command the image starts through; the two
+# instrumentations are the ones this app needs, the server side and the
+# client that makes the next hop. http/protobuf rather than gRPC, so the
+# image does not carry grpcio for one connection.
+opentelemetry-distro
+opentelemetry-exporter-otlp-proto-http
+opentelemetry-instrumentation-fastapi
+opentelemetry-instrumentation-httpx

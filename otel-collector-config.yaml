@@ -1,0 +1,47 @@
+# The trace path. Services push OTLP here and this forwards to Tempo;
+# metrics stay on Prometheus's pull, untouched. Whether the two paths
+# become one is the metrics rework's question, not this file's.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        # 0.0.0.0 rather than the default loopback: every sender is
+        # another container, so a localhost bind accepts nothing.
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Defaults: batching is what keeps one export per span from becoming
+  # one connection per span. Nothing here needs tuning at this volume.
+  batch: {}
+
+exporters:
+  # `otlp_grpc`, not the `otlp` alias: 0.160 still accepts the alias
+  # and logs a deprecation for it on every boot.
+  otlp_grpc/tempo:
+    endpoint: tempo:4317
+    tls:
+      # Plaintext on the compose network. There is no certificate to
+      # verify and nothing leaves the host.
+      insecure: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_grpc/tempo]
+  telemetry:
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                # Declared because the default is localhost:8888, and
+                # Prometheus scrapes from another container: left at the
+                # default the target refuses the connection and sits at
+                # up=0 with nothing on this side to say why.
+                host: 0.0.0.0
+                port: 8888

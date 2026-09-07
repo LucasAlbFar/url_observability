@@ -9,6 +9,8 @@
 // the other two. The disagreement is the measurement this service was
 // added to produce, not an oversight to tidy up.
 import http from "node:http";
+
+import { trace } from "@opentelemetry/api";
 import client from "prom-client";
 
 // The FastAPI app listens on 8002 and the Go service on 8003; this one
@@ -82,10 +84,18 @@ function cpuBound(response) {
   );
 }
 
+// chain is where the crossing ends: this service calls nobody, so the
+// last span of a trace is the one that closes it. The other two hops
+// wrap what they receive; this one only names itself.
+function chain(response) {
+  writeJSON(response, 200, '{"service":"service-node"}');
+}
+
 const routes = {
   "/health": health,
   "/load/io-bound": ioBound,
   "/load/cpu-bound": cpuBound,
+  "/chain": chain,
 };
 
 // Every request is labelled by the route that matched, never by the path
@@ -94,6 +104,18 @@ const routes = {
 // the cardinality failure a later feature exists to prevent.
 function instrument(route, handler) {
   return (request, response) => {
+    // The same value on the span. Without it the trace shows `GET` and
+    // no route at all: there is no framework here for the
+    // instrumentation to read a route template from, so the one place
+    // that knows it is this function — the tracing half of the same
+    // sentence the metric labels above make. The span is absent when
+    // the SDK is not loaded, which is how the tests run.
+    const span = trace.getActiveSpan();
+    if (span) {
+      span.setAttribute("http.route", route);
+      span.updateName(`${request.method} ${route}`);
+    }
+
     const end = duration.startTimer();
     let recorded = false;
 

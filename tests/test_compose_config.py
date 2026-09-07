@@ -16,10 +16,11 @@ FROM_IMAGE = re.compile(r"^FROM\s+(\S+)", re.MULTILINE)
 # The base image name that marks a Dockerfile as Go-built.
 GO_BASE = "golang"
 GO_MODULE_FILES = ("go.mod", "go.sum")
-NAMED_VOLUMES = {"prometheus_data", "grafana_data"}
+NAMED_VOLUMES = {"prometheus_data", "grafana_data", "tempo_data"}
 EXPECTED_MOUNTS = {
     "prometheus": "prometheus_data:/prometheus",
     "grafana": "grafana_data:/var/lib/grafana",
+    "tempo": "tempo_data:/var/tempo",
 }
 STORAGE_FLAGS = ("--storage.tsdb.path",)
 CONTINUATION = re.compile(r"\\\s*\n\s*")
@@ -48,6 +49,10 @@ SCRAPE_LABEL = "prometheus.io/scrape"
 JOB_LABEL = "prometheus.io/job"
 PORT_LABEL = "prometheus.io/port"
 DOCKER_SOCKET = "/var/run/docker.sock"
+# The trace half of a service's identity, and the service nothing may
+# wait for.
+OTEL_NAME = "OTEL_SERVICE_NAME"
+COLLECTOR_SERVICE = "otel-collector"
 
 
 @pytest.fixture(scope="session")
@@ -279,7 +284,7 @@ def test_every_node_dockerfile_commits_its_lockfile(dockerfiles):
 
 
 def test_named_volumes_are_declared(compose):
-    """Confirm both databases have a named volume to live in."""
+    """Confirm every store has a named volume to live in."""
     assert set(compose["volumes"]) == NAMED_VOLUMES
 
 
@@ -414,3 +419,35 @@ def test_prometheus_reads_the_docker_socket_unprivileged(compose):
     assert all(read_only), service["volumes"]
     assert service.get("group_add"), service.get("group_add")
     assert "user" not in service
+
+
+def test_a_traced_service_shares_one_name_with_the_scrape(
+    compose_environments, compose_labels
+):
+    """Confirm both pillars call a service by the same name.
+
+    `job` keys the series in prometheus_data and `service.name` keys a
+    trace. Nothing fails when they diverge — every query that crosses
+    the two pillars simply needs a translation written by hand, and the
+    two values are declared in the same compose block so that diverging
+    takes ignoring the neighbouring line.
+    """
+    checked = 0
+    for name, declared in compose_environments.items():
+        identity = declared.get(OTEL_NAME)
+        if not identity:
+            continue
+        checked += 1
+        assert identity == compose_labels[name].get(JOB_LABEL), name
+    assert checked, "no service declares its trace identity"
+
+
+def test_no_service_waits_for_the_collector(compose):
+    """Confirm telemetry cannot hold an application down.
+
+    A `depends_on` here trades application availability for telemetry
+    availability, which is the inverse of what this stack is for: the
+    Collector going down has to leave every service answering.
+    """
+    for name, service in compose["services"].items():
+        assert COLLECTOR_SERVICE not in service.get("depends_on", {}), name

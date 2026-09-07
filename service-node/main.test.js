@@ -24,6 +24,7 @@ describe("application routes", { concurrency: true }, () => {
   const cases = [
     ["/health", '{"status":"ok"}\n'],
     ["/load/io-bound", '{"message":"I/O-bound task completed"}\n'],
+    ["/chain", '{"service":"service-node"}\n'],
   ];
 
   // The two load routes cost real time on purpose — one sleeps two

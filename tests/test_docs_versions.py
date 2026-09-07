@@ -19,7 +19,13 @@ falls outside the check.
 import re
 
 DOCS = ("CLAUDE.md", "README.md")
-TAG_CHARACTERS = r"([\w.\-]+)"
+# A tag, and only a tag: it has to start with a digit, or a `v` and a
+# digit. Without that, `node:http` in prose about the Node module reads
+# as the `node` image on tag `http` and fails a check about an image
+# nobody touched. Every tag this stack pins is a bare
+# major.minor.patch — test_compose_config.py enforces exactly that — so
+# a stale version quoted in prose still matches and still fails.
+TAG_CHARACTERS = r"(v?\d[\w.\-]*)"
 # Nothing that could be part of a longer name may sit to the left. The
 # fixture holds bare repositories now — `node`, `python`, `golang`,
 # `alpine` — so without this, writing `service-node:8004` in prose reads

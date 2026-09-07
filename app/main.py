@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 from prometheus_fastapi_instrumentator import Instrumentator
 
+from app.api.endpoints.chain import router as chain_router
 from app.api.endpoints.example import router as example_route
 from app.api.endpoints.health import router as health_router
 from app.api.endpoints.load import router as load_router
@@ -10,6 +11,7 @@ from app.api.endpoints.load import router as load_router
 app = FastAPI()
 
 Instrumentator().instrument(app).expose(app)
+app.include_router(chain_router)
 app.include_router(example_route)
 app.include_router(health_router)
 app.include_router(load_router, prefix="/load", tags=["Load Testing"])

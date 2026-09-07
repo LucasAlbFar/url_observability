@@ -1,6 +1,6 @@
 # FastAPI Observability Demo
 
-Three small services — one FastAPI, one Go, one Node — instrumented end-to-end with **Prometheus** and **Grafana**, paired with a synthetic load generator so the dashboards always have real traffic to show. No database, no task queue — this project is purely a hands-on observability playground.
+Three small services — one FastAPI, one Go, one Node — instrumented end-to-end on two pillars: metrics with **Prometheus** and **Grafana**, traces with **OpenTelemetry** and **Tempo**. A synthetic load generator keeps real traffic flowing, including one request that crosses all three services. No database, no task queue — this project is purely a hands-on observability playground.
 
 ## How it works
 
@@ -8,7 +8,9 @@ Three small services — one FastAPI, one Go, one Node — instrumented end-to-e
 - **`service-go`** — a small Go service (`service-go/main.go`) instrumented via `prometheus/client_golang`. It exists to test the claim the stack is language-agnostic, so it mirrors the app's paths and keeps its own library's metric labels (`code`/`method`, not `handler`/`status`) instead of imitating them. Ten metric names end up exported by both it and the app, separated only by the `job` label.
 - **`service-node`** — a small Node service (`service-node/main.js`) instrumented via `prom-client`. It exists to prove a service joins the observability stack by declaring labels on its own container, with no edit to `prometheus.yml` — it was added that way. Its labels are a third convention again (`route`/`status_code`/`method`), because `prom-client` does not instrument HTTP and leaves the naming to whoever writes the middleware.
 - **`noisy`** — a deliberately badly behaved service (`noisy/raw_path_emitter.py`), behind the `chaos` profile and **off by default**. It labels one series per user id — `/users/1`, `/users/2` — and reports fifty more of them on every scrape, which is the cardinality failure the guard in `prometheus.yml` exists to stop. Nothing else in the stack misbehaves, so without it the guard could never be watched firing. See [Watching the guard fire](#watching-the-guard-fire).
-- **`loadgen`** — a standalone async script (`worker/load_driver.py`) that continuously calls every service's `/load/*` endpoints over HTTP, purely to generate traffic for the metrics/dashboards.
+- **`loadgen`** — a standalone async script (`worker/load_driver.py`) that continuously calls every service's `/load/*` endpoints over HTTP, purely to generate traffic for the metrics/dashboards. It also calls `/chain` on the app, which is the one request that crosses all three services.
+- **`otel-collector`** — receives OTLP from the three services and forwards it to Tempo. It publishes no port: the senders and Prometheus reach it over the compose network. Nothing declares `depends_on` for it, so it can go down without taking an application with it.
+- **`tempo`** — stores the traces, on a named volume so they survive a `down`. Reached through Grafana rather than directly; it publishes no port either.
 - **`prometheus`** — finds what to scrape by reading the Docker socket every 15s, and scrapes whatever it finds every 5s. No address is written down: a service opts in with labels in its own compose block (see [Joining the scrape](#joining-the-scrape)). The scrape interval and the retention window (7 days, capped at 512 MB) live in `prometheus.yml`; the container's command line only points it at that file and at the volume its TSDB writes to.
 - **`grafana`** — auto-provisioned with a Prometheus datasource and a ready-made "Services Overview" dashboard. Eighteen panels in four rows: *Services* compares them side by side (targets up, throughput, CPU, resident memory, 4xx/5xx); *Routes* and *Requests* each hold whichever services use that label convention — routes for the app, response codes for the Go service; and *Cardinality* shows how much each target writes, how much the guard discards, and how fast each one is adding series. Two dropdowns sit at the top: `Service` filters every panel on the dashboard, and `Route` narrows the *Routes* row to particular endpoints.
 
@@ -21,14 +23,16 @@ The `/load/*` endpoints each stress a different resource on purpose, so the dash
 | `GET /load/cpu-bound` | Blocking CPU-heavy loop | CPU by service |
 | `GET /load/stress/{seconds}` | Blocking busy-wait for N seconds | CPU by service |
 | `GET /load/memory-spike` | Allocates a large in-memory list | Resident memory |
+| `GET /chain` | Calls `service-go`, which calls `service-node` | Throughput by route — and the only request that crosses services |
 
-The Go service (`:8003`) and the Node service (`:8004`) serve the same three paths, deliberately — a route that exists on all three is what makes their series merge visible:
+The Go service (`:8003`) and the Node service (`:8004`) serve the same paths, deliberately — a route that exists on all three is what makes their series merge visible:
 
 | Endpoint | What it does |
 | --- | --- |
 | `GET /health` | Returns the same `{"status": "ok"}` body the app does |
 | `GET /load/io-bound` | Sleeps 2s |
 | `GET /load/cpu-bound` | Spins for roughly as long as the FastAPI one takes |
+| `GET /chain` | The Go one calls the Node one and wraps its answer; the Node one answers and ends the chain |
 
 **Three services, three label conventions, on purpose.** Each one emits what its own library gives it, and nothing is renamed to make a panel light up. The dashboard's *Services* row groups by `job` and draws all three; its *Routes* and *Requests* rows each hold whichever services carry that label, so the Node service appears in neither. That is the measured cost of a new convention rather than a defect — it is recorded in `specs/CU-86bbpx4by/plan.md`.
 
@@ -100,6 +104,38 @@ Two things read differently than they look, and both are easy to mistake for a b
 
 Take it down again with `docker compose --profile chaos down`, or leave it running: its series stop growing the moment the guard is in place, and its exposition body levels off at about 346 KB instead of climbing until it trips `body_size_limit` and takes the whole scrape down with it.
 
+### Following one request across three services
+
+A metric says `/chain` took 40 ms. A trace says where the 40 ms went. Nothing in this stack called anything until `/chain` existed, so the crossing was built first and instrumented second — the app calls the Go service, which calls the Node service, which answers:
+
+```bash
+curl -s localhost:8002/chain
+```
+
+```json
+{"service":"fastapi-app","next":{"service":"service-go","next":{"service":"service-node"}}}
+```
+
+That single request is one trace. In Grafana, open **Explore**, pick the `tempo` datasource, run a **Search**, and choose a `GET /chain` whose root service is `fastapi-app`. The waterfall holds seven spans from three services:
+
+| Service | Spans |
+| --- | --- |
+| `fastapi-app` | the server span `GET /chain`, the client span for the next hop, and two internal ASGI spans the Python instrumentation always adds |
+| `service-go` | the server span `GET /chain` and the client span for its own next hop |
+| `service-node` | the server span `GET /chain`, which ends the chain |
+
+Every server span is named by its route in template form and carries `http.route`, so a raw path never becomes part of a span name.
+
+To watch the propagation instead of taking it on trust, call the middle of the chain directly:
+
+```bash
+curl -s localhost:8003/chain
+```
+
+Search again and that request is a trace of **two** services, not three. The difference is one HTTP header: the app's client writes `traceparent`, the Go service reads it and writes its own on the way out, and a request that starts at the Go service has nothing to continue. Break either side and the trace splits into one-service pieces with nothing reporting an error.
+
+Two things are deliberately absent from the store. `/metrics` is never traced — at one scrape every five seconds it would be most of what Tempo holds — and there is no sampling: every span is exported, because this stack's traffic is synthetic and fixed. Traces live on the `tempo_data` volume and survive a `down`; only `down --volumes` destroys them.
+
 ## Stack
 
 - Python 3.11
@@ -113,6 +149,8 @@ Take it down again with `docker compose --profile chaos down`, or leave it runni
 - markdownlint (Markdown style, via the VS Code extension bundling markdownlint 0.39+; rules in `.markdownlint.jsonc`)
 - Docker Compose, with every service behind a `core` or `load` profile
 - Prometheus `prom/prometheus:v3.13.2` and Grafana `grafana/grafana:12.4.7`, both pinned — no image tracks `latest`
+- OpenTelemetry SDKs in all three services — `opentelemetry-distro` (Python), `@opentelemetry/sdk-node`, `go.opentelemetry.io/otel` — all exporting OTLP over http/protobuf
+- OpenTelemetry Collector `otel/opentelemetry-collector-contrib:0.160.0` and Tempo `grafana/tempo:3.0.3`, the trace path — scraped like everything else, and reachable only from inside the compose network
 
 Exact Python pins live in `requirements/base.txt` / `requirements/dev.txt`. [CLAUDE.md](CLAUDE.md) covers the conventions for working on the code.
 
@@ -137,16 +175,18 @@ while trying to connect to the docker API at unix:///var/run/docker.sock"
 | Prometheus | <http://localhost:9090> |
 | Grafana | <http://localhost:3000> (login: `admin` / `admin`) |
 
+The Collector and Tempo publish nothing. Traces are read through Grafana's `tempo` datasource, and both containers are reachable only from inside the compose network — which is also why neither carries a healthcheck: their images ship no shell to run a probe with.
+
 **Every service sits behind a profile, so `--profile` is required on every `docker compose` command** — teardown included. Without it most subcommands do nothing at all: `up` starts nothing, and `down`, `stop`, `start` and `logs` print nothing and exit `0` while leaving the containers untouched. Only `build` warns (`No services to build`), and only `ps` ignores profiles and lists the containers anyway — which is what makes a bare `down` look like it hung rather than like it did nothing. Use `--profile '*'` for anything acting on the whole stack, or export `COMPOSE_PROFILES=core,load` once per shell.
 
 Pick the group you need:
 
 | Command | Brings up | Use it for |
 | --- | --- | --- |
-| `docker compose --profile core up -d` | `app`, `service-go`, `service-node`, `prometheus`, `grafana` | dashboards, without synthetic traffic |
-| `docker compose --profile load up -d` | `app`, `service-go`, `service-node`, `loadgen` | exercising the APIs, without the observability side |
-| `docker compose --profile core --profile load up -d` | all six | the full demo |
-| `docker compose --profile core --profile load --profile chaos up -d` | all seven | the full demo **plus** the badly behaved service |
+| `docker compose --profile core up -d` | `app`, `service-go`, `service-node`, `prometheus`, `grafana`, `otel-collector`, `tempo` | dashboards and traces, without synthetic traffic |
+| `docker compose --profile load up -d` | `app`, `service-go`, `service-node`, `loadgen` | exercising the APIs, without the observability side — the three services log a failed span export every few seconds, since the Collector is in `core` |
+| `docker compose --profile core --profile load up -d` | all eight | the full demo |
+| `docker compose --profile core --profile load --profile chaos up -d` | all nine | the full demo **plus** the badly behaved service |
 
 `noisy` is in `chaos` alone, so it never joins by accident: its series are demonstration garbage and the TSDB keeps them for the whole retention window. The three well-behaved services belong to both `core` and `load` on purpose, so `--profile load` boots something worth hitting instead of a generator retrying against nothing.
 
@@ -172,16 +212,17 @@ Everything below needs `--profile` for the reason given above — a bare `docker
 | Stop containers, keep them | `docker compose --profile '*' stop` (resume with `--profile '*' start`) |
 | Stop + remove containers and the default network | `docker compose --profile '*' down` |
 | Run detached, stop later from any terminal | `docker compose --profile core --profile load up -d --build` → `docker compose --profile '*' down` |
-| Full teardown, **including both databases** | `docker compose --profile '*' down --volumes --rmi all` |
+| Full teardown, **including every database** | `docker compose --profile '*' down --volumes --rmi all` |
 
-**What a `--volumes` teardown destroys.** The stack declares two named volumes, and `--volumes` erases both:
+**What a `--volumes` teardown destroys.** The stack declares three named volumes, and `--volumes` erases all of them:
 
 | Volume | Holds |
 | --- | --- |
 | `prometheus_data` | the scraped metrics history (`/prometheus`), kept for the retention window set in `prometheus.yml` |
 | `grafana_data` | dashboards, users and preferences you created by hand (`/var/lib/grafana`) |
+| `tempo_data` | the traces (`/var/tempo`), blocks and write-ahead log both |
 
-Everything else survives: a `down` without `--volumes` keeps both databases, so the metrics history and any dashboard you built in the UI are still there after the next `up`. The provisioned datasource and the "Services Overview" dashboard are bind-mounted from the repo, and bind-mounted repo files are **never** deleted.
+Everything else survives: a `down` without `--volumes` keeps all three, so the metrics history, the traces and any dashboard you built in the UI are still there after the next `up`. The provisioned datasource and the "Services Overview" dashboard are bind-mounted from the repo, and bind-mounted repo files are **never** deleted.
 
 One exception, and it is a one-off: the provisioned datasource gained an explicit `uid` after this stack had already run, so `datasource.yaml` deletes and recreates it on every start. A dashboard you built by hand *before* that change points at the uid Grafana had generated for itself and will come back with its datasource missing — pick `prometheus` again in each panel. Dashboards built from now on are unaffected.
 
@@ -192,9 +233,9 @@ docker compose --profile '*' down
 docker compose --profile core --profile load up -d
 ```
 
-Your dashboard is still in Grafana, and a `http_requests_total` query in Prometheus still returns points from before the teardown. Adding `--volumes` to that `down` is what erases them.
+Your dashboard is still in Grafana, a `http_requests_total` query in Prometheus still returns points from before the teardown, and a trace recorded before it is still in Explore. Adding `--volumes` to that `down` is what erases them.
 
-`docker compose --profile '*' down` on its own keeps images and the build cache, so the next `up --build` is fast — that's the option to reach for by default. Add `--rmi all` only to reclaim disk: it also deletes the pulled `prom/prometheus:v3.13.2` and `grafana/grafana:12.4.7` images, which are shared with any other project on the machine using them, so Docker skips any still referenced elsewhere and the command can partially succeed with a warning.
+`docker compose --profile '*' down` on its own keeps images and the build cache, so the next `up --build` is fast — that's the option to reach for by default. Add `--rmi all` only to reclaim disk: it also deletes the pulled `prom/prometheus:v3.13.2`, `grafana/grafana:12.4.7`, `otel/opentelemetry-collector-contrib:0.160.0` and `grafana/tempo:3.0.3` images, which are shared with any other project on the machine using them, so Docker skips any still referenced elsewhere and the command can partially succeed with a warning.
 
 Run all of these from the repo root — the compose project name is derived from the directory, so running them elsewhere targets a different (or empty) project.
 
@@ -317,24 +358,27 @@ Notes:
 ```text
 app/
   main.py                 # FastAPI app, instrumentation, router registration
-  api/endpoints/          # one module per route group (example, health, load)
+  api/endpoints/          # one module per route group (chain, example, health, load)
   core/config.py          # pydantic-settings Settings singleton
 service-go/
-  main.go                 # the Go service: /health, /load/*, /metrics on :8003
+  main.go                 # the Go service: /health, /load/*, /chain, /metrics on :8003
   main_test.go            # its tests — run by `go test`, not by pytest
   go.mod / go.sum         # module definition and committed checksums
 service-node/
-  main.js                 # the Node service: /health, /load/*, /metrics on :8004
+  main.js                 # the Node service: /health, /load/*, /chain, /metrics on :8004
   main.test.js            # its tests — run by `npm test`, not by pytest
+  tracing.mjs             # the OTel bootstrap, loaded by `node --import`
   package.json / package-lock.json   # manifest and committed lockfile
 noisy/
   raw_path_emitter.py     # the bad citizen: raw-path series on :8005, `chaos` profile only
 worker/
   load_driver.py          # standalone async load generator (calls every service's endpoints)
-grafana/                  # provisioned datasource + "Services Overview" dashboard
+grafana/                  # provisioned datasources + "Services Overview" dashboard
 prometheus.yml            # scrape settings, the label-discovery job, the cardinality guard
-docker-compose.yml        # the seven services, their profiles and named volumes
-tests/                    # pytest suite: one file per module, plus four that check config
+otel-collector-config.yaml  # the trace path: OTLP in, Tempo out
+tempo.yaml                # the trace store: one receiver, local blocks on a named volume
+docker-compose.yml        # the nine services, their profiles and named volumes
+tests/                    # pytest suite: one file per module, plus five that check config
 requirements/             # pip-compile sources (base.in/dev.in) and lockfiles (base.txt/dev.txt)
 ```
 

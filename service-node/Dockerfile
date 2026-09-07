@@ -11,5 +11,8 @@ WORKDIR /app
 # equivalent of go.sum.
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
-COPY main.js ./
-CMD ["node", "main.js"]
+COPY main.js tracing.mjs ./
+# --import rather than --require: this service is an ES module, and the
+# bootstrap has to register a resolver hook for the instrumentation to
+# reach it. See tracing.mjs.
+CMD ["node", "--import", "./tracing.mjs", "main.js"]

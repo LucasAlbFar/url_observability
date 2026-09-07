@@ -6,6 +6,34 @@ services:
       - "8002:8002"
     environment:
       - DEBUG=True
+      # The tracing half of the identity, declared beside the scrape
+      # labels rather than compiled in: OTEL_SERVICE_NAME carries the
+      # same value as prometheus.io/job below, so `job` and
+      # `service.name` name one service. A test asserts they agree.
+      - OTEL_SERVICE_NAME=fastapi-app
+      # http/protobuf on 4318, not gRPC on 4317: one connection does not
+      # justify grpcio in the image. The Collector accepts both.
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_TRACES_EXPORTER=otlp
+      # Off, both of them. Prometheus still pulls /metrics and nothing
+      # here logs; leaving either at its default would send a second
+      # copy of the metrics down a path no dashboard reads.
+      - OTEL_METRICS_EXPORTER=none
+      - OTEL_LOGS_EXPORTER=none
+      # The semantic convention, pinned rather than defaulted. `http`
+      # selects the stable names — http.request.method,
+      # http.response.status_code, http.route — over the pre-1.0 ones
+      # this SDK still emits by default. The failure it prevents is
+      # silent: a query written against one set matches nothing against
+      # the other, with no error anywhere.
+      - OTEL_SEMCONV_STABILITY_OPT_IN=http
+      # The scrape is not application traffic, and at one scrape every
+      # five seconds it would be most of what the trace store holds.
+      # This is the same rule the Go and Node services follow by leaving
+      # /metrics uninstrumented; the app's instrumentation is automatic,
+      # so the exclusion is declared instead.
+      - OTEL_PYTHON_EXCLUDED_URLS=metrics
     labels:
       # The scrape contract. `job` and `port` are not derived from the compose
       # service name on purpose: `job` keys the series already in
@@ -37,6 +65,20 @@ services:
     profiles: ["core", "load"]
     ports:
       - "8003:8003"
+    # The only environment this service reads, and it reads none of it
+    # by name: the OTel SDK does. Same shape as the other two, with
+    # OTEL_SERVICE_NAME carrying the value of prometheus.io/job below.
+    environment:
+      - OTEL_SERVICE_NAME=service-go
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=none
+      - OTEL_LOGS_EXPORTER=none
+      # Declared for the same reason as in the other two blocks, and it
+      # decides less here: this service pins the convention in an import
+      # path, `semconv/v1.43.0`, which is the version otelhttp emits.
+      - OTEL_SEMCONV_STABILITY_OPT_IN=http
     labels:
       prometheus.io/scrape: "true"
       prometheus.io/job: "service-go"
@@ -61,6 +103,21 @@ services:
     profiles: ["core", "load"]
     ports:
       - "8004:8004"
+    # The only environment this service reads, and it reads none of it
+    # itself: the SDK does, in tracing.mjs. Same shape as the app's,
+    # with OTEL_SERVICE_NAME carrying the value of prometheus.io/job
+    # below.
+    environment:
+      - OTEL_SERVICE_NAME=service-node
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=none
+      - OTEL_LOGS_EXPORTER=none
+      # The stable HTTP names, for the reason the app pins them: a
+      # dashboard written against one set of names matches nothing
+      # against the other, and says nothing about why.
+      - OTEL_SEMCONV_STABILITY_OPT_IN=http
     labels:
       prometheus.io/scrape: "true"
       prometheus.io/job: "service-node"
@@ -169,6 +226,44 @@ services:
       retries: 3
       start_period: 90s
 
+  otel-collector:
+    # The contrib distribution rather than the core one: the connector
+    # the metrics rework needs ships only here, and starting on core
+    # would mean moving a repository name through this file and both
+    # documents later for nothing gained now.
+    image: otel/opentelemetry-collector-contrib:0.160.0
+    profiles: ["core"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    labels:
+      prometheus.io/scrape: "true"
+      prometheus.io/job: "otel-collector"
+      # The port its own telemetry is published on, declared in the
+      # config file rather than defaulted — see the comment there.
+      prometheus.io/port: "8888"
+    restart: unless-stopped
+    # No `ports:` and no healthcheck, for the reason the noisy service
+    # has neither and one more: the image ships no shell, so a probe
+    # would mean choosing an image for the probe's sake, which the
+    # pinning rule forbids. Publishing nothing is what excuses it from
+    # the healthcheck rule derived from `ports:`.
+
+  tempo:
+    image: grafana/tempo:3.0.3
+    profiles: ["core"]
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      # Both paths in tempo.yaml sit under this mount, so a trace
+      # survives a `down` the way the dashboard state does.
+      - tempo_data:/var/tempo
+      - ./tempo.yaml:/etc/tempo.yaml:ro
+    labels:
+      prometheus.io/scrape: "true"
+      prometheus.io/job: "tempo"
+      prometheus.io/port: "3200"
+    restart: unless-stopped
+    # No published port and no healthcheck, for the same two reasons.
+
   loadgen:
     build:
       context: ./worker
@@ -186,3 +281,4 @@ services:
 volumes:
   prometheus_data:
   grafana_data:
+  tempo_data:
