@@ -1,0 +1,34 @@
+# The log store. Single binary, local index and chunks on a named
+# volume, and the OTLP endpoint on the same port that answers queries
+# — one port per container, by the discovery contract.
+
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+
+common:
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  # Single binary: one replica, and a ring that needs no external
+  # store to hold one member.
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    # v13 on tsdb is what carries structured metadata, which is where
+    # the trace id goes — as metadata rather than as a label, because
+    # a label per trace id is a stream per request.
+    - from: "2026-09-01"
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h

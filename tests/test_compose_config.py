@@ -16,11 +16,12 @@ FROM_IMAGE = re.compile(r"^FROM\s+(\S+)", re.MULTILINE)
 # The base image name that marks a Dockerfile as Go-built.
 GO_BASE = "golang"
 GO_MODULE_FILES = ("go.mod", "go.sum")
-NAMED_VOLUMES = {"prometheus_data", "grafana_data", "tempo_data"}
+NAMED_VOLUMES = {"prometheus_data", "grafana_data", "tempo_data", "loki_data"}
 EXPECTED_MOUNTS = {
     "prometheus": "prometheus_data:/prometheus",
     "grafana": "grafana_data:/var/lib/grafana",
     "tempo": "tempo_data:/var/tempo",
+    "loki": "loki_data:/loki",
 }
 STORAGE_FLAGS = ("--storage.tsdb.path",)
 CONTINUATION = re.compile(r"\\\s*\n\s*")
@@ -49,10 +50,10 @@ SCRAPE_LABEL = "prometheus.io/scrape"
 JOB_LABEL = "prometheus.io/job"
 PORT_LABEL = "prometheus.io/port"
 DOCKER_SOCKET = "/var/run/docker.sock"
-# The trace half of a service's identity, and the service nothing may
+# The trace half of a service's identity, and the stores nothing may
 # wait for.
 OTEL_NAME = "OTEL_SERVICE_NAME"
-COLLECTOR_SERVICE = "otel-collector"
+TELEMETRY_SERVICES = ("otel-collector", "loki")
 
 
 @pytest.fixture(scope="session")
@@ -442,12 +443,14 @@ def test_a_traced_service_shares_one_name_with_the_scrape(
     assert checked, "no service declares its trace identity"
 
 
-def test_no_service_waits_for_the_collector(compose):
+def test_no_service_waits_for_the_telemetry_path(compose):
     """Confirm telemetry cannot hold an application down.
 
     A `depends_on` here trades application availability for telemetry
-    availability, which is the inverse of what this stack is for: the
-    Collector going down has to leave every service answering.
+    availability, which is the inverse of what this stack is for:
+    either of these going down has to leave every service answering.
     """
     for name, service in compose["services"].items():
-        assert COLLECTOR_SERVICE not in service.get("depends_on", {}), name
+        depends_on = service.get("depends_on", {})
+        for telemetry in TELEMETRY_SERVICES:
+            assert telemetry not in depends_on, f"{name}: {telemetry}"

@@ -11,6 +11,7 @@ Three small services — one FastAPI, one Go, one Node — instrumented end-to-e
 - **`loadgen`** — a standalone async script (`worker/load_driver.py`) that continuously calls every service's `/load/*` endpoints over HTTP, purely to generate traffic for the metrics/dashboards. It also calls `/chain` on the app, which is the one request that crosses all three services.
 - **`otel-collector`** — receives OTLP from the three services, forwards it to Tempo, and derives every request metric in the stack from those same spans, publishing them on 8888 for Prometheus to pull. It declares no published port: the senders and Prometheus reach it over the compose network. Nothing declares `depends_on` for it, so it can go down without taking an application with it.
 - **`tempo`** — stores the traces, on a named volume so they survive a `down`. Reached through Grafana rather than directly; it publishes no port either.
+- **`loki`** — the log store, on the same terms as Tempo: a named volume, no published port, and one port carrying both its queries and its `/metrics`. Nothing writes to it yet.
 - **`prometheus`** — finds what to scrape by reading the Docker socket every 15s, and scrapes whatever it finds every 5s. No address is written down: a service opts in with labels in its own compose block (see [Joining the scrape](#joining-the-scrape)). The scrape interval and the retention window (7 days, capped at 512 MB) live in `prometheus.yml`; the container's command line only points it at that file and at the volume its TSDB writes to.
 - **`grafana`** — auto-provisioned with a Prometheus datasource and a ready-made "Services Overview" dashboard. Fifteen panels in three rows: *Services* compares them side by side (targets up, throughput, CPU, resident memory, 4xx/5xx); *Requests* breaks the same traffic down by route, p95 and response code; and *Cardinality* shows how much each target writes, how much the guard discards, and how fast each one is adding series. Two dropdowns sit at the top: `Service` filters every panel, and `Route` narrows the *Requests* row to particular endpoints. It was eighteen panels in four rows while three services labelled a request three different ways.
 
@@ -150,7 +151,7 @@ Two things are deliberately absent from the store. `/metrics` is never traced �
 - Docker Compose, with every service behind a `core` or `load` profile
 - Prometheus `prom/prometheus:v3.13.2` and Grafana `grafana/grafana:12.4.7`, both pinned — no image tracks `latest`
 - OpenTelemetry SDKs in all three services — `opentelemetry-distro` (Python), `@opentelemetry/sdk-node`, `go.opentelemetry.io/otel` — all exporting OTLP over http/protobuf
-- OpenTelemetry Collector `otel/opentelemetry-collector-contrib:0.160.0` and Tempo `grafana/tempo:3.0.3`, the telemetry path — scraped like everything else, and reachable only from inside the compose network
+- OpenTelemetry Collector `otel/opentelemetry-collector-contrib:0.160.0`, Tempo `grafana/tempo:3.0.3` and Loki `grafana/loki:3.7.8`, the telemetry path — scraped like everything else, and reachable only from inside the compose network
 
 Exact Python pins live in `requirements/base.txt` / `requirements/dev.txt`. [CLAUDE.md](CLAUDE.md) covers the conventions for working on the code.
 
@@ -175,7 +176,7 @@ while trying to connect to the docker API at unix:///var/run/docker.sock"
 | Prometheus | <http://localhost:9090> |
 | Grafana | <http://localhost:3000> (login: `admin` / `admin`) |
 
-The Collector and Tempo publish nothing. Traces are read through Grafana's `tempo` datasource, and both containers are reachable only from inside the compose network — which is also why neither carries a healthcheck: their images ship no shell to run a probe with.
+The Collector, Tempo and Loki publish nothing. Traces are read through Grafana's `tempo` datasource, and all three containers are reachable only from inside the compose network — which is also why none carries a healthcheck: their images ship no shell to run a probe with.
 
 **Every service sits behind a profile, so `--profile` is required on every `docker compose` command** — teardown included. Without it most subcommands do nothing at all: `up` starts nothing, and `down`, `stop`, `start` and `logs` print nothing and exit `0` while leaving the containers untouched. Only `build` warns (`No services to build`), and only `ps` ignores profiles and lists the containers anyway — which is what makes a bare `down` look like it hung rather than like it did nothing. Use `--profile '*'` for anything acting on the whole stack, or export `COMPOSE_PROFILES=core,load` once per shell.
 
@@ -183,10 +184,10 @@ Pick the group you need:
 
 | Command | Brings up | Use it for |
 | --- | --- | --- |
-| `docker compose --profile core up -d` | `app`, `service-go`, `service-node`, `prometheus`, `grafana`, `otel-collector`, `tempo` | dashboards and traces, without synthetic traffic |
+| `docker compose --profile core up -d` | `app`, `service-go`, `service-node`, `prometheus`, `grafana`, `otel-collector`, `tempo`, `loki` | dashboards and traces, without synthetic traffic |
 | `docker compose --profile load up -d` | `app`, `service-go`, `service-node`, `loadgen` | exercising the APIs, without the observability side — the three services log a failed span export every few seconds, since the Collector is in `core` |
-| `docker compose --profile core --profile load up -d` | all eight | the full demo |
-| `docker compose --profile core --profile load --profile chaos up -d` | all nine | the full demo **plus** the badly behaved service |
+| `docker compose --profile core --profile load up -d` | all nine | the full demo |
+| `docker compose --profile core --profile load --profile chaos up -d` | all ten | the full demo **plus** the badly behaved service |
 
 `noisy` is in `chaos` alone, so it never joins by accident: its series are demonstration garbage and the TSDB keeps them for the whole retention window. The three well-behaved services belong to both `core` and `load` on purpose, so `--profile load` boots something worth hitting instead of a generator retrying against nothing.
 
@@ -221,8 +222,9 @@ Everything below needs `--profile` for the reason given above — a bare `docker
 | `prometheus_data` | the scraped metrics history (`/prometheus`), kept for the retention window set in `prometheus.yml` |
 | `grafana_data` | dashboards, users and preferences you created by hand (`/var/lib/grafana`) |
 | `tempo_data` | the traces (`/var/tempo`), blocks and write-ahead log both |
+| `loki_data` | the logs (`/loki`), index and chunks both |
 
-Everything else survives: a `down` without `--volumes` keeps all three, so the metrics history, the traces and any dashboard you built in the UI are still there after the next `up`. The provisioned datasource and the "Services Overview" dashboard are bind-mounted from the repo, and bind-mounted repo files are **never** deleted.
+Everything else survives: a `down` without `--volumes` keeps all four, so the metrics history, the traces and any dashboard you built in the UI are still there after the next `up`. The provisioned datasource and the "Services Overview" dashboard are bind-mounted from the repo, and bind-mounted repo files are **never** deleted.
 
 One exception, and it is a one-off: the provisioned datasource gained an explicit `uid` after this stack had already run, so `datasource.yaml` deletes and recreates it on every start. A dashboard you built by hand *before* that change points at the uid Grafana had generated for itself and will come back with its datasource missing — pick `prometheus` again in each panel. Dashboards built from now on are unaffected.
 
@@ -235,7 +237,7 @@ docker compose --profile core --profile load up -d
 
 Your dashboard is still in Grafana, a `http_requests_total` query in Prometheus still returns points from before the teardown, and a trace recorded before it is still in Explore. Adding `--volumes` to that `down` is what erases them.
 
-`docker compose --profile '*' down` on its own keeps images and the build cache, so the next `up --build` is fast — that's the option to reach for by default. Add `--rmi all` only to reclaim disk: it also deletes the pulled `prom/prometheus:v3.13.2`, `grafana/grafana:12.4.7`, `otel/opentelemetry-collector-contrib:0.160.0` and `grafana/tempo:3.0.3` images, which are shared with any other project on the machine using them, so Docker skips any still referenced elsewhere and the command can partially succeed with a warning.
+`docker compose --profile '*' down` on its own keeps images and the build cache, so the next `up --build` is fast — that's the option to reach for by default. Add `--rmi all` only to reclaim disk: it also deletes the pulled `prom/prometheus:v3.13.2`, `grafana/grafana:12.4.7`, `otel/opentelemetry-collector-contrib:0.160.0`, `grafana/tempo:3.0.3` and `grafana/loki:3.7.8` images, which are shared with any other project on the machine using them, so Docker skips any still referenced elsewhere and the command can partially succeed with a warning.
 
 Run all of these from the repo root — the compose project name is derived from the directory, so running them elsewhere targets a different (or empty) project.
 
@@ -377,8 +379,9 @@ grafana/                  # provisioned datasources + "Services Overview" dashbo
 prometheus.yml            # scrape settings, the label-discovery job, the cardinality guard
 otel-collector-config.yaml  # OTLP in; traces to Tempo, request metrics out on 8888
 tempo.yaml                # the trace store: one receiver, local blocks on a named volume
-docker-compose.yml        # the nine services, their profiles and named volumes
-tests/                    # pytest suite: one file per module, plus five that check config
+loki.yaml                 # the log store: local index and chunks on a named volume
+docker-compose.yml        # the ten services, their profiles and named volumes
+tests/                    # pytest suite: one file per module, plus six that check config
 requirements/             # pip-compile sources (base.in/dev.in) and lockfiles (base.txt/dev.txt)
 ```
 

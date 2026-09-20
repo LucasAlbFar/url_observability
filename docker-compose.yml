@@ -265,6 +265,24 @@ services:
     restart: unless-stopped
     # No published port and no healthcheck, for the same two reasons.
 
+  loki:
+    image: grafana/loki:3.7.8
+    profiles: ["core"]
+    command: ["-config.file=/etc/loki.yaml"]
+    volumes:
+      # path_prefix in loki.yaml sits under this mount, so a log line
+      # survives a `down` the way a trace does.
+      - loki_data:/loki
+      - ./loki.yaml:/etc/loki.yaml:ro
+    labels:
+      prometheus.io/scrape: "true"
+      prometheus.io/job: "loki"
+      prometheus.io/port: "3100"
+    restart: unless-stopped
+    # No published port and no healthcheck, same as the two above. It
+    # serves queries and /metrics on one port, so it needs none of the
+    # loopback arrangement the Collector has.
+
   loadgen:
     build:
       context: ./worker
@@ -283,3 +301,4 @@ volumes:
   prometheus_data:
   grafana_data:
   tempo_data:
+  loki_data:

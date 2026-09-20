@@ -159,7 +159,7 @@ rule is written.
 One commit per task, with the checkbox ticked in the same commit. Any sentence in `CLAUDE.md` or
 `README.md` that a task makes false is corrected in that task's commit.
 
-- [ ] Loki in `docker-compose.yml` with its configuration file, the four labels, no published port
+- [x] Loki in `docker-compose.yml` with its configuration file, the four labels, no published port
       and a named volume, plus `tests/test_loki_config.py` and the compose assertions. Nothing
       exports yet. — `feat(compose): add the log store`
 - [ ] **Measurement, before any limit:** samples per scrape for Loki against `sample_limit`, body
