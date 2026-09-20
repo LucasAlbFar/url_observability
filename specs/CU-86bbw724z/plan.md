@@ -127,6 +127,15 @@ status and the message go as structured metadata or inside the line, where they 
 index. Querying by trace id is a filter over content rather than a stream selection — slower and
 correct, against fast and unsustainable.
 
+Neither half of that rule is what the two defaults give, and they fail in opposite directions. Loki
+indexes four resource attributes, one of which is `service.instance.id` — a UUID the Python SDK
+generates per process, so the app alone would open a stream on every restart. And severity is not
+reachable as a label at all from Loki's side. So the guard is two pieces: `otlp_config` on Loki
+narrowing the indexed set to `service.name` plus the severity attribute, and two processors on the
+Collector's logs pipeline putting severity where Loki can index it — `transform` onto a **record**
+attribute and `groupbyattrs` to split the batch by it. Writing the resource attribute directly is
+the trap: one resource per batch means the last record's severity labels all of them.
+
 Loki is still a Prometheus target like any other, by the same four labels, and its own `/metrics`
 is subject to the existing drop rules and ceiling. That is the second half of the measurement below.
 
@@ -206,9 +215,54 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       first task. The exporter is spelled `otlp_http`, not the `otlphttp` alias, for the reason
       `otlp_grpc/tempo` is spelled out — and its endpoint stops at `/otlp`, since the exporter
       appends `/v1/logs` itself. — `feat(collector): carry logs to the store`
-- [ ] **Measurement, before any label rule:** what Loki does with resource attributes by default,
+- [x] **Measurement, before any label rule:** what Loki does with resource attributes by default,
       and what becomes a stream. This decides whether the label guard is configuration or already
       correct. — verification only
+
+      Measured 2026-09-20 against the running stack, by pushing OTLP records through the Collector
+      and reading `/loki/api/v1/labels`, `/label/<name>/values` and `/series` — never the
+      `query_range` response, whose `stream` object **merges labels and structured metadata** and
+      makes an indexed set of one look like an indexed set of thirteen. That merge is the trap of
+      this measurement.
+
+      **Loki indexes four resource attributes by default**, not one: `service_name`,
+      `service_instance_id`, `service_namespace` and `deployment_environment_name`. Everything else
+      is structured metadata — a resource attribute off that list (`host.name`, a made-up
+      `custom.unlisted.attribute`), every log record attribute, and `trace_id`, `span_id`,
+      `severity_text`, `severity_number` and the `detected_level` Loki derives itself. Forty records
+      carrying **forty distinct trace ids and a raw-path attribute** (`http.target=/users/0…39`)
+      produced **one stream**.
+
+      **So the default is right about the trace id and wrong about the app.** The Python SDK sets
+      `service.instance.id` to a **UUID generated per process** — read off the app's resource in
+      Tempo, `4ef2f024-…`; neither the Go nor the Node service sets it. Loki indexes that attribute,
+      so the app alone would open a new stream on **every container restart**, from two defaults
+      meeting rather than from anything anyone wrote. The guard is needed, and that is what it is
+      for.
+
+      **The guard works, and its shape is decided.** `limits_config.otlp_config.resource_attributes`
+      with `ignore_defaults: true` and `service.name` as the only `index_label`: measured against a
+      throwaway Loki on the compose network, the indexed set came back as `service_name` alone, with
+      `service_instance_id`, `service_namespace` and `deployment_environment_name` demoted to
+      structured metadata — values kept, index not.
+
+      **Severity cannot be a label, and no configuration reaches it.** Loki's OTLP translation puts
+      severity into structured metadata before the attribute lists are consulted, so
+      `log_attributes` never sees it: listing `severity_text`, `detected_level` and `level` there
+      changed nothing, and three severities still produced one stream. Reaching the rule as written
+      means the Collector copying severity into a resource attribute first.
+
+      **Decided 2026-09-20: keep the rule, and pay for it in the Collector.** Measured against a
+      throwaway Collector and Loki on the compose network, and it takes **two** processors, not one.
+      A `transform` writing straight to `resource.attributes` is wrong in a way that looks right: the
+      resource is shared by every record in the batch, so the last one processed wins — five records
+      of three severities arrived as **one** stream labelled `INFO`, and selecting
+      `log_severity="ERROR"` returned **0 lines** with two ERROR records in the store. What works is
+      writing a **record** attribute and regrouping on it: `transform` sets
+      `log.attributes["log.severity"]` from `log.severity_text`, then `groupbyattrs` with that key
+      splits the batch into one resource per severity. The same five records then arrived as **three**
+      streams, and ERROR, WARN and INFO selected 2, 1 and 2 lines. The OTTL path needs its context
+      spelled — `log.severity_text`, not `severity_text`, which fails validation.
 - [ ] The app's structured logging over OTLP, on error and on dependency failure, with
       `OTEL_LOGS_EXPORTER` turned on in its block. Recompiling `requirements/` needs `pip<26` in a
       container. — `feat(app): log what failed, with its trace`
@@ -224,8 +278,11 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
 - [ ] **Measurement:** a provoked error, and its line found in Loki by the trace id of that request,
       in each service that took part. The feature's acceptance test and the rehearsal of the next
       one. — verification only
-- [ ] The Loki label guard, **only if the measurement showed it is needed**: service and severity,
-      nothing else. — `feat(loki): bound what becomes a stream`
+- [ ] The label guard, in both places the measurement showed it needs to be: `otlp_config` on Loki
+      with `ignore_defaults: true`, indexing `service.name` and the severity attribute and nothing
+      else; and `transform` + `groupbyattrs` on the Collector's logs pipeline to put severity there.
+      No longer conditional — `service.instance.id` makes it required. —
+      `feat(loki): bound what becomes a stream`
 - [ ] **The recorded debt:** the `/metrics` trace exclusion asserted in all three services. —
       `test: assert the scrape stays out of the traces`
 - [ ] `CLAUDE.md`: the third pillar, the Loki label rule, what stays on stdout. Conclusions only —
