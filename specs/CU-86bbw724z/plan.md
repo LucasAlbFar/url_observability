@@ -284,12 +284,28 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       `OTEL_LOGS_EXPORTER` moves to `otlp` here because NodeSDK **does** read it and defaults to
       `otlp` when empty — `none` was the only thing holding the logs back. —
       `feat(service-node): log what failed, with its trace`
-- [ ] The ceiling refitted **only if the measurement requires it**, with the headroom re-justified
+- [x] The ceiling refitted **only if the measurement requires it**, with the headroom re-justified
       beside the value and the panel threshold moved in the same commit. No commit if it does not.
       **Moved here from before the datasource**, 2026-09-20: the measurement above read Loki at
       1.9x the ceiling with nothing logging yet, and its count moves with the paths it exercises —
       so the worst case is not knowable until the three services log, and a value written earlier
       would be written twice. — `feat(prometheus): re-fit the ceiling to the log store`
+
+      **It required it: 4000 to 8000**, and the deferral is what found the right number. Measured
+      2026-09-20 with all three services logging, `core` + `load`, every number by instant query.
+      Loki read **1147 at boot, 1444** after eight minutes of the three services logging errors —
+      lower than the 2132 of the first measurement, which was the clue — and **2627** once five
+      queries and a series lookup had been run against it. The count tracks the **code paths Loki
+      has exercised**, not the volume it holds, and the read path is the expensive one: it is what a
+      person opening Explore exercises and what no synthetic load reaches. A measurement taken after
+      the services logged but before anybody looked would have read 1444 and justified leaving 4000
+      alone.
+
+      8000 is 3x the 2627, in the spirit of the 2.6x that 4000 was written for. Loki also took the
+      body record at **324 KB** against `body_size_limit: 4MB`, and now reaches the same **10**
+      labels per sample Tempo does. No other limit moved: longest label name 18, longest value 82,
+      longest real value 55, and the target count is 6. The panel threshold moved in the same
+      commit, and `tests/test_grafana_provisioning.py` is what would have failed if it had not.
 - [ ] **Measurement:** a provoked error, and its line found in Loki by the trace id of that request,
       in each service that took part. The feature's acceptance test and the rehearsal of the next
       one. — verification only

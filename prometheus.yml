@@ -15,24 +15,32 @@ global:
   # every number below is the measured worst case with room, not a snug fit.
   # Measured 2026-08-30 across the three well-behaved targets, again
   # 2026-09-05 once the trace path joined the scrape, and again 2026-09-07
-  # once the request metrics moved to the Collector. Every measurement
-  # below is from that last reading; no value moved with it.
+  # once the request metrics moved to the Collector, and again 2026-09-20 once
+  # the log store joined. Every measurement below is from that last reading;
+  # only the first value moved with it.
 
   # Samples per scrape, counted after metric relabeling. Largest measured
-  # target: 1510 (Tempo), and 4000 is 2.6x that — the thinnest margin here, and
-  # the reason to state it rather than inherit the ~7x this comment claimed
-  # against an older reading. The headroom is still deliberate: a target's count
-  # drifts upward on its own, Tempo's with tenants, routes and queues.
+  # target: 2627 (Loki), which took the ceiling over from Tempo's 1510 and is
+  # why this value moved from 4000 to 8000 — 3x the reading, in the spirit of
+  # the 2.6x that number was written for.
   #
-  # The Collector is second at 343, carrying the request metrics of all three
-  # services plus its own telemetry; the applications themselves now read 16,
-  # 48 and 96, having stopped counting requests. Raising this value to widen
-  # Tempo's margin would loosen the backstop for those three by the same
-  # factor, so it stays. Layer one is what bounds them; this is the backstop
+  # What the reading depends on is worth stating, because measuring the wrong
+  # thing here reads as safe. Loki's count tracks the code paths it has
+  # exercised, not the volume it holds: 1147 at boot, 1444 after the three
+  # services had been logging for eight minutes, and 2627 once five queries and
+  # a series lookup had been run against it — the read path, which is what a
+  # person opening Explore exercises and what no synthetic load reaches. A
+  # measurement taken before anybody looked would have justified 4000.
+  #
+  # Tempo is second at 1510, the Collector third at 318; the applications read
+  # 16, 48 and 96, having stopped counting requests. Doubling this does loosen
+  # the backstop for those three by the same factor — accepted, as it was when
+  # 4000 was written: what bounds them is layer one, and this is the backstop
   # for what no rule anticipated.
-  sample_limit: 4000
+  sample_limit: 8000
   # Labels per sample, __name__ included, plus the `job` and `instance` this
-  # file attaches. Largest measured: 10 (Tempo), 8 on the derived metrics —
+  # file attaches. Largest measured: 10, now reached by Loki as well as Tempo;
+  # 8 on the derived metrics —
   # which reached 14 before the labeldrop in metric_relabel_configs below — the
   # closest anything has come to a limit here. 20 leaves room for a service
   # with a richer convention.
@@ -48,14 +56,14 @@ global:
   # point: this catches the label that is a payload rather than a name.
   label_value_length_limit: 256
   # Targets for this job. Discovery is already filtered to this compose
-  # project, so today's number is 5 — the three services, the Collector and
-  # Tempo, with `noisy` making six when the chaos profile is up. 20 is the
+  # project, so today's number is 6 — the three services, the Collector, Tempo
+  # and Loki, with `noisy` making seven when the chaos profile is up. 20 is the
   # ceiling on that filter failing open, and unlike the others it marks targets
   # failed without scraping them.
   target_limit: 20
   # The exposition body itself, which is memory during the scrape rather than
-  # series after it. Largest well-behaved target: 166 KB (Tempo), with the
-  # Collector second at 119 KB now that it answers for three services. The noisy
+  # series after it. Largest well-behaved target: 324 KB (Loki, at the reading
+  # above), with Tempo's 166 KB second and the Collector third at 119 KB. The noisy
   # service reached 467 KB inside an hour before its ramp was given a top, and
   # plateaus at ~346 KB now — so this is the limit that bounds an exporter
   # whose *body* runs away even when its labels are ordinary.
