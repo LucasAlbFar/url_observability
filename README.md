@@ -1,6 +1,6 @@
 # FastAPI Observability Demo
 
-Three small services — one FastAPI, one Go, one Node — instrumented end-to-end on two pillars: metrics with **Prometheus** and **Grafana**, traces with **OpenTelemetry** and **Tempo**. A synthetic load generator keeps real traffic flowing, including one request that crosses all three services. No database, no task queue — this project is purely a hands-on observability playground.
+Three small services — one FastAPI, one Go, one Node — instrumented end-to-end on three pillars: metrics with **Prometheus** and **Grafana**, traces with **OpenTelemetry** and **Tempo**, logs with **Loki**. A synthetic load generator keeps real traffic flowing, including one request that crosses all three services. No database, no task queue — this project is purely a hands-on observability playground.
 
 ## How it works
 
@@ -136,6 +136,37 @@ curl -s localhost:8003/chain
 Search again and that request is a trace of **two** services, not three. The difference is one HTTP header: the app's client writes `traceparent`, the Go service reads it and writes its own on the way out, and a request that starts at the Go service has nothing to continue. Break either side and the trace splits into one-service pieces with nothing reporting an error.
 
 Two things are deliberately absent from the store. `/metrics` is never traced — at one scrape every five seconds it would be most of what Tempo holds — and there is no sampling: every span is exported, because this stack's traffic is synthetic and fixed. Traces live on the `tempo_data` volume and survive a `down`; only `down --volumes` destroys them.
+
+### Finding the log lines of one request
+
+The status says a request failed. The line says what it said. Break the end of the chain and ask for it:
+
+```bash
+docker compose --profile core stop service-node
+curl -s -o /dev/null -w '%{http_code}\n' localhost:8002/chain   # 502
+docker compose --profile core start service-node
+```
+
+Both hops that call out log a line, each naming the neighbour it could not reach. In Grafana, open **Explore**, pick the `loki` datasource and run:
+
+```logql
+{service_name=~".+", log_severity="ERROR"}
+```
+
+Expand a line and the attributes below it hold `trace_id`, `span_id`, `server.address` and `error.type`. Copy the `trace_id` and ask for everything that happened inside that one request, across every service that took part:
+
+```logql
+{service_name=~".+"} | trace_id="<the id you copied>"
+```
+
+Two lines come back for that failure — one from `fastapi-app` naming `service-go`, one from `service-go` naming `service-node`. Paste the same id into the `tempo` datasource and you get the trace those lines were written inside. That walk is manual today; making it a click is the next feature.
+
+Four things are worth knowing before you go looking:
+
+- **Only errors are logged.** The 502 above and any unhandled exception — not one line per request, which would repeat what the throughput panel already counts.
+- **`service_name` and `log_severity` are the only labels**, and they are the only things you may put in the `{}`. Everything else — the trace id included — is structured metadata, filtered with `|` after the selector. In Loki every label combination is a separate stream with its own index, so a label per trace id would be a stream per request.
+- **Boot lines are not here.** They are written before there is a request to belong to, so they carry no trace id and stay in `docker logs` — which is where you look when a container fails to start, and exactly when this path does not exist yet.
+- **Logs live on the `loki_data` volume** and survive a `down`, like the traces and the metrics. Only `down --volumes` destroys them.
 
 ## Stack
 

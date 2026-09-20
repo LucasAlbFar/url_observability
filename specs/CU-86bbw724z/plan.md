@@ -353,8 +353,13 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       the derivation stays here. A second table beside the three-ways-to-start-an-SDK one, because
       the three ways to switch the **logs** on do not follow the same split: two variables for the
       app, one for Node, and none for Go. — `docs: document the logging pillar`
-- [ ] `README.md`: bringing the stack up with logs, and finding the lines of one request. —
-      `docs: explain how to find the log of one request`
+- [x] `README.md`: bringing the stack up with logs, and finding the lines of one request. A
+      "Finding the log lines of one request" section beside the trace one, with both LogQL queries
+      run verbatim against the stack first: the severity selector returns the error lines, and the
+      trace-id filter returns two lines from the two services that took part. The four caveats it
+      ends on are the ones a reader would otherwise discover by being surprised — only errors are
+      logged, only two labels may go inside the `{}`, boot lines are not there, and the volume
+      survives a `down`. — `docs: explain how to find the log of one request`
 - [ ] Run the verification script below and record each result. No commit beyond the tick. —
       verification only
 
