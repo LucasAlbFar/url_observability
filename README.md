@@ -377,7 +377,7 @@ worker/
   load_driver.py          # standalone async load generator (calls every service's endpoints)
 grafana/                  # provisioned datasources + "Services Overview" dashboard
 prometheus.yml            # scrape settings, the label-discovery job, the cardinality guard
-otel-collector-config.yaml  # OTLP in; traces to Tempo, request metrics out on 8888
+otel-collector-config.yaml  # OTLP in; traces to Tempo, logs to Loki, request metrics out on 8888
 tempo.yaml                # the trace store: one receiver, local blocks on a named volume
 loki.yaml                 # the log store: local index and chunks on a named volume
 docker-compose.yml        # the ten services, their profiles and named volumes

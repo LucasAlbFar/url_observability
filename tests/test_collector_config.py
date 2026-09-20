@@ -21,6 +21,8 @@ import yaml
 COLLECTOR_SERVICE = "otel-collector"
 TEMPO_SERVICE = "tempo"
 TEMPO_VOLUME = "tempo_data"
+LOKI_SERVICE = "loki"
+LOKI_CONFIG = "loki.yaml"
 PORT_LABEL = "prometheus.io/port"
 OTLP_ENDPOINT = "OTEL_EXPORTER_OTLP_ENDPOINT"
 OTLP_PROTOCOL = "OTEL_EXPORTER_OTLP_PROTOCOL"
@@ -33,6 +35,12 @@ LOOPBACK = ("localhost", "127.0.0.1", "::1", "")
 def collector_config(repo_root):
     """Parse otel-collector-config.yaml."""
     return yaml.safe_load((repo_root / "otel-collector-config.yaml").read_text())
+
+
+@pytest.fixture(scope="session")
+def loki_config(repo_root):
+    """Parse loki.yaml."""
+    return yaml.safe_load((repo_root / LOKI_CONFIG).read_text())
 
 
 @pytest.fixture(scope="session")
@@ -116,6 +124,52 @@ def test_the_collector_sends_traces_to_the_trace_store(
         host, port = host_and_port(exporter["endpoint"])
         assert host in compose["services"], host
         assert port == listening, exporter["endpoint"]
+
+
+def test_the_collector_sends_logs_to_the_log_store(
+    collector_config, loki_config, compose
+):
+    """Confirm the logs pipeline ends at the port Loki actually serves.
+
+    The same crossing the traces pipeline has, over a URL rather than a
+    `host:port`: the exporter is HTTP here, so the endpoint carries a
+    scheme and the path Loki's own OTLP receiver answers on. A wrong
+    port is refused and a wrong path answers 404, and in both cases the
+    records are dropped after a retry queue fills — a log line in the
+    Collector, and an Explore that stays empty.
+    """
+    exporters = [
+        collector_config["exporters"][name]
+        for _, pipeline in pipelines(collector_config, "logs")
+        for name in pipeline["exporters"]
+    ]
+    assert exporters, "no logs pipeline exports anything"
+    listening = loki_config["server"]["http_listen_port"]
+    for exporter in exporters:
+        url = urlparse(exporter["endpoint"])
+        assert url.hostname in compose["services"], exporter["endpoint"]
+        assert url.port == listening, exporter["endpoint"]
+
+
+def test_the_logs_pipeline_reads_the_receiver_the_others_read(collector_config):
+    """Confirm logs arrive by the path the other two signals arrive by.
+
+    One receiver, one more consumer. A second receiver would mean a
+    second port for the services to be told about, and this container
+    gets one.
+    """
+    traces = {
+        name
+        for _, pipeline in pipelines(collector_config, "traces")
+        for name in pipeline["receivers"]
+    }
+    logs = {
+        name
+        for _, pipeline in pipelines(collector_config, "logs")
+        for name in pipeline["receivers"]
+    }
+    assert logs, "no logs pipeline declared"
+    assert logs <= traces, (sorted(logs), sorted(traces))
 
 
 def test_the_collector_publishes_its_metrics_where_prometheus_looks(

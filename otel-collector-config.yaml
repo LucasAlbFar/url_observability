@@ -1,7 +1,8 @@
-# Both pillars now. Services push OTLP here; traces go on to Tempo, and
-# the same spans are counted into the request metrics Prometheus pulls
-# off the port below. One instrumentation, one label convention, and a
-# route on a graph that is the same string the trace carries.
+# All three pillars pass through here. Services push OTLP; traces go on
+# to Tempo, logs to Loki, and the same spans are counted into the
+# request metrics Prometheus pulls off the port below. One
+# instrumentation, one label convention, and a route on a graph that is
+# the same string the trace carries.
 
 receivers:
   otlp:
@@ -108,6 +109,16 @@ exporters:
       # verify and nothing leaves the host.
       insecure: true
 
+  # The third pillar's destination. Loki's own OTLP endpoint rather
+  # than the contrib `loki` exporter, which is deprecated and maps
+  # attributes to labels by its own rules — the one decision this
+  # pillar cannot delegate. The path stops at /otlp: the exporter
+  # appends /v1/logs itself.
+  otlp_http/loki:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
+
   # The one published port, carrying both the derived metrics and the
   # internal telemetry. 8888 is what prometheus.io/port already
   # advertised, so the label did not move — the telemetry did.
@@ -133,6 +144,13 @@ service:
       receivers: [prometheus/internal]
       processors: [filter/internal_scrape_metrics]
       exporters: [prometheus]
+    # The same receiver again, one more consumer. Empty until the
+    # services turn OTEL_LOGS_EXPORTER on: what exists here is the
+    # path, not yet the traffic.
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_http/loki]
   telemetry:
     metrics:
       readers:

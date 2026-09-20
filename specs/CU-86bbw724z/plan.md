@@ -201,8 +201,11 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       is the other half of the rule, severity as a label.
 - [x] The Loki datasource with `uid` in its first provisioned version and no `deleteDatasources`
       entry, with its assertions. — `feat(grafana): provision the log datasource`
-- [ ] The logs pipeline in the Collector, exporting `otlphttp` to Loki, with its assertions and the
-      CI validator step. No service emits yet. — `feat(collector): carry logs to the store`
+- [x] The logs pipeline in the Collector, exporting `otlphttp` to Loki, with its assertions and the
+      CI validator step. No service emits yet. The validator step landed with the store, in the
+      first task. The exporter is spelled `otlp_http`, not the `otlphttp` alias, for the reason
+      `otlp_grpc/tempo` is spelled out — and its endpoint stops at `/otlp`, since the exporter
+      appends `/v1/logs` itself. — `feat(collector): carry logs to the store`
 - [ ] **Measurement, before any label rule:** what Loki does with resource attributes by default,
       and what becomes a stream. This decides whether the label guard is configuration or already
       correct. — verification only
