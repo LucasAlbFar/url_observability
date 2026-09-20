@@ -31,6 +31,12 @@ function logError(message, attributes) {
     body: message,
     attributes,
   });
+  // Beside it, never instead of it. The OTLP record is the only one
+  // carrying the trace id and the only one that goes nowhere when the
+  // Collector is down — the exporter does not dial on start, so it
+  // batches, retries and drops in silence. This leaves `docker logs`
+  // something to show when the telemetry path is the thing that broke.
+  console.error(message, attributes);
 }
 
 // The FastAPI app listens on 8002 and the Go service on 8003; this one
@@ -175,6 +181,11 @@ export function createServer() {
     // the server callback is where the stack starts. So the line and
     // the 500 are both written here, the way the app writes them in an
     // exception handler.
+    //
+    // Synchronous throws only, which is what the four routes below do.
+    // `ioBound` writes from a `setTimeout` callback, on a stack this
+    // never sees — a throw there still ends the process. `/metrics`
+    // returns above this and carries its own try/catch.
     try {
       instrument(routeFor(path), routes[path] ?? notFound)(request, response);
     } catch (error) {

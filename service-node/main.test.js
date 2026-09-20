@@ -158,6 +158,32 @@ test("a failing registry is reported and logged", async () => {
   assert.equal(records[0].attributes["error.type"], "Error");
 });
 
+// Both sinks, and the second is the one that survives the Collector
+// being down: the OTLP record is batched, retried and dropped with
+// nothing to show for it, while `docker logs` still has the line.
+test("an error line is written to stderr as well as OTLP", async () => {
+  const records = collectRecords();
+  const restoreRegistry = client.register.metrics;
+  const restoreConsole = console.error;
+  const printed = [];
+  console.error = (...args) => printed.push(args);
+  client.register.metrics = async () => {
+    throw new Error("collector exploded");
+  };
+
+  try {
+    await fetch(origin + "/metrics");
+  } finally {
+    client.register.metrics = restoreRegistry;
+    console.error = restoreConsole;
+  }
+
+  assert.equal(records.length, 1);
+  assert.equal(printed.length, 1);
+  assert.equal(printed[0][0], "metrics collection failed");
+  assert.equal(printed[0][1]["error.type"], "Error");
+});
+
 test("a handler that throws is answered and logged", async () => {
   const records = collectRecords();
   const restore = trace.getActiveSpan;
