@@ -306,9 +306,30 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       labels per sample Tempo does. No other limit moved: longest label name 18, longest value 82,
       longest real value 55, and the target count is 6. The panel threshold moved in the same
       commit, and `tests/test_grafana_provisioning.py` is what would have failed if it had not.
-- [ ] **Measurement:** a provoked error, and its line found in Loki by the trace id of that request,
+- [x] **Measurement:** a provoked error, and its line found in Loki by the trace id of that request,
       in each service that took part. The feature's acceptance test and the rehearsal of the next
       one. — verification only
+
+      Measured 2026-09-20, `core` + `load`, with `service-node` stopped so both hops that call out
+      fail. The trace id was **chosen rather than discovered** — the request carried a
+      `traceparent` header of our own — which is what makes this a test instead of a search: the
+      id is known before the line exists.
+
+      `GET /chain` on the app answered **502**, and
+      `{service_name=~".+"} | trace_id="5fecef063a304de183d257599930020d"` returned **two lines, one
+      per service that took part**, each naming the neighbour it could not reach: the app's says
+      `server.address=http://service-go:8003/chain, error.type=HTTPStatusError`, the Go service's
+      says `server.address=http://service-node:8004/chain, error.type=*url.Error`. Different spans,
+      one trace. Nothing propagated the id by hand — each SDK read it off the active span.
+
+      **The rehearsal half:** the same id in Tempo holds six spans across the two services, the two
+      server spans both carrying `http.response.status_code=502`. That is the whole path the next
+      feature has to make clickable — graph to trace to logs — walked by hand and working.
+
+      **And it showed the guard is not hypothetical.** The indexed label set was still the default
+      four, and `/series` returned **four streams for three services**: the app had **two**, one per
+      `service_instance_id`, from the two container recreates this session. One stream per restart,
+      exactly as predicted, visible in the reading rather than in an argument.
 - [ ] The label guard, in both places the measurement showed it needs to be: `otlp_config` on Loki
       with `ignore_defaults: true`, indexing `service.name` and the severity attribute and nothing
       else; and `transform` + `groupbyattrs` on the Collector's logs pipeline to put severity there.
