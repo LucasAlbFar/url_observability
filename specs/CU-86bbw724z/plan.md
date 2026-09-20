@@ -162,13 +162,44 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
 - [x] Loki in `docker-compose.yml` with its configuration file, the four labels, no published port
       and a named volume, plus `tests/test_loki_config.py` and the compose assertions. Nothing
       exports yet. — `feat(compose): add the log store`
-- [ ] **Measurement, before any limit:** samples per scrape for Loki against `sample_limit`, body
+- [x] **Measurement, before any limit:** samples per scrape for Loki against `sample_limit`, body
       size against `body_size_limit`, and the values it puts in its own labels against the existing
       drop rule. Record the numbers and the query behind each. — verification only
-- [ ] The ceiling refitted **only if the measurement requires it**, with the headroom re-justified
-      beside the value and the panel threshold moved in the same commit. No commit if it does not. —
-      `feat(prometheus): re-fit the ceiling to the log store`
-- [ ] The Loki datasource with `uid` in its first provisioned version and no `deleteDatasources`
+
+      Measured 2026-09-20 against the running stack under `core` + `load`, every number by instant
+      query on `/api/v1/query` except the body, which Prometheus only reports behind
+      `--enable-feature=extra-scrape-metrics` and was read with a `GET /metrics` from inside the
+      compose network instead.
+
+      **Loki is the largest target in the stack, and its count is not a plateau.**
+      `scrape_samples_post_metric_relabeling` per job: **1197 at boot, 2115 after one push of 50
+      records and two queries, 2132 eight minutes in** — against Tempo's 1290 climbing toward the
+      1510 already recorded for it, the Collector's 279, and the three applications at 16, 48 and
+      96. So a single exercise of the write and read paths added **918 samples**, which is what
+      decides the margin: `sample_limit: 4000` is **1.9x** the reading, where the value was written
+      for Tempo's 2.6x, and nothing has logged yet.
+
+      **No other limit is close.** Labels per sample **10** against `label_limit: 20`; longest label
+      name **18** (`is_internal_stream`) against 64; longest label value **82**, a metric name, with
+      the longest real value at **55**, against 256. The body is **267 KB** against `body_size_limit:
+      4MB`, up from 158 KB at boot and now the largest in the stack ahead of Tempo's 142 KB.
+
+      **The drop rule does not reach Loki, and that is by construction rather than by luck.** Loki
+      carries no `http_route` — `has http_route: False` over every series in `{job="loki"}` — so the
+      one rule in `metric_relabel_configs` selects nothing here. Its `route` label holds five fixed
+      values (`metrics` and three gRPC method paths), none carrying an id. What the reading does show
+      is **three values whose shape the drop regex matches** — `status_code="200"`, `status_code="204"`
+      and `level="0"` — none of them touched, because the rule names `http_route` in `source_labels`
+      instead of testing every label's value. A rule written the other way would discard Loki's
+      request counters as raw paths.
+
+      **What came free, and belongs to the label-mapping task below.** Loki's indexed stream label
+      set after the push is **`service_name` alone** — `/loki/api/v1/labels` returns one name.
+      `trace_id`, `span_id`, `severity_text`, `severity_number` and a `detected_level` Loki adds
+      itself come back on the query response as structured metadata and are not indexed. So the
+      default mapping already puts the trace id where the design requires it; what is not yet true
+      is the other half of the rule, severity as a label.
+- [x] The Loki datasource with `uid` in its first provisioned version and no `deleteDatasources`
       entry, with its assertions. — `feat(grafana): provision the log datasource`
 - [ ] The logs pipeline in the Collector, exporting `otlphttp` to Loki, with its assertions and the
       CI validator step. No service emits yet. — `feat(collector): carry logs to the store`
@@ -181,6 +212,12 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
 - [ ] The same in `service-go`, with `log/slog` and the OTel bridge replacing the stdlib `log` for
       everything but the boot lines. — `feat(service-go): log what failed, with its trace`
 - [ ] The same in `service-node`. — `feat(service-node): log what failed, with its trace`
+- [ ] The ceiling refitted **only if the measurement requires it**, with the headroom re-justified
+      beside the value and the panel threshold moved in the same commit. No commit if it does not.
+      **Moved here from before the datasource**, 2026-09-20: the measurement above read Loki at
+      1.9x the ceiling with nothing logging yet, and its count moves with the paths it exercises —
+      so the worst case is not knowable until the three services log, and a value written earlier
+      would be written twice. — `feat(prometheus): re-fit the ceiling to the log store`
 - [ ] **Measurement:** a provoked error, and its line found in Loki by the trace id of that request,
       in each service that took part. The feature's acceptance test and the rehearsal of the next
       one. — verification only

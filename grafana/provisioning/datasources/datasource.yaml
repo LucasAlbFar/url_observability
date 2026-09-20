@@ -54,3 +54,13 @@ datasources:
       streamingEnabled:
         search: false
         metrics: false
+
+  # Born with its uid too, for the same reason, and with no
+  # `deleteDatasources` entry. Logs are read in Explore, like traces:
+  # nothing provisioned queries this yet.
+  - name: loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
