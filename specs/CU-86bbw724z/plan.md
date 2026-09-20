@@ -271,8 +271,12 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       `opentelemetry.sdk._configuration` and defaulting to `"false"`. Measured — with the exporter
       on and the variable absent the app logs, nothing leaves, and nothing anywhere reports it. —
       `feat(app): log what failed, with its trace`
-- [ ] The same in `service-go`, with `log/slog` and the OTel bridge replacing the stdlib `log` for
-      everything but the boot lines. — `feat(service-go): log what failed, with its trace`
+- [x] The same in `service-go`, with `log/slog` and the OTel bridge replacing the stdlib `log` for
+      everything but the boot lines. Four modules added — `otelslog`, `otel/log`, `sdk/log` and
+      `otlploghttp` — with `go.sum` following. **No `OTEL_LOGS_EXPORTER` in this block**, unlike the
+      other two: the Go SDK does not read it, `startLogging` decides, and a variable nothing reads
+      is the dead configuration this compose file was cleaned of once already. —
+      `feat(service-go): log what failed, with its trace`
 - [ ] The same in `service-node`. — `feat(service-node): log what failed, with its trace`
 - [ ] The ceiling refitted **only if the measurement requires it**, with the headroom re-justified
       beside the value and the panel threshold moved in the same commit. No commit if it does not.

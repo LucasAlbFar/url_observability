@@ -1,8 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -192,5 +198,67 @@ func TestChainReportsADownstreamFailureAsAGatewayError(t *testing.T) {
 	}
 	if got := rec.Body.String(); !strings.Contains(got, "500") {
 		t.Errorf("body does not name the downstream status: %q", got)
+	}
+}
+
+// The line the status cannot carry. The 502 says a neighbour failed;
+// only this says which address and with what, which is what the
+// correlation demo goes looking for. The trace id is not asserted here:
+// the bridge is what attaches it, and this test runs against the
+// stderr logger rather than the bridge.
+func TestChainLogsWhichNeighbourFailed(t *testing.T) {
+	next := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer next.Close()
+
+	restoreChain := nextChain
+	nextChain = next.URL
+	defer func() { nextChain = restoreChain }()
+
+	var written bytes.Buffer
+	restoreLogger := logger
+	logger = slog.New(slog.NewJSONHandler(&written, nil))
+	defer func() { logger = restoreLogger }()
+
+	newMux().ServeHTTP(
+		httptest.NewRecorder(),
+		httptest.NewRequest(http.MethodGet, "/chain", nil),
+	)
+
+	var record map[string]any
+	if err := json.Unmarshal(written.Bytes(), &record); err != nil {
+		t.Fatalf("no line was written: %v (%q)", err, written.String())
+	}
+	if record["level"] != "ERROR" {
+		t.Errorf("level = %v, want ERROR", record["level"])
+	}
+	if record["server.address"] != next.URL {
+		t.Errorf("server.address = %v, want %q", record["server.address"], next.URL)
+	}
+	if record["error.type"] == nil || record["error.type"] == "" {
+		t.Errorf("error.type is missing: %v", record)
+	}
+}
+
+// The boot lines stay on stdout, and this is what says so: the bridge
+// replaces `logger`, not the stdlib `log` the two lines in main use.
+// Losing that distinction is losing the only output there is when a
+// container fails to start, which is exactly when the OTLP path does
+// not exist.
+func TestStartLoggingOnlyReplacesTheBridgedLogger(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4318")
+
+	before := logger
+	if err := startLogging(context.Background()); err != nil {
+		t.Fatalf("startLogging: %v", err)
+	}
+	defer func() { logger = before }()
+
+	if logger == before {
+		t.Error("logger was not replaced by the bridge")
+	}
+	if log.Writer() != os.Stderr {
+		t.Error("the stdlib log writer moved; boot lines must stay where they are")
 	}
 }

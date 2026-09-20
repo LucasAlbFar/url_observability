@@ -16,14 +16,19 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	otellog "go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	// The semantic convention version, pinned in the import path
@@ -53,6 +58,29 @@ var (
 		Transport: otelhttp.NewTransport(http.DefaultTransport),
 	}
 )
+
+// logger is what the handlers below log through. It writes to stderr
+// until main replaces it with the bridge, which is what a test gets and
+// what the process gets if the SDK fails to start: this service may not
+// go silent because its telemetry did.
+var logger = slog.Default()
+
+// startLogging is startTracing for the third pillar, and shaped the
+// same on purpose — same environment, same batcher, same nothing to
+// close. What the bridge buys is the line this file never writes: the
+// trace id, read off the span in the context passed to every call.
+func startLogging(ctx context.Context) error {
+	exporter, err := otlploghttp.New(ctx)
+	if err != nil {
+		return err
+	}
+	otellog.SetLoggerProvider(sdklog.NewLoggerProvider(
+		sdklog.WithProcessor(sdklog.NewBatchProcessor(exporter)),
+		sdklog.WithResource(resource.Default()),
+	))
+	logger = otelslog.NewLogger("service-go")
+	return nil
+}
 
 // startTracing configures the global tracer provider and returns
 // nothing to close: the process is killed rather than shut down, so the
@@ -145,6 +173,13 @@ func chain(w http.ResponseWriter, r *http.Request) {
 	// write the traceparent header.
 	body, err := call(r.Context(), nextChain)
 	if err != nil {
+		// The context is the first argument because it carries the
+		// span: without it the line is written with no trace id and
+		// nothing joins it to the request that produced it.
+		logger.ErrorContext(r.Context(), "next hop failed",
+			slog.String("server.address", nextChain),
+			slog.String("error.type", fmt.Sprintf("%T", err)),
+		)
 		// 502 rather than 500, for the reason the app returns one: the
 		// failure is downstream, and the code says where to look.
 		//
@@ -218,6 +253,13 @@ func main() {
 	if err := startTracing(context.Background()); err != nil {
 		log.Fatalf("tracing: %v", err)
 	}
+	if err := startLogging(context.Background()); err != nil {
+		log.Fatalf("logging: %v", err)
+	}
+	// Boot stays on stdout, here and in the other two services: there is
+	// no span to carry, and `docker logs` is where one looks when a
+	// container does not come up — which is when the OTLP path does not
+	// exist yet.
 	log.Printf("service-go listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, newMux()))
 }

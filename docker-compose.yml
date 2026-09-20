@@ -80,7 +80,11 @@ services:
       - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
       - OTEL_TRACES_EXPORTER=otlp
       - OTEL_METRICS_EXPORTER=none
-      - OTEL_LOGS_EXPORTER=none
+      # No OTEL_LOGS_EXPORTER here, unlike the other two blocks: the Go
+      # SDK does not read it. `startLogging` in main.go is what decides,
+      # and a variable nothing reads is the dead configuration this
+      # compose file has already been cleaned of once.
+      #
       # Declared for the same reason as in the other two blocks, and it
       # decides less here: this service pins the convention in an import
       # path, `semconv/v1.43.0`, which is the version otelhttp emits.
