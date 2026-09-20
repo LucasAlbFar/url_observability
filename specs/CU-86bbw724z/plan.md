@@ -349,8 +349,10 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       `main.js` guards `listen` — the two see the same `argv[1]` and fail together. Verified in
       the container afterwards: Tempo holds `GET /chain` and `GET /health` for that service and
       no span naming metrics. — `test: assert the scrape stays out of the traces`
-- [ ] `CLAUDE.md`: the third pillar, the Loki label rule, what stays on stdout. Conclusions only —
-      the derivation stays here. — `docs: document the logging pillar`
+- [x] `CLAUDE.md`: the third pillar, the Loki label rule, what stays on stdout. Conclusions only —
+      the derivation stays here. A second table beside the three-ways-to-start-an-SDK one, because
+      the three ways to switch the **logs** on do not follow the same split: two variables for the
+      app, one for Node, and none for Go. — `docs: document the logging pillar`
 - [ ] `README.md`: bringing the stack up with logs, and finding the lines of one request. —
       `docs: explain how to find the log of one request`
 - [ ] Run the verification script below and record each result. No commit beyond the tick. —
