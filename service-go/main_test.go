@@ -262,3 +262,25 @@ func TestStartLoggingOnlyReplacesTheBridgedLogger(t *testing.T) {
 		t.Error("the stdlib log writer moved; boot lines must stay where they are")
 	}
 }
+
+// The recorded debt: nothing asserted that a scrape stays out of the
+// trace store, in any of the three services. Here the mechanism is that
+// /metrics is the one handler newMux leaves unwrapped, which is a line
+// that reads as an oversight and gets "fixed" — so this is what says it
+// is a decision. The control is in the same test: a route that should
+// produce a span is asked for in the same breath, or an assertion of
+// "no spans" would pass against an instrumentation that recorded none.
+func TestTheScrapeStaysOutOfTheTraces(t *testing.T) {
+	spans := recordSpans(t)
+
+	mux := newMux()
+	mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if got := len(spans.GetSpans()); got != 0 {
+		t.Errorf("the scrape produced %d spans, want 0", got)
+	}
+
+	mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/health", nil))
+	if got := len(spans.GetSpans()); got != 1 {
+		t.Errorf("an ordinary route produced %d spans, want 1", got)
+	}
+}

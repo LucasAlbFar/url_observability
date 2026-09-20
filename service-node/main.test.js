@@ -178,3 +178,21 @@ test("a handler that throws is answered and logged", async () => {
   assert.equal(records[0].attributes["url.path"], "/health");
   assert.equal(records[0].attributes["http.request.method"], "GET");
 });
+
+
+// The recorded debt, this service's third of it. The hook is what keeps
+// a scrape every five seconds out of the trace store — and, since the
+// request metrics are derived from those spans, out of the throughput
+// panel as well. Importing tracing.mjs here starts no SDK: the module
+// only assembles one when it is loaded, and the export is a plain
+// predicate.
+test("the scrape stays out of the traces", async () => {
+  const { isScrape } = await import("./tracing.mjs");
+
+  assert.equal(isScrape({ url: "/metrics" }), true);
+  // The control: a predicate that returned true for everything would
+  // pass the line above and silently trace nothing at all.
+  for (const path of ["/health", "/chain", "/load/io-bound", "/metricsss"]) {
+    assert.equal(isScrape({ url: path }), false, path);
+  }
+});

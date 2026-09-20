@@ -340,8 +340,15 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       stream of its own**. Selecting by severity returns the right lines, and a filter by trace id
       still finds its line — the metadata is untouched. —
       `feat(loki): bound what becomes a stream`
-- [ ] **The recorded debt:** the `/metrics` trace exclusion asserted in all three services. —
-      `test: assert the scrape stays out of the traces`
+- [x] **The recorded debt:** the `/metrics` trace exclusion asserted in all three services. Three
+      mechanisms, so three suites, and the app's lands in `tests/test_compose_config.py` rather
+      than `test_main.py`: its exclusion is a declared value, not code. Each assertion carries a
+      control, because a pattern or predicate matching everything excludes everything and passes
+      a test that only checks the scrape is covered. `service-node` needed the hook lifted out of
+      the SDK constructor into an exported `isScrape`, and `sdk.start()` guarded the way
+      `main.js` guards `listen` — the two see the same `argv[1]` and fail together. Verified in
+      the container afterwards: Tempo holds `GET /chain` and `GET /health` for that service and
+      no span naming metrics. — `test: assert the scrape stays out of the traces`
 - [ ] `CLAUDE.md`: the third pillar, the Loki label rule, what stays on stdout. Conclusions only —
       the derivation stays here. — `docs: document the logging pillar`
 - [ ] `README.md`: bringing the stack up with logs, and finding the lines of one request. —

@@ -54,6 +54,13 @@ DOCKER_SOCKET = "/var/run/docker.sock"
 # wait for.
 OTEL_NAME = "OTEL_SERVICE_NAME"
 TELEMETRY_SERVICES = ("otel-collector", "loki")
+# The app's half of the scrape exclusion. The other two services do it
+# in code and assert it in their own suites; this one is declared, so
+# this file is where it can be read. The SDK splits the value on commas
+# and runs `re.search` over the URL, which is what the test below does.
+EXCLUDED_URLS = "OTEL_PYTHON_EXCLUDED_URLS"
+SCRAPE_PATH = "/metrics"
+TRACED_PATHS = ("/health", "/chain", "/load/io-bound")
 
 
 @pytest.fixture(scope="session")
@@ -454,3 +461,25 @@ def test_no_service_waits_for_the_telemetry_path(compose):
         depends_on = service.get("depends_on", {})
         for telemetry in TELEMETRY_SERVICES:
             assert telemetry not in depends_on, f"{name}: {telemetry}"
+
+
+def test_the_scrape_stays_out_of_the_apps_traces(compose_environments):
+    """Confirm the app excludes /metrics, and excludes only it.
+
+    The recorded debt, this service's third of it. One scrape every
+    five seconds would be most of what the trace store holds — and
+    since the request metrics are derived from those spans, most of
+    what the throughput panel draws. The other two services leave a
+    handler unwrapped and hold a predicate; here it is a value, so
+    here is where it is read.
+
+    The second half is the control: a pattern matching everything
+    excludes everything, which traces nothing at all and would pass an
+    assertion that only checked the scrape was covered.
+    """
+    declared = compose_environments["app"].get(EXCLUDED_URLS)
+    assert declared, EXCLUDED_URLS
+    patterns = [part.strip() for part in declared.split(",") if part.strip()]
+    assert any(re.search(pattern, SCRAPE_PATH) for pattern in patterns), declared
+    for path in TRACED_PATHS:
+        assert not any(re.search(pattern, path) for pattern in patterns), path
