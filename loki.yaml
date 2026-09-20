@@ -1,0 +1,59 @@
+# The log store. Single binary, local index and chunks on a named
+# volume, and the OTLP endpoint on the same port that answers queries
+# — one port per container, by the discovery contract.
+
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+
+common:
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  # Single binary: one replica, and a ring that needs no external
+  # store to hold one member.
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    # v13 on tsdb is what carries structured metadata, which is where
+    # the trace id goes — as metadata rather than as a label, because
+    # a label per trace id is a stream per request.
+    - from: "2026-09-01"
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+# The cardinality guard, and the half of it that lives here. Every label
+# combination is a stream with its own index and its own files, so the
+# question is not what is stored but what is indexed.
+#
+# `ignore_defaults` is the load-bearing word. Loki indexes four resource
+# attributes by default — service.name, service.instance.id,
+# service.namespace and deployment.environment.name — and the second is
+# a UUID the Python SDK generates per process, so the app alone opens a
+# new stream on every restart. Measured: four streams for three
+# services, two of them the app's, after two recreates.
+#
+# What is not listed here is not lost, only unindexed: every other
+# resource attribute, every log attribute, and the trace id, span id and
+# severity Loki's own translation sets aside become structured metadata,
+# queryable by filter. `log.severity` is on the list because the
+# Collector puts it there for exactly this — severity is not reachable
+# from this side.
+limits_config:
+  otlp_config:
+    resource_attributes:
+      ignore_defaults: true
+      attributes_config:
+        - action: index_label
+          attributes: [service.name, log.severity]

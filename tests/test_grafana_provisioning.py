@@ -23,6 +23,8 @@ PROMETHEUS_CONFIG = "prometheus.yml"
 COMPOSE_CONFIG = "docker-compose.yml"
 TEMPO_CONFIG = "tempo.yaml"
 TEMPO_SERVICE = "tempo"
+LOKI_CONFIG = "loki.yaml"
+LOKI_SERVICE = "loki"
 JOB_LABEL = "prometheus.io/job"
 # The two synthetic metrics that count a scrape, and the reason they
 # have to be read as a pair. `scrape_samples_scraped` counts what the
@@ -330,6 +332,41 @@ def test_the_trace_datasource_reaches_the_trace_store(repo_root):
     assert TEMPO_SERVICE in compose["services"]
     for store in stores:
         assert store["url"] == expected, (store["name"], store["url"])
+
+
+def test_the_log_datasource_reaches_the_log_store(repo_root):
+    """Confirm the datasource URL is where Loki actually listens.
+
+    Beside the trace store's check and for the same reason: both
+    halves are declared elsewhere, and a datasource pointing at a port
+    nothing serves fails only when someone opens Explore.
+    """
+    datasources = yaml.safe_load((repo_root / DATASOURCE_CONFIG).read_text())
+    compose = yaml.safe_load((repo_root / COMPOSE_CONFIG).read_text())
+    loki = yaml.safe_load((repo_root / LOKI_CONFIG).read_text())
+    stores = [d for d in datasources["datasources"] if d["type"] == "loki"]
+    assert stores, "no log datasource declared"
+    expected = f"http://{LOKI_SERVICE}:{loki['server']['http_listen_port']}"
+    assert LOKI_SERVICE in compose["services"]
+    for store in stores:
+        assert store["url"] == expected, (store["name"], store["url"])
+
+
+def test_only_a_renamed_datasource_is_deleted_first(repo_root):
+    """Confirm no datasource born with a uid is deleted on every boot.
+
+    The `deleteDatasources` block exists for one datasource that
+    gained a uid after the stack had already run. A datasource that
+    never had another identity has no rename for Grafana to abort on,
+    so an entry here would delete and recreate it on every start for
+    nothing — and would take any hand-made dashboard pointing at it.
+    """
+    config = yaml.safe_load((repo_root / DATASOURCE_CONFIG).read_text())
+    deleted = {entry["name"] for entry in config.get("deleteDatasources", [])}
+    born_with_uid = {
+        d["name"] for d in config["datasources"] if d["type"] != "prometheus"
+    }
+    assert not deleted & born_with_uid, sorted(deleted & born_with_uid)
 
 
 def test_provider_path_matches_the_compose_mount(repo_root):

@@ -144,3 +144,15 @@ jobs:
         echo "using $image"
         docker run --rm -v "$PWD/tempo.yaml:/etc/tempo.yaml:ro" \
           "$image" -config.file=/etc/tempo.yaml -config.verify=true
+    # `-verify-config` rather than `-config.verify`: Loki spells the
+    # same thing the other way round, and the wrong one boots the
+    # store instead of checking its file.
+    - name: Validate the Loki config
+      run: |
+        image=$(docker compose --profile '*' config --format json \
+          | jq -r '.services.loki.image')
+        [ -n "$image" ] && [ "$image" != "null" ] \
+          || { echo "could not resolve the loki image"; exit 1; }
+        echo "using $image"
+        docker run --rm -v "$PWD/loki.yaml:/etc/loki.yaml:ro" \
+          "$image" -config.file=/etc/loki.yaml -verify-config

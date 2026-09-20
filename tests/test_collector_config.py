@@ -21,6 +21,8 @@ import yaml
 COLLECTOR_SERVICE = "otel-collector"
 TEMPO_SERVICE = "tempo"
 TEMPO_VOLUME = "tempo_data"
+LOKI_SERVICE = "loki"
+LOKI_CONFIG = "loki.yaml"
 PORT_LABEL = "prometheus.io/port"
 OTLP_ENDPOINT = "OTEL_EXPORTER_OTLP_ENDPOINT"
 OTLP_PROTOCOL = "OTEL_EXPORTER_OTLP_PROTOCOL"
@@ -33,6 +35,12 @@ LOOPBACK = ("localhost", "127.0.0.1", "::1", "")
 def collector_config(repo_root):
     """Parse otel-collector-config.yaml."""
     return yaml.safe_load((repo_root / "otel-collector-config.yaml").read_text())
+
+
+@pytest.fixture(scope="session")
+def loki_config(repo_root):
+    """Parse loki.yaml."""
+    return yaml.safe_load((repo_root / LOKI_CONFIG).read_text())
 
 
 @pytest.fixture(scope="session")
@@ -116,6 +124,106 @@ def test_the_collector_sends_traces_to_the_trace_store(
         host, port = host_and_port(exporter["endpoint"])
         assert host in compose["services"], host
         assert port == listening, exporter["endpoint"]
+
+
+def test_the_collector_sends_logs_to_the_log_store(
+    collector_config, loki_config, compose
+):
+    """Confirm the logs pipeline ends at the port Loki actually serves.
+
+    The same crossing the traces pipeline has, over a URL rather than a
+    `host:port`: the exporter is HTTP here, so the endpoint carries a
+    scheme and the path Loki's own OTLP receiver answers on. A wrong
+    port is refused and a wrong path answers 404, and in both cases the
+    records are dropped after a retry queue fills — a log line in the
+    Collector, and an Explore that stays empty.
+    """
+    exporters = [
+        collector_config["exporters"][name]
+        for _, pipeline in pipelines(collector_config, "logs")
+        for name in pipeline["exporters"]
+    ]
+    assert exporters, "no logs pipeline exports anything"
+    listening = loki_config["server"]["http_listen_port"]
+    for exporter in exporters:
+        url = urlparse(exporter["endpoint"])
+        assert url.hostname in compose["services"], exporter["endpoint"]
+        assert url.port == listening, exporter["endpoint"]
+
+
+def test_the_logs_pipeline_reads_the_receiver_the_others_read(collector_config):
+    """Confirm logs arrive by the path the other two signals arrive by.
+
+    One receiver, one more consumer. A second receiver would mean a
+    second port for the services to be told about, and this container
+    gets one.
+    """
+    traces = {
+        name
+        for _, pipeline in pipelines(collector_config, "traces")
+        for name in pipeline["receivers"]
+    }
+    logs = {
+        name
+        for _, pipeline in pipelines(collector_config, "logs")
+        for name in pipeline["receivers"]
+    }
+    assert logs, "no logs pipeline declared"
+    assert logs <= traces, (sorted(logs), sorted(traces))
+
+
+def test_severity_is_carried_where_the_log_store_indexes_it(
+    collector_config, loki_config
+):
+    """Confirm severity reaches the store as an attribute it indexes.
+
+    Loki cannot promote severity itself — its OTLP translation files it
+    under structured metadata before the attribute lists it consults
+    are read — so the name Loki is told to index has to be one this
+    pipeline puts there. Two files, one name, and nothing says anything
+    when they stop agreeing: the label simply never appears.
+    """
+    rules = loki_config["limits_config"]["otlp_config"]["resource_attributes"]
+    indexed = {
+        attribute
+        for entry in rules["attributes_config"]
+        if entry["action"] == "index_label"
+        for attribute in entry["attributes"]
+    }
+    written = "\n".join(
+        str(collector_config["processors"][name])
+        for _, pipeline in pipelines(collector_config, "logs")
+        for name in pipeline.get("processors", [])
+    )
+    for attribute in indexed - {"service.name"}:
+        assert attribute in written, attribute
+
+
+def test_the_severity_attribute_is_regrouped_before_it_is_exported(
+    collector_config,
+):
+    """Confirm the batch is split by severity rather than merely tagged.
+
+    A resource is shared by every record under it, so an attribute
+    written straight to the resource labels them all with whichever
+    record was processed last — measured, and it selects nothing. The
+    regrouping is what makes the attribute true of the records it
+    labels, and it has to run before the exporter.
+    """
+    for name, pipeline in pipelines(collector_config, "logs"):
+        processors = pipeline.get("processors", [])
+        grouping = [p for p in processors if p.split("/")[0] == "groupbyattrs"]
+        assert grouping, (name, processors)
+        for group in grouping:
+            keys = collector_config["processors"][group]["keys"]
+            assert keys, group
+            writer = next(
+                p
+                for p in processors
+                if p.split("/")[0] == "transform"
+                and any(key in str(collector_config["processors"][p]) for key in keys)
+            )
+            assert processors.index(writer) < processors.index(group), processors
 
 
 def test_the_collector_publishes_its_metrics_where_prometheus_looks(

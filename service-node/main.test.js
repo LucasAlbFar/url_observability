@@ -1,7 +1,27 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 
+import { trace } from "@opentelemetry/api";
+import { logs } from "@opentelemetry/api-logs";
+import client from "prom-client";
+
 import { createServer, routeFor } from "./main.js";
+
+// The smallest thing the logs API accepts as a provider, registered
+// once: a second setGlobalLoggerProvider is ignored with a warning, so
+// registering per test silently leaves every test after the first
+// reading an array nothing writes to. The sink is shared and emptied
+// instead.
+const emitted = [];
+
+logs.setGlobalLoggerProvider({
+  getLogger: () => ({ emit: (record) => emitted.push(record) }),
+});
+
+function collectRecords() {
+  emitted.length = 0;
+  return emitted;
+}
 
 let server;
 let origin;
@@ -111,3 +131,94 @@ test("an unmatched path is labelled by one fixed value", () => {
   }
 });
 
+
+
+// The 500 paths, and the line each of them leaves. Neither is reachable
+// through a normal request, so each is provoked at the one seam it has:
+// the registry that /metrics awaits, and the span lookup every other
+// route goes through. Provoking them is the point — without a line
+// here, a request that failed is a status and nothing else.
+test("a failing registry is reported and logged", async () => {
+  const records = collectRecords();
+  const restore = client.register.metrics;
+  client.register.metrics = async () => {
+    throw new Error("collector exploded");
+  };
+
+  try {
+    const response = await fetch(origin + "/metrics");
+    assert.equal(response.status, 500);
+  } finally {
+    client.register.metrics = restore;
+  }
+
+  assert.equal(records.length, 1);
+  assert.equal(records[0].severityText, "ERROR");
+  assert.equal(records[0].body, "metrics collection failed");
+  assert.equal(records[0].attributes["error.type"], "Error");
+});
+
+// Both sinks, and the second is the one that survives the Collector
+// being down: the OTLP record is batched, retried and dropped with
+// nothing to show for it, while `docker logs` still has the line.
+test("an error line is written to stderr as well as OTLP", async () => {
+  const records = collectRecords();
+  const restoreRegistry = client.register.metrics;
+  const restoreConsole = console.error;
+  const printed = [];
+  console.error = (...args) => printed.push(args);
+  client.register.metrics = async () => {
+    throw new Error("collector exploded");
+  };
+
+  try {
+    await fetch(origin + "/metrics");
+  } finally {
+    client.register.metrics = restoreRegistry;
+    console.error = restoreConsole;
+  }
+
+  assert.equal(records.length, 1);
+  assert.equal(printed.length, 1);
+  assert.equal(printed[0][0], "metrics collection failed");
+  assert.equal(printed[0][1]["error.type"], "Error");
+});
+
+test("a handler that throws is answered and logged", async () => {
+  const records = collectRecords();
+  const restore = trace.getActiveSpan;
+  trace.getActiveSpan = () => {
+    throw new Error("boom");
+  };
+
+  try {
+    const response = await fetch(origin + "/health");
+    assert.equal(response.status, 500);
+    assert.equal(await response.text(), "Internal Server Error\n");
+  } finally {
+    trace.getActiveSpan = restore;
+  }
+
+  assert.equal(records.length, 1);
+  assert.equal(records[0].body, "unhandled exception");
+  assert.equal(records[0].attributes["url.path"], "/health");
+  assert.equal(records[0].attributes["http.request.method"], "GET");
+});
+
+
+// The recorded debt, this service's third of it. The hook is what keeps
+// a scrape every five seconds out of the trace store — and, since the
+// request metrics are derived from those spans, out of the throughput
+// panel as well. Importing tracing.mjs here starts no SDK: the module
+// only assembles one when it is loaded, and the export is a plain
+// predicate.
+test("the scrape stays out of the traces", async () => {
+  const { isScrape } = await import("./tracing.mjs");
+
+  assert.equal(isScrape({ url: "/metrics" }), true);
+  // The control: a predicate that returned true for everything would
+  // pass the line above and silently trace nothing at all.
+  for (const path of ["/health", "/chain", "/load/io-bound", "/metricsss"]) {
+    assert.equal(isScrape({ url: path }), false, path);
+  }
+});

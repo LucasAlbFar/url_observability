@@ -1,5 +1,36 @@
 """Test main route."""
 
+import asyncio
+import logging
+from contextlib import contextmanager
+
+from starlette.requests import Request
+
+from app.main import app, log_unhandled_exception
+
+
+@contextmanager
+def caplog_for(name):
+    """Collect the records one logger emits, then put it back.
+
+    `caplog` reaches this through the root logger, which the SDK also
+    attaches to in the container — capturing on the named logger keeps
+    the test about this module.
+    """
+    collected = []
+
+    class Collector(logging.Handler):
+        def emit(self, record):
+            collected.append(record)
+
+    logger = logging.getLogger(name)
+    handler = Collector()
+    logger.addHandler(handler)
+    try:
+        yield collected
+    finally:
+        logger.removeHandler(handler)
+
 
 def test_main_route(client):
     """Confirm that main root is working."""
@@ -47,3 +78,26 @@ def test_metrics_carries_no_http_request_series(client):
     body = client.get("/metrics").text
     assert "http_requests_total" not in body
     assert "http_request_duration_seconds" not in body
+
+
+def test_unhandled_exceptions_are_logged_and_still_answered():
+    """Confirm the line is added without changing the response.
+
+    Two halves, because neither proves the other. Calling the handler
+    says what it does — a record, and the same plain 500 Starlette
+    sends with no handler registered. Reading the app's handler table
+    says Starlette will call it, which is what a direct call cannot.
+    """
+    request = Request({"type": "http", "method": "GET", "path": "/boom", "headers": []})
+    try:
+        raise RuntimeError("boom")
+    except RuntimeError as error:
+        with caplog_for("app.main") as records:
+            response = asyncio.run(log_unhandled_exception(request, error))
+
+    assert response.status_code == 500
+    assert response.body == b"Internal Server Error"
+    assert records and records[0].levelno == logging.ERROR
+    assert records[0].exc_info is not None
+    assert getattr(records[0], "url.path") == "/boom"
+    assert app.exception_handlers[Exception] is log_unhandled_exception

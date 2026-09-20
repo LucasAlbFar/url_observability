@@ -1,7 +1,8 @@
-# Both pillars now. Services push OTLP here; traces go on to Tempo, and
-# the same spans are counted into the request metrics Prometheus pulls
-# off the port below. One instrumentation, one label convention, and a
-# route on a graph that is the same string the trace carries.
+# All three pillars pass through here. Services push OTLP; traces go on
+# to Tempo, logs to Loki, and the same spans are counted into the
+# request metrics Prometheus pulls off the port below. One
+# instrumentation, one label convention, and a route on a graph that is
+# the same string the trace carries.
 
 receivers:
   otlp:
@@ -39,6 +40,30 @@ processors:
       metric:
         - name == "up"
         - IsMatch(name, "^scrape_")
+
+  # Severity, moved to where Loki can index it. It is a label by
+  # decision — service and severity are what a stream may be keyed by —
+  # and Loki cannot reach it from its own side: its OTLP translation
+  # files severity under structured metadata before the attribute lists
+  # it consults are read.
+  #
+  # Two processors, and the shorter way is wrong in a way that looks
+  # right. Writing straight to `resource.attributes` labels the whole
+  # batch with whichever record was processed last — measured: five
+  # records of three severities arrived as one stream labelled INFO, and
+  # selecting ERROR returned nothing. So the attribute goes on the
+  # record, and `groupbyattrs` below splits the batch by it.
+  transform/severity_attribute:
+    error_mode: ignore
+    log_statements:
+      # `log.severity_text`, with the context spelled: the bare name
+      # fails validation.
+      - set(log.attributes["log.severity"], log.severity_text)
+
+  # What turns that record attribute into one resource per severity,
+  # which is what the exporter sends and what Loki indexes.
+  groupbyattrs/severity:
+    keys: [log.severity]
 
   # Server spans only, which is why the connector reads a pipeline of
   # its own: every /chain hop also produces a client span, and counting
@@ -108,6 +133,16 @@ exporters:
       # verify and nothing leaves the host.
       insecure: true
 
+  # The third pillar's destination. Loki's own OTLP endpoint rather
+  # than the contrib `loki` exporter, which is deprecated and maps
+  # attributes to labels by its own rules — the one decision this
+  # pillar cannot delegate. The path stops at /otlp: the exporter
+  # appends /v1/logs itself.
+  otlp_http/loki:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
+
   # The one published port, carrying both the derived metrics and the
   # internal telemetry. 8888 is what prometheus.io/port already
   # advertised, so the label did not move — the telemetry did.
@@ -133,6 +168,12 @@ service:
       receivers: [prometheus/internal]
       processors: [filter/internal_scrape_metrics]
       exporters: [prometheus]
+    # The same receiver again, one more consumer: the three services
+    # send their error lines here alongside their spans.
+    logs:
+      receivers: [otlp]
+      processors: [transform/severity_attribute, groupbyattrs/severity, batch]
+      exporters: [otlp_http/loki]
   telemetry:
     metrics:
       readers:

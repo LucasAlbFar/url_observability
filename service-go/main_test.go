@@ -1,8 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -192,5 +198,119 @@ func TestChainReportsADownstreamFailureAsAGatewayError(t *testing.T) {
 	}
 	if got := rec.Body.String(); !strings.Contains(got, "500") {
 		t.Errorf("body does not name the downstream status: %q", got)
+	}
+}
+
+// The line the status cannot carry. The 502 says a neighbour failed;
+// only this says which address and with what, which is what the
+// correlation demo goes looking for. The trace id is not asserted here:
+// the bridge is what attaches it, and this test runs against the
+// stderr logger rather than the bridge.
+func TestChainLogsWhichNeighbourFailed(t *testing.T) {
+	next := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer next.Close()
+
+	restoreChain := nextChain
+	nextChain = next.URL
+	defer func() { nextChain = restoreChain }()
+
+	var written bytes.Buffer
+	restoreLogger := logger
+	logger = slog.New(slog.NewJSONHandler(&written, nil))
+	defer func() { logger = restoreLogger }()
+
+	newMux().ServeHTTP(
+		httptest.NewRecorder(),
+		httptest.NewRequest(http.MethodGet, "/chain", nil),
+	)
+
+	var record map[string]any
+	if err := json.Unmarshal(written.Bytes(), &record); err != nil {
+		t.Fatalf("no line was written: %v (%q)", err, written.String())
+	}
+	if record["level"] != "ERROR" {
+		t.Errorf("level = %v, want ERROR", record["level"])
+	}
+	if record["server.address"] != next.URL {
+		t.Errorf("server.address = %v, want %q", record["server.address"], next.URL)
+	}
+	if record["error.type"] == nil || record["error.type"] == "" {
+		t.Errorf("error.type is missing: %v", record)
+	}
+}
+
+// Every record reaches every handler, which is the point of writing
+// this type rather than handing slog the bridge alone: the bridge is
+// the only handler carrying the trace id and the only one that goes
+// nowhere when the Collector is down.
+func TestFanoutWritesToEveryHandler(t *testing.T) {
+	var first, second bytes.Buffer
+	logger := slog.New(fanout{
+		slog.NewTextHandler(&first, nil),
+		slog.NewTextHandler(&second, nil),
+	})
+
+	logger.Error("next hop failed", slog.String("server.address", "somewhere"))
+
+	for name, written := range map[string]*bytes.Buffer{"first": &first, "second": &second} {
+		if !strings.Contains(written.String(), "next hop failed") {
+			t.Errorf("%s handler got %q", name, written.String())
+		}
+		if !strings.Contains(written.String(), "somewhere") {
+			t.Errorf("%s handler lost the attributes: %q", name, written.String())
+		}
+	}
+}
+
+// The boot lines stay on stdout, and this is what says so: the bridge
+// replaces `logger`, not the stdlib `log` the two lines in main use.
+// Losing that distinction is losing the only output there is when a
+// container fails to start, which is exactly when the OTLP path does
+// not exist.
+func TestStartLoggingOnlyReplacesTheBridgedLogger(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4318")
+
+	before := logger
+	if err := startLogging(context.Background()); err != nil {
+		t.Fatalf("startLogging: %v", err)
+	}
+	defer func() { logger = before }()
+
+	if logger == before {
+		t.Error("logger was not replaced by the bridge")
+	}
+	if log.Writer() != os.Stderr {
+		t.Error("the stdlib log writer moved; boot lines must stay where they are")
+	}
+	// Two handlers, not one: the bridge and the stderr fallback beside
+	// it. A bridge-only logger starts just as happily and leaves
+	// `docker logs` empty when the Collector is the thing that broke.
+	handlers, ok := logger.Handler().(fanout)
+	if !ok || len(handlers) != 2 {
+		t.Errorf("handler = %T with %d entries, want a fanout of 2", logger.Handler(), len(handlers))
+	}
+}
+
+// The recorded debt: nothing asserted that a scrape stays out of the
+// trace store, in any of the three services. Here the mechanism is that
+// /metrics is the one handler newMux leaves unwrapped, which is a line
+// that reads as an oversight and gets "fixed" — so this is what says it
+// is a decision. The control is in the same test: a route that should
+// produce a span is asked for in the same breath, or an assertion of
+// "no spans" would pass against an instrumentation that recorded none.
+func TestTheScrapeStaysOutOfTheTraces(t *testing.T) {
+	spans := recordSpans(t)
+
+	mux := newMux()
+	mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if got := len(spans.GetSpans()); got != 0 {
+		t.Errorf("the scrape produced %d spans, want 0", got)
+	}
+
+	mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/health", nil))
+	if got := len(spans.GetSpans()); got != 1 {
+		t.Errorf("an ordinary route produced %d spans, want 1", got)
 	}
 }

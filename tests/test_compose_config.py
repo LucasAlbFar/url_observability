@@ -16,11 +16,12 @@ FROM_IMAGE = re.compile(r"^FROM\s+(\S+)", re.MULTILINE)
 # The base image name that marks a Dockerfile as Go-built.
 GO_BASE = "golang"
 GO_MODULE_FILES = ("go.mod", "go.sum")
-NAMED_VOLUMES = {"prometheus_data", "grafana_data", "tempo_data"}
+NAMED_VOLUMES = {"prometheus_data", "grafana_data", "tempo_data", "loki_data"}
 EXPECTED_MOUNTS = {
     "prometheus": "prometheus_data:/prometheus",
     "grafana": "grafana_data:/var/lib/grafana",
     "tempo": "tempo_data:/var/tempo",
+    "loki": "loki_data:/loki",
 }
 STORAGE_FLAGS = ("--storage.tsdb.path",)
 CONTINUATION = re.compile(r"\\\s*\n\s*")
@@ -49,10 +50,17 @@ SCRAPE_LABEL = "prometheus.io/scrape"
 JOB_LABEL = "prometheus.io/job"
 PORT_LABEL = "prometheus.io/port"
 DOCKER_SOCKET = "/var/run/docker.sock"
-# The trace half of a service's identity, and the service nothing may
+# The trace half of a service's identity, and the stores nothing may
 # wait for.
 OTEL_NAME = "OTEL_SERVICE_NAME"
-COLLECTOR_SERVICE = "otel-collector"
+TELEMETRY_SERVICES = ("otel-collector", "loki")
+# The app's half of the scrape exclusion. The other two services do it
+# in code and assert it in their own suites; this one is declared, so
+# this file is where it can be read. The SDK splits the value on commas
+# and runs `re.search` over the URL, which is what the test below does.
+EXCLUDED_URLS = "OTEL_PYTHON_EXCLUDED_URLS"
+SCRAPE_PATH = "/metrics"
+TRACED_PATHS = ("/health", "/chain", "/load/io-bound")
 
 
 @pytest.fixture(scope="session")
@@ -442,12 +450,36 @@ def test_a_traced_service_shares_one_name_with_the_scrape(
     assert checked, "no service declares its trace identity"
 
 
-def test_no_service_waits_for_the_collector(compose):
+def test_no_service_waits_for_the_telemetry_path(compose):
     """Confirm telemetry cannot hold an application down.
 
     A `depends_on` here trades application availability for telemetry
-    availability, which is the inverse of what this stack is for: the
-    Collector going down has to leave every service answering.
+    availability, which is the inverse of what this stack is for:
+    either of these going down has to leave every service answering.
     """
     for name, service in compose["services"].items():
-        assert COLLECTOR_SERVICE not in service.get("depends_on", {}), name
+        depends_on = service.get("depends_on", {})
+        for telemetry in TELEMETRY_SERVICES:
+            assert telemetry not in depends_on, f"{name}: {telemetry}"
+
+
+def test_the_scrape_stays_out_of_the_apps_traces(compose_environments):
+    """Confirm the app excludes /metrics, and excludes only it.
+
+    The recorded debt, this service's third of it. One scrape every
+    five seconds would be most of what the trace store holds — and
+    since the request metrics are derived from those spans, most of
+    what the throughput panel draws. The other two services leave a
+    handler unwrapped and hold a predicate; here it is a value, so
+    here is where it is read.
+
+    The second half is the control: a pattern matching everything
+    excludes everything, which traces nothing at all and would pass an
+    assertion that only checked the scrape was covered.
+    """
+    declared = compose_environments["app"].get(EXCLUDED_URLS)
+    assert declared, EXCLUDED_URLS
+    patterns = [part.strip() for part in declared.split(",") if part.strip()]
+    assert any(re.search(pattern, SCRAPE_PATH) for pattern in patterns), declared
+    for path in TRACED_PATHS:
+        assert not any(re.search(pattern, path) for pattern in patterns), path

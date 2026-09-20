@@ -16,11 +16,17 @@ services:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
       - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
       - OTEL_TRACES_EXPORTER=otlp
-      # Off, both of them. Prometheus still pulls /metrics and nothing
-      # here logs; leaving either at its default would send a second
-      # copy of the metrics down a path no dashboard reads.
+      # Metrics off: Prometheus still pulls /metrics, and leaving this
+      # at its default would send a second copy down a path no
+      # dashboard reads. Logs on, which is the third pillar arriving —
+      # the same OTLP endpoint above carries them.
       - OTEL_METRICS_EXPORTER=none
-      - OTEL_LOGS_EXPORTER=none
+      - OTEL_LOGS_EXPORTER=otlp
+      # The exporter alone exports nothing: the SDK only attaches its
+      # handler to the root logger when this is true, and it defaults
+      # to false. Measured — without it the app logs, nothing leaves,
+      # and no error says so anywhere.
+      - OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true
       # The semantic convention, pinned rather than defaulted. `http`
       # selects the stable names — http.request.method,
       # http.response.status_code, http.route — over the pre-1.0 ones
@@ -74,7 +80,13 @@ services:
       - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
       - OTEL_TRACES_EXPORTER=otlp
       - OTEL_METRICS_EXPORTER=none
-      - OTEL_LOGS_EXPORTER=none
+      # No OTEL_LOGS_EXPORTER here, unlike the other two blocks: the Go
+      # SDK reads no exporter variable at all — there is no autoconfigure
+      # package, so `startTracing` and `startLogging` in main.go choose by
+      # importing. That is true of the two lines above as well; they
+      # predate the logging pillar and are left alone. What was declined
+      # was adding a third variable this service cannot read.
+      #
       # Declared for the same reason as in the other two blocks, and it
       # decides less here: this service pins the convention in an import
       # path, `semconv/v1.43.0`, which is the version otelhttp emits.
@@ -113,7 +125,10 @@ services:
       - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
       - OTEL_TRACES_EXPORTER=otlp
       - OTEL_METRICS_EXPORTER=none
-      - OTEL_LOGS_EXPORTER=none
+      # Read by NodeSDK, which unlike the Go SDK does look this up —
+      # and which defaults to otlp when the value is empty, so `none`
+      # was the only thing keeping the logs off.
+      - OTEL_LOGS_EXPORTER=otlp
       # The stable HTTP names, for the reason the app pins them: a
       # dashboard written against one set of names matches nothing
       # against the other, and says nothing about why.
@@ -265,6 +280,24 @@ services:
     restart: unless-stopped
     # No published port and no healthcheck, for the same two reasons.
 
+  loki:
+    image: grafana/loki:3.7.8
+    profiles: ["core"]
+    command: ["-config.file=/etc/loki.yaml"]
+    volumes:
+      # path_prefix in loki.yaml sits under this mount, so a log line
+      # survives a `down` the way a trace does.
+      - loki_data:/loki
+      - ./loki.yaml:/etc/loki.yaml:ro
+    labels:
+      prometheus.io/scrape: "true"
+      prometheus.io/job: "loki"
+      prometheus.io/port: "3100"
+    restart: unless-stopped
+    # No published port and no healthcheck, same as the two above. It
+    # serves queries and /metrics on one port, so it needs none of the
+    # loopback arrangement the Collector has.
+
   loadgen:
     build:
       context: ./worker
@@ -283,3 +316,4 @@ volumes:
   prometheus_data:
   grafana_data:
   tempo_data:
+  loki_data:

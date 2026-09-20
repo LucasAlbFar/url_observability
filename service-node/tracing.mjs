@@ -22,17 +22,30 @@ import { NodeSDK } from "@opentelemetry/sdk-node";
 
 register("@opentelemetry/instrumentation/hook.mjs", import.meta.url);
 
+// Exported for the reason `routeFor` is: it is the one place a decision
+// is made, and the decision is invisible in its effect — a scrape that
+// stopped being excluded looks like a busier service, not like a bug.
+// Nothing imports this at runtime; the test does.
+export function isScrape(request) {
+  return new URL(request.url, "http://localhost").pathname === "/metrics";
+}
+
 // Everything else — the service name, the endpoint, the protocol, which
 // signals are exported — comes from the OTEL_* variables in this
 // service's compose block. Nothing about the destination is written
 // here.
 const sdk = new NodeSDK({
   instrumentations: [
-    new HttpInstrumentation({
-      ignoreIncomingRequestHook: (request) =>
-        new URL(request.url, "http://localhost").pathname === "/metrics",
-    }),
+    new HttpInstrumentation({ ignoreIncomingRequestHook: isScrape }),
   ],
 });
 
-sdk.start();
+// The same guard main.js puts on `listen`, and the two fail together:
+// under `node --import ./tracing.mjs /app/main.js` both see main.js and
+// both run, and under `node --test` neither does. Without it, importing
+// this module for the predicate above starts an SDK in the test
+// process, which registers the global providers the tests install their
+// own stubs into.
+if (process.argv[1]?.endsWith("main.js")) {
+  sdk.start();
+}
