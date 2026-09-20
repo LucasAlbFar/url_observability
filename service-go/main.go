@@ -13,11 +13,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -59,11 +61,55 @@ var (
 	}
 )
 
-// logger is what the handlers below log through. It writes to stderr
-// until main replaces it with the bridge, which is what a test gets and
-// what the process gets if the SDK fails to start: this service may not
-// go silent because its telemetry did.
+// logger is what the handlers below log through, writing to stderr
+// until main adds the bridge beside it.
 var logger = slog.Default()
+
+// fanout writes every record to each handler it holds. The OTLP bridge
+// is the only one carrying the trace id, and it is also the only one
+// that goes nowhere when the Collector is down — `otlploghttp.New` does
+// not dial, so a bridge-only logger starts happily and then batches,
+// retries and drops. Keeping stderr beside it is what leaves
+// `docker logs` something to show when the telemetry path is the thing
+// that broke.
+type fanout []slog.Handler
+
+func (f fanout) Enabled(ctx context.Context, level slog.Level) bool {
+	for _, handler := range f {
+		if handler.Enabled(ctx, level) {
+			return true
+		}
+	}
+	return false
+}
+
+func (f fanout) Handle(ctx context.Context, record slog.Record) error {
+	var failed error
+	for _, handler := range f {
+		if handler.Enabled(ctx, record.Level) {
+			// Clone, because a handler may retain what it is given and
+			// a Record's attributes share backing storage.
+			failed = errors.Join(failed, handler.Handle(ctx, record.Clone()))
+		}
+	}
+	return failed
+}
+
+func (f fanout) WithAttrs(attrs []slog.Attr) slog.Handler {
+	next := make(fanout, len(f))
+	for i, handler := range f {
+		next[i] = handler.WithAttrs(attrs)
+	}
+	return next
+}
+
+func (f fanout) WithGroup(name string) slog.Handler {
+	next := make(fanout, len(f))
+	for i, handler := range f {
+		next[i] = handler.WithGroup(name)
+	}
+	return next
+}
 
 // startLogging is startTracing for the third pillar, and shaped the
 // same on purpose — same environment, same batcher, same nothing to
@@ -78,7 +124,10 @@ func startLogging(ctx context.Context) error {
 		sdklog.WithProcessor(sdklog.NewBatchProcessor(exporter)),
 		sdklog.WithResource(resource.Default()),
 	))
-	logger = otelslog.NewLogger("service-go")
+	logger = slog.New(fanout{
+		otelslog.NewHandler("service-go"),
+		slog.NewTextHandler(os.Stderr, nil),
+	})
 	return nil
 }
 
