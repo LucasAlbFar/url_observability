@@ -90,10 +90,12 @@ move the design:
 | `service-go/main.go`, `main_test.go`, `go.mod`, `go.sum` | `log/slog` with the OTel bridge, in place of the stdlib `log` |
 | `service-node/main.js`, `main.test.js`, `tracing.mjs`, `package.json`, `package-lock.json` | The logger and its bridge, mounted where the SDK already is |
 | `prometheus.yml` | The ceiling only if the measurement requires it; a label rule only if Loki brings a raw-path value |
+| `grafana/dashboards/services.json` | The panel threshold, which moves with the ceiling. Added to this table 2026-09-20, after the diff check found it missing |
 | `tests/test_loki_config.py` | New: structural assertions, in the shape `test_collector_config.py` has |
 | `tests/test_collector_config.py` | The logs pipeline and its destination |
 | `tests/test_compose_config.py`, `tests/test_grafana_provisioning.py` | The new service, the volume, the datasource |
-| `tests/test_main.py`, `service-go/main_test.go`, `service-node/main.test.js` | The `/metrics` trace exclusion, in all three |
+| `tests/test_chain.py`, `tests/test_main.py` | The app's two log paths. Added to this table 2026-09-20, after the diff check found `test_chain.py` missing |
+| `tests/test_compose_config.py`, `service-go/main_test.go`, `service-node/main.test.js` | The `/metrics` trace exclusion, in all three — the app's is a declared value, so it lands beside the compose assertions rather than in `test_main.py` |
 | `tests/test_docs_versions.py` | Follows on its own once the Loki image is pinned and quoted |
 | `.github/workflows/python-app.yml` | The Loki validator, in the shape of the other three |
 | `CLAUDE.md`, `README.md` | The third pillar, the Loki label rule, what stays on stdout, how to find one request's log |
@@ -360,8 +362,41 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       ends on are the ones a reader would otherwise discover by being surprised — only errors are
       logged, only two labels may go inside the `{}`, boot lines are not there, and the volume
       survives a `down`. — `docs: explain how to find the log of one request`
-- [ ] Run the verification script below and record each result. No commit beyond the tick. —
+- [x] Run the verification script below and record each result. No commit beyond the tick. —
       verification only
+
+      Run 2026-09-20. **Eleven of twelve pass; the twelfth is the CI run, which needs the branch
+      pushed.**
+
+      1. `tox` green end to end — py311, lint, and safety with no known vulnerabilities in either
+         requirements file.
+      2. `config -q` clean, **ten** services resolved.
+      3. All four validators accept their files, each image read out of the compose file.
+      4. **Six targets at `up=1`** — the three services, the Collector, Tempo and Loki — with
+         `prometheus.yml` naming none of them: a grep for every service name in that file returns 0.
+      5. Two provoked failures, each with a trace id chosen in the request's own `traceparent`. The
+         app's returned **two lines** — `fastapi-app` naming `service-go`, `service-go` naming
+         `service-node` — and the Go service's, called directly, returned **one**. The line count
+         follows how many hops took part, which is the point.
+      6. **13 of 13 lines carry a trace id**, 7 from the app and 6 from the Go service.
+         `service-node` has none, and that is correct rather than missing: it is the last hop, calls
+         nobody, and has no dependency failure to report.
+      7. Indexed labels are **`service_name` and `log_severity`**, and `/series` returns **four**
+         streams — service by severity, none per request or per instance.
+      8. **Both earlier pillars intact.** The derived request series still separate by job — 112,
+         80 and 64 for the three services — `process_cpu_seconds_total` still arrives per job, and
+         a fresh `/chain` is one trace of **three services and seven spans**.
+      9. **Loki stopped:** all three answer `/health`, `/chain` answers 200, and no container goes
+         unhealthy.
+      10. **The Collector stopped:** the same, and the target list drops to five — every signal it
+          carries stops together, while nothing stops answering.
+      11. **Not run:** needs the branch pushed.
+      12. The diff names 28 files. Twenty-six are in the table above; **two were not, and the table
+          was corrected rather than the claim softened** — `grafana/dashboards/services.json`,
+          which the ceiling task required moving in the same commit, and `tests/test_chain.py`,
+          which holds the app's dependency-failure line. `requirements/` and `Dockerfile` did not
+          move, as the table allowed for; `tests/test_docs_versions.py` did not either, and did not
+          need to.
 
 ## Edge cases
 
