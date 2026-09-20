@@ -11,7 +11,27 @@
 import http from "node:http";
 
 import { trace } from "@opentelemetry/api";
+import { logs, SeverityNumber } from "@opentelemetry/api-logs";
 import client from "prom-client";
+
+// The third pillar. The API, not a logging library: this service has no
+// framework and needs none here either. `emit` reads the active context
+// itself, so a record made inside a request carries that request's
+// trace id without this file ever naming one. With no provider
+// registered the API is a no-op, which is how the tests run.
+//
+// The logger is resolved per call rather than held in a const: the API
+// binds one to whichever provider is registered at that moment, and a
+// module-level const would bind to the noop provider for any load order
+// where the SDK starts second.
+function logError(message, attributes) {
+  logs.getLogger("service-node").emit({
+    severityNumber: SeverityNumber.ERROR,
+    severityText: "ERROR",
+    body: message,
+    attributes,
+  });
+}
 
 // The FastAPI app listens on 8002 and the Go service on 8003; this one
 // takes the next port. None is configurable, for the same reason the
@@ -125,6 +145,7 @@ async function metrics(response) {
     response.writeHead(200, { "Content-Type": client.register.contentType });
     response.end(body);
   } catch (error) {
+    logError("metrics collection failed", { "error.type": error.name });
     response.writeHead(500, { "Content-Type": "text/plain" });
     response.end(`${error}\n`);
   }
@@ -149,7 +170,24 @@ export function createServer() {
       return;
     }
 
-    instrument(routeFor(path), routes[path] ?? notFound)(request, response);
+    // A handler throwing is an uncaught exception on current Node,
+    // which ends the process: nothing above this catches it, because
+    // the server callback is where the stack starts. So the line and
+    // the 500 are both written here, the way the app writes them in an
+    // exception handler.
+    try {
+      instrument(routeFor(path), routes[path] ?? notFound)(request, response);
+    } catch (error) {
+      logError("unhandled exception", {
+        "error.type": error.name,
+        "http.request.method": request.method,
+        "url.path": path,
+      });
+      if (!response.headersSent) {
+        response.writeHead(500, { "Content-Type": "text/plain" });
+        response.end("Internal Server Error\n");
+      }
+    }
   });
 }
 

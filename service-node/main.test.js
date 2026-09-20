@@ -1,7 +1,27 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 
+import { trace } from "@opentelemetry/api";
+import { logs } from "@opentelemetry/api-logs";
+import client from "prom-client";
+
 import { createServer, routeFor } from "./main.js";
+
+// The smallest thing the logs API accepts as a provider, registered
+// once: a second setGlobalLoggerProvider is ignored with a warning, so
+// registering per test silently leaves every test after the first
+// reading an array nothing writes to. The sink is shared and emptied
+// instead.
+const emitted = [];
+
+logs.setGlobalLoggerProvider({
+  getLogger: () => ({ emit: (record) => emitted.push(record) }),
+});
+
+function collectRecords() {
+  emitted.length = 0;
+  return emitted;
+}
 
 let server;
 let origin;
@@ -111,3 +131,50 @@ test("an unmatched path is labelled by one fixed value", () => {
   }
 });
 
+
+
+// The 500 paths, and the line each of them leaves. Neither is reachable
+// through a normal request, so each is provoked at the one seam it has:
+// the registry that /metrics awaits, and the span lookup every other
+// route goes through. Provoking them is the point — without a line
+// here, a request that failed is a status and nothing else.
+test("a failing registry is reported and logged", async () => {
+  const records = collectRecords();
+  const restore = client.register.metrics;
+  client.register.metrics = async () => {
+    throw new Error("collector exploded");
+  };
+
+  try {
+    const response = await fetch(origin + "/metrics");
+    assert.equal(response.status, 500);
+  } finally {
+    client.register.metrics = restore;
+  }
+
+  assert.equal(records.length, 1);
+  assert.equal(records[0].severityText, "ERROR");
+  assert.equal(records[0].body, "metrics collection failed");
+  assert.equal(records[0].attributes["error.type"], "Error");
+});
+
+test("a handler that throws is answered and logged", async () => {
+  const records = collectRecords();
+  const restore = trace.getActiveSpan;
+  trace.getActiveSpan = () => {
+    throw new Error("boom");
+  };
+
+  try {
+    const response = await fetch(origin + "/health");
+    assert.equal(response.status, 500);
+    assert.equal(await response.text(), "Internal Server Error\n");
+  } finally {
+    trace.getActiveSpan = restore;
+  }
+
+  assert.equal(records.length, 1);
+  assert.equal(records[0].body, "unhandled exception");
+  assert.equal(records[0].attributes["url.path"], "/health");
+  assert.equal(records[0].attributes["http.request.method"], "GET");
+});

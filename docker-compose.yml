@@ -123,7 +123,10 @@ services:
       - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
       - OTEL_TRACES_EXPORTER=otlp
       - OTEL_METRICS_EXPORTER=none
-      - OTEL_LOGS_EXPORTER=none
+      # Read by NodeSDK, which unlike the Go SDK does look this up —
+      # and which defaults to otlp when the value is empty, so `none`
+      # was the only thing keeping the logs off.
+      - OTEL_LOGS_EXPORTER=otlp
       # The stable HTTP names, for the reason the app pins them: a
       # dashboard written against one set of names matches nothing
       # against the other, and says nothing about why.

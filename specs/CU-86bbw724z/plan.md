@@ -277,7 +277,13 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       other two: the Go SDK does not read it, `startLogging` decides, and a variable nothing reads
       is the dead configuration this compose file was cleaned of once already. —
       `feat(service-go): log what failed, with its trace`
-- [ ] The same in `service-node`. — `feat(service-node): log what failed, with its trace`
+- [x] The same in `service-node`. One dependency, `@opentelemetry/api-logs`, promoted from
+      transitive to declared — the API rather than a logging library, since this service has no
+      framework. Its two error paths are the registry `/metrics` awaits and the dispatch every other
+      route goes through; neither is reachable from outside, so each test provokes it at its seam.
+      `OTEL_LOGS_EXPORTER` moves to `otlp` here because NodeSDK **does** read it and defaults to
+      `otlp` when empty — `none` was the only thing holding the logs back. —
+      `feat(service-node): log what failed, with its trace`
 - [ ] The ceiling refitted **only if the measurement requires it**, with the headroom re-justified
       beside the value and the panel threshold moved in the same commit. No commit if it does not.
       **Moved here from before the datasource**, 2026-09-20: the measurement above read Loki at
