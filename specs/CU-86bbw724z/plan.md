@@ -330,10 +330,15 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       four, and `/series` returned **four streams for three services**: the app had **two**, one per
       `service_instance_id`, from the two container recreates this session. One stream per restart,
       exactly as predicted, visible in the reading rather than in an argument.
-- [ ] The label guard, in both places the measurement showed it needs to be: `otlp_config` on Loki
+- [x] The label guard, in both places the measurement showed it needs to be: `otlp_config` on Loki
       with `ignore_defaults: true`, indexing `service.name` and the severity attribute and nothing
       else; and `transform` + `groupbyattrs` on the Collector's logs pipeline to put severity there.
-      No longer conditional — `service.instance.id` makes it required. —
+      No longer conditional — `service.instance.id` makes it required. Verified against the stack
+      with the log volume dropped first, so the reading is the guard's and not the old index's:
+      indexed labels came back **`service_name` and `log_severity`**, four streams for two services
+      and three severities, and a record pushed with a **fresh `service.instance.id` opened no
+      stream of its own**. Selecting by severity returns the right lines, and a filter by trace id
+      still finds its line — the metadata is untouched. —
       `feat(loki): bound what becomes a stream`
 - [ ] **The recorded debt:** the `/metrics` trace exclusion asserted in all three services. —
       `test: assert the scrape stays out of the traces`

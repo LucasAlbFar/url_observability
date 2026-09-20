@@ -41,6 +41,30 @@ processors:
         - name == "up"
         - IsMatch(name, "^scrape_")
 
+  # Severity, moved to where Loki can index it. It is a label by
+  # decision — service and severity are what a stream may be keyed by —
+  # and Loki cannot reach it from its own side: its OTLP translation
+  # files severity under structured metadata before the attribute lists
+  # it consults are read.
+  #
+  # Two processors, and the shorter way is wrong in a way that looks
+  # right. Writing straight to `resource.attributes` labels the whole
+  # batch with whichever record was processed last — measured: five
+  # records of three severities arrived as one stream labelled INFO, and
+  # selecting ERROR returned nothing. So the attribute goes on the
+  # record, and `groupbyattrs` below splits the batch by it.
+  transform/severity_attribute:
+    error_mode: ignore
+    log_statements:
+      # `log.severity_text`, with the context spelled: the bare name
+      # fails validation.
+      - set(log.attributes["log.severity"], log.severity_text)
+
+  # What turns that record attribute into one resource per severity,
+  # which is what the exporter sends and what Loki indexes.
+  groupbyattrs/severity:
+    keys: [log.severity]
+
   # Server spans only, which is why the connector reads a pipeline of
   # its own: every /chain hop also produces a client span, and counting
   # both doubles the throughput of every route.
@@ -149,7 +173,7 @@ service:
     # path, not yet the traffic.
     logs:
       receivers: [otlp]
-      processors: [batch]
+      processors: [transform/severity_attribute, groupbyattrs/severity, batch]
       exporters: [otlp_http/loki]
   telemetry:
     metrics:

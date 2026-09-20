@@ -23,6 +23,12 @@ PORT_LABEL = "prometheus.io/port"
 # label, and a label per trace id is a stream per request.
 METADATA_SCHEMA = "v13"
 METADATA_STORE = "tsdb"
+# What a stream may be keyed by, and nothing else. `service.instance.id`
+# is the reason this is written down rather than left to the default:
+# the Python SDK sets it to a UUID per process, Loki indexes it by
+# default, and the app would open a stream on every restart.
+INDEXED_ATTRIBUTES = {"service.name", "log.severity"}
+INDEX_ACTION = "index_label"
 
 
 @pytest.fixture(scope="session")
@@ -80,3 +86,39 @@ def test_the_schema_carries_structured_metadata(loki_config):
     for entry in configs:
         assert entry["schema"] == METADATA_SCHEMA, entry
         assert entry["store"] == METADATA_STORE, entry
+
+
+def resource_attribute_rules(loki_config):
+    """Return the OTLP resource-attribute config, or None."""
+    otlp = loki_config.get("limits_config", {}).get("otlp_config", {})
+    return otlp.get("resource_attributes")
+
+
+def test_only_two_attributes_become_a_stream_label(loki_config):
+    """Confirm the indexed set is the decided one, not Loki's default.
+
+    Every label combination is a stream with an index of its own, so
+    this is the cardinality guard for the log store — the limits in
+    prometheus.yml do not reach it.
+    """
+    rules = resource_attribute_rules(loki_config)
+    assert rules, "the indexed attribute set is left to the default"
+    indexed = {
+        attribute
+        for entry in rules.get("attributes_config", [])
+        if entry.get("action") == INDEX_ACTION
+        for attribute in entry.get("attributes", [])
+    }
+    assert indexed == INDEXED_ATTRIBUTES, sorted(indexed)
+
+
+def test_the_defaults_are_turned_off_rather_than_added_to(loki_config):
+    """Confirm the list above replaces Loki's four, not extends them.
+
+    Without this the guard reads as correct and does nothing: the
+    default set is merged in, `service.instance.id` keeps its index,
+    and the app opens a stream on every restart with no rule looking
+    wrong.
+    """
+    rules = resource_attribute_rules(loki_config)
+    assert rules.get("ignore_defaults") is True, rules

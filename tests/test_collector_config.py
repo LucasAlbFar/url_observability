@@ -172,6 +172,60 @@ def test_the_logs_pipeline_reads_the_receiver_the_others_read(collector_config):
     assert logs <= traces, (sorted(logs), sorted(traces))
 
 
+def test_severity_is_carried_where_the_log_store_indexes_it(
+    collector_config, loki_config
+):
+    """Confirm severity reaches the store as an attribute it indexes.
+
+    Loki cannot promote severity itself — its OTLP translation files it
+    under structured metadata before the attribute lists it consults
+    are read — so the name Loki is told to index has to be one this
+    pipeline puts there. Two files, one name, and nothing says anything
+    when they stop agreeing: the label simply never appears.
+    """
+    rules = loki_config["limits_config"]["otlp_config"]["resource_attributes"]
+    indexed = {
+        attribute
+        for entry in rules["attributes_config"]
+        if entry["action"] == "index_label"
+        for attribute in entry["attributes"]
+    }
+    written = "\n".join(
+        str(collector_config["processors"][name])
+        for _, pipeline in pipelines(collector_config, "logs")
+        for name in pipeline.get("processors", [])
+    )
+    for attribute in indexed - {"service.name"}:
+        assert attribute in written, attribute
+
+
+def test_the_severity_attribute_is_regrouped_before_it_is_exported(
+    collector_config,
+):
+    """Confirm the batch is split by severity rather than merely tagged.
+
+    A resource is shared by every record under it, so an attribute
+    written straight to the resource labels them all with whichever
+    record was processed last — measured, and it selects nothing. The
+    regrouping is what makes the attribute true of the records it
+    labels, and it has to run before the exporter.
+    """
+    for name, pipeline in pipelines(collector_config, "logs"):
+        processors = pipeline.get("processors", [])
+        grouping = [p for p in processors if p.split("/")[0] == "groupbyattrs"]
+        assert grouping, (name, processors)
+        for group in grouping:
+            keys = collector_config["processors"][group]["keys"]
+            assert keys, group
+            writer = next(
+                p
+                for p in processors
+                if p.split("/")[0] == "transform"
+                and any(key in str(collector_config["processors"][p]) for key in keys)
+            )
+            assert processors.index(writer) < processors.index(group), processors
+
+
 def test_the_collector_publishes_its_metrics_where_prometheus_looks(
     collector_config, compose_labels
 ):

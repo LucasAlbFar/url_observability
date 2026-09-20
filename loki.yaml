@@ -32,3 +32,28 @@ schema_config:
       index:
         prefix: index_
         period: 24h
+
+# The cardinality guard, and the half of it that lives here. Every label
+# combination is a stream with its own index and its own files, so the
+# question is not what is stored but what is indexed.
+#
+# `ignore_defaults` is the load-bearing word. Loki indexes four resource
+# attributes by default — service.name, service.instance.id,
+# service.namespace and deployment.environment.name — and the second is
+# a UUID the Python SDK generates per process, so the app alone opens a
+# new stream on every restart. Measured: four streams for three
+# services, two of them the app's, after two recreates.
+#
+# What is not listed here is not lost, only unindexed: every other
+# resource attribute, every log attribute, and the trace id, span id and
+# severity Loki's own translation sets aside become structured metadata,
+# queryable by filter. `log.severity` is on the list because the
+# Collector puts it there for exactly this — severity is not reachable
+# from this side.
+limits_config:
+  otlp_config:
+    resource_attributes:
+      ignore_defaults: true
+      attributes_config:
+        - action: index_label
+          attributes: [service.name, log.severity]
