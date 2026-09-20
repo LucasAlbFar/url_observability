@@ -390,7 +390,10 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
          unhealthy.
       10. **The Collector stopped:** the same, and the target list drops to five — every signal it
           carries stops together, while nothing stops answering.
-      11. **Not run:** needs the branch pushed.
+      11. **Green, all four jobs** — `build`, `lint` within it, `infra`, `go`, `node` — on run
+          35538539025, the pull request's first. The workflow listens on `push` to main and
+          `pull_request` against it, so pushing the branch alone triggers nothing; the run needed
+          the PR.
       12. The diff names 28 files. Twenty-six are in the table above; **two were not, and the table
           was corrected rather than the claim softened** — `grafana/dashboards/services.json`,
           which the ceiling task required moving in the same commit, and `tests/test_chain.py`,
