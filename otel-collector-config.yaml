@@ -168,9 +168,8 @@ service:
       receivers: [prometheus/internal]
       processors: [filter/internal_scrape_metrics]
       exporters: [prometheus]
-    # The same receiver again, one more consumer. Empty until the
-    # services turn OTEL_LOGS_EXPORTER on: what exists here is the
-    # path, not yet the traffic.
+    # The same receiver again, one more consumer: the three services
+    # send their error lines here alongside their spans.
     logs:
       receivers: [otlp]
       processors: [transform/severity_attribute, groupbyattrs/severity, batch]
