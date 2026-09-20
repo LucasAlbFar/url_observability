@@ -263,9 +263,14 @@ One commit per task, with the checkbox ticked in the same commit. Any sentence i
       splits the batch into one resource per severity. The same five records then arrived as **three**
       streams, and ERROR, WARN and INFO selected 2, 1 and 2 lines. The OTTL path needs its context
       spelled — `log.severity_text`, not `severity_text`, which fails validation.
-- [ ] The app's structured logging over OTLP, on error and on dependency failure, with
+- [x] The app's structured logging over OTLP, on error and on dependency failure, with
       `OTEL_LOGS_EXPORTER` turned on in its block. Recompiling `requirements/` needs `pip<26` in a
-      container. — `feat(app): log what failed, with its trace`
+      container. **No dependency moved** — the SDK and the instrumentation were already installed,
+      so `requirements/` did not change. What it needed instead was a second variable:
+      `OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true`, read in
+      `opentelemetry.sdk._configuration` and defaulting to `"false"`. Measured — with the exporter
+      on and the variable absent the app logs, nothing leaves, and nothing anywhere reports it. —
+      `feat(app): log what failed, with its trace`
 - [ ] The same in `service-go`, with `log/slog` and the OTel bridge replacing the stdlib `log` for
       everything but the boot lines. — `feat(service-go): log what failed, with its trace`
 - [ ] The same in `service-node`. — `feat(service-node): log what failed, with its trace`

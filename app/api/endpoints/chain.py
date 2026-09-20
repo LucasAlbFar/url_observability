@@ -1,9 +1,12 @@
 """The route that crosses every service."""
 
+import logging
+
 import httpx
 from fastapi import APIRouter, HTTPException
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # The next hop, written here rather than read from the environment, for
 # the reason worker/load_driver.py keeps its own list: one address, in
@@ -27,6 +30,12 @@ async def chain():
             response.raise_for_status()
             following = response.json()
     except (httpx.HTTPError, ValueError) as error:
+        # The status says a neighbour failed; only the line says what it
+        # said. The derived metric counts the 502 and cannot carry this.
+        logger.error(
+            "next hop failed",
+            extra={"server.address": NEXT, "error.type": type(error).__name__},
+        )
         # 502 rather than 500: the failure is downstream, and that
         # difference is what says which service to go and look at.
         # ValueError is in the list for the same reason: a 200 carrying

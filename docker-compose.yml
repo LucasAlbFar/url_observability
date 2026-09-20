@@ -16,11 +16,17 @@ services:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
       - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
       - OTEL_TRACES_EXPORTER=otlp
-      # Off, both of them. Prometheus still pulls /metrics and nothing
-      # here logs; leaving either at its default would send a second
-      # copy of the metrics down a path no dashboard reads.
+      # Metrics off: Prometheus still pulls /metrics, and leaving this
+      # at its default would send a second copy down a path no
+      # dashboard reads. Logs on, which is the third pillar arriving —
+      # the same OTLP endpoint above carries them.
       - OTEL_METRICS_EXPORTER=none
-      - OTEL_LOGS_EXPORTER=none
+      - OTEL_LOGS_EXPORTER=otlp
+      # The exporter alone exports nothing: the SDK only attaches its
+      # handler to the root logger when this is true, and it defaults
+      # to false. Measured — without it the app logs, nothing leaves,
+      # and no error says so anywhere.
+      - OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true
       # The semantic convention, pinned rather than defaulted. `http`
       # selects the stable names — http.request.method,
       # http.response.status_code, http.route — over the pre-1.0 ones
