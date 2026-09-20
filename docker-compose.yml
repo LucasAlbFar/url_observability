@@ -81,9 +81,11 @@ services:
       - OTEL_TRACES_EXPORTER=otlp
       - OTEL_METRICS_EXPORTER=none
       # No OTEL_LOGS_EXPORTER here, unlike the other two blocks: the Go
-      # SDK does not read it. `startLogging` in main.go is what decides,
-      # and a variable nothing reads is the dead configuration this
-      # compose file has already been cleaned of once.
+      # SDK reads no exporter variable at all — there is no autoconfigure
+      # package, so `startTracing` and `startLogging` in main.go choose by
+      # importing. That is true of the two lines above as well; they
+      # predate the logging pillar and are left alone. What was declined
+      # was adding a third variable this service cannot read.
       #
       # Declared for the same reason as in the other two blocks, and it
       # decides less here: this service pins the convention in an import
