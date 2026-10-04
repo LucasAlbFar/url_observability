@@ -244,6 +244,7 @@ test("a throw in the io-bound callback is answered and logged", async () => {
   assert.equal(records.length, 1);
   assert.equal(records[0].body, "unhandled exception");
   assert.equal(records[0].attributes["url.path"], "/load/io-bound");
+  assert.equal(records[0].attributes["http.request.method"], "GET");
 });
 
 

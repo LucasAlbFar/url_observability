@@ -63,13 +63,17 @@ function health(response) {
 
 // The callback runs on a stack the dispatch `try`/`catch` below never
 // sees, so it carries its own: a throw here would otherwise end the
-// process.
-function ioBound(response) {
+// process. The request is passed in for the line alone, so it carries
+// the same attributes as the one the dispatch writes.
+function ioBound(response, request) {
   setTimeout(() => {
     try {
       writeJSON(response, 200, '{"message":"I/O-bound task completed"}');
     } catch (error) {
-      answerUnhandled(response, error, { "url.path": "/load/io-bound" });
+      answerUnhandled(response, error, {
+        "http.request.method": request.method,
+        "url.path": "/load/io-bound",
+      });
     }
   }, 2000);
 }
@@ -145,7 +149,7 @@ function instrument(route, handler) {
       span.updateName(`${request.method} ${route}`);
     }
 
-    handler(response);
+    handler(response, request);
   };
 }
 
