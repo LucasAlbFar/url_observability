@@ -187,7 +187,14 @@ One commit per task, its checkbox ticked in the same commit.
       exemplars of the bucket series inside it. So no raw-bucket panel is added. A point's tooltip
       carries a *Query with tempo* link, and clicking one opened `service-go: GET /load/cpu-bound`
       in Tempo.
-- [ ] Trace → logs. — `feat(grafana): open the logs of a trace`
+- [x] Trace → logs. — `feat(grafana): open the logs of a trace`
+
+      Measured 2026-10-04 with a throwaway Tempo datasource before provisioning: the default
+      `filterByTraceID` link already reaches structured metadata. For the app's `GET /fail` span it
+      wrote `{service_name="fastapi-app"} | label_format log_line_contains_trace_id=…
+      | log_line_contains_trace_id="true" or trace_id="<id>"` over the span's own 8 ms window, and
+      returned that request's one line, in Explore and through the Loki API alike. So no
+      `customQuery` and no time shift.
 - [ ] Logs → trace, in the form the second task decided. —
       `feat(grafana): open the trace of a log line`
 - [ ] Loki retention and compactor, asserted against Prometheus's; Tempo's measured and recorded. —

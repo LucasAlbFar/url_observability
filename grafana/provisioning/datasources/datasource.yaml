@@ -61,6 +61,18 @@ datasources:
       streamingEnabled:
         search: false
         metrics: false
+      # Trace -> logs: a span opens the lines of its own service and its
+      # own request. The tag maps the span's `service.name` to the label
+      # Loki indexes it under. `filterByTraceID` needs nothing more —
+      # measured: the query it writes falls back to `trace_id=` over
+      # structured metadata, where the id is, when the line does not
+      # contain it. No time shift: every line is written inside its span.
+      tracesToLogsV2:
+        datasourceUid: loki
+        tags:
+          - key: service.name
+            value: service_name
+        filterByTraceID: true
 
   # Born with its uid too, for the same reason, and with no
   # `deleteDatasources` entry. Logs are read in Explore, like traces:

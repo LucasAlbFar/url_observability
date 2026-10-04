@@ -346,6 +346,35 @@ def test_an_exemplar_opens_its_trace(repo_root):
     ), destinations
 
 
+def test_a_span_opens_the_logs_of_its_request(repo_root):
+    """Confirm the trace store links to lines by service and by trace id.
+
+    The tag has to name the label Loki actually indexes: Loki writes a
+    resource attribute's dots as underscores, and `loki.yaml` decides
+    which attributes are labels at all. A tag naming anything else
+    selects no stream and returns no line, with no error.
+    """
+    config = yaml.safe_load((repo_root / DATASOURCE_CONFIG).read_text())
+    loki = yaml.safe_load((repo_root / LOKI_CONFIG).read_text())
+    indexed = {
+        attribute.replace(".", "_")
+        for rule in loki["limits_config"]["otlp_config"]["resource_attributes"][
+            "attributes_config"
+        ]
+        if rule["action"] == "index_label"
+        for attribute in rule["attributes"]
+    }
+    logs = {d["uid"] for d in config["datasources"] if d["type"] == "loki"}
+    stores = [d for d in config["datasources"] if d["type"] == "tempo"]
+    assert stores
+    for store in stores:
+        link = store["jsonData"]["tracesToLogsV2"]
+        assert link["datasourceUid"] in logs, store["name"]
+        assert link["filterByTraceID"] is True, store["name"]
+        tags = {tag["key"]: tag["value"] for tag in link["tags"]}
+        assert tags.get("service.name") in indexed, (store["name"], tags)
+
+
 def test_every_bucket_query_asks_for_exemplars(dashboards):
     """Confirm the latency panel draws the points that open a request.
 
