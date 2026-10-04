@@ -19,6 +19,10 @@ distributor:
           # sends from another container.
           endpoint: 0.0.0.0:4317
 
+# No retention here, deliberately: the default `block_retention` is
+# 336h, read off /status/config. That outlives the 168h Loki and
+# Prometheus keep, so every line and every series still stored can find
+# its trace.
 storage:
   trace:
     backend: local

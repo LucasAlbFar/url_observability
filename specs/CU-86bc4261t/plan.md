@@ -40,7 +40,6 @@ Checked on 2026-10-04, at `b4a3d87`.
 
 **Hypotheses, to measure with the stack up:**
 
-- Tempo 3.0.3's default block retention.
 - How long the stack takes to come up healthy on a cold CI runner.
 
 ## Affected files
@@ -57,6 +56,7 @@ Checked on 2026-10-04, at `b4a3d87`.
 | `grafana/provisioning/datasources/datasource.yaml` | One link per datasource |
 | `grafana/dashboards/services.json` | Exemplars on the panel the measurement picks |
 | `loki.yaml` | `retention_period` and the compactor |
+| `tempo.yaml` | A comment recording the default retention |
 | `tests/test_collector_config.py`, `tests/test_compose_config.py`, `tests/test_grafana_provisioning.py`, `tests/test_loki_config.py` | The new fields |
 | `.github/workflows/python-app.yml` | The `smoke` job |
 | `CLAUDE.md`, `README.md` | The links, the walk, attaching a service |
@@ -204,8 +204,15 @@ One commit per task, its checkbox ticked in the same commit.
       `/api/datasources/uid/loki`, and the link would have opened Tempo with no query. Escaped as
       `$${__value.raw}`, it arrives intact; the `service-node` line's *Open trace* then opened
       `service-node: GET /fail`, status 500.
-- [ ] Loki retention and compactor, asserted against Prometheus's; Tempo's measured and recorded. —
+- [x] Loki retention and compactor, asserted against Prometheus's; Tempo's measured and recorded. —
       `feat(loki): bound how long a line is kept`
+
+      Measured 2026-10-04 through the datasource proxies, since neither store publishes a port.
+      **Tempo 3.0.3 keeps blocks 336h by default** — `block_retention` in `/status/config` — so it
+      stays unset, with the reading beside `storage:` in `tempo.yaml`. Loki's `/config` after the
+      change reads `retention_period: 1w` with `retention_enabled: true`, the compactor module
+      starts, and a `/fail` line is ingested after the restart. Its `retention_period: 0s` belongs
+      to `table_manager`, which a tsdb store does not use.
 - [ ] **Measure:** the full walk by hand from `/fail` and from a `/chain` 502, in two services;
       record whether the empty trace → logs result for a successful request is a problem. —
       verification
