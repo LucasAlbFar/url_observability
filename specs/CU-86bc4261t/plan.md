@@ -40,11 +40,6 @@ Checked on 2026-10-04, at `b4a3d87`.
 
 **Hypotheses, to measure with the stack up:**
 
-- Whether switching the exporter to OpenMetrics leaves the series names and the sample count as
-  they are — OpenMetrics treats `_total` and `_created` differently.
-- Whether Prometheus v3.13.2 negotiates OpenMetrics by default, and whether the `job` re-key in
-  `metric_relabel_configs` keeps the exemplar attached.
-- How much the exposition grows against `body_size_limit`.
 - Whether Grafana draws exemplars on a `histogram_quantile` panel or only on a raw bucket query.
 - Tempo 3.0.3's default block retention.
 - How long the stack takes to come up healthy on a cold CI runner.
@@ -153,8 +148,36 @@ One commit per task, its checkbox ticked in the same commit.
       where the exception handler answers rather than the route — the span still records the 500.
 - [x] Exemplars in the connector, OpenMetrics in the exporter, with assertions. —
       `feat(collector): emit an exemplar with every derived metric`
-- [ ] **Measure:** series names and sample count before and after, the exposition size, and an
+- [x] **Measure:** series names and sample count before and after, the exposition size, and an
       exemplar in `query_exemplars` after the flag is set by hand. — verification
+
+      Measured 2026-10-04 under `core` + `load`. The exposition was read from inside the compose
+      network with Python in the app container — busybox `wget` in the Prometheus image does not
+      resolve compose service names. The flag was set through a throwaway compose override, and
+      Prometheus was recreated from the repository's own command afterwards.
+
+      **OpenMetrics changes nothing Prometheus stores.** For the Collector's target: **45 metric
+      names before and after, identical**, and `scrape_samples_post_metric_relabeling` **357 before
+      and after**. No `_created` series appears. The body is **126 KB before, 128 KB in OpenMetrics
+      after**, against `body_size_limit: 4MB`. Before the change the exporter answered the classic
+      format even when OpenMetrics was asked for; after, it answers
+      `application/openmetrics-text; version=1.0.0`. **No limit changes.**
+
+      **Exemplars sit on both counters and buckets**: 20 in one exposition, ten on
+      `traces_span_metrics_calls_total` and ten on `traces_span_metrics_duration_seconds_bucket`,
+      each carrying `trace_id` and `span_id`.
+
+      **Prometheus v3.13.2 negotiates OpenMetrics by default and the re-key keeps the exemplar.**
+      With `--enable-feature=exemplar-storage` and nothing else changed, `/api/v1/query_exemplars`
+      on the bucket series returned **73 exemplars over 19 series**, split across `fastapi-app`,
+      `service-go` and `service-node` — `job` already re-keyed from `service_name`, which is
+      dropped. One `GET /fail` per service gave one `/fail` exemplar per service, and each trace id
+      resolved in Tempo to that service's `GET /fail` server span.
+
+      **The exemplar store is a buffer, not a retention.** `prometheus_tsdb_exemplar_max_exemplars`
+      is **100000** and it filled at **3.7 per second** under load — about **7.4 hours** before the
+      oldest is evicted. That is a long way over the dashboard's default 30-minute range, so
+      `storage.exemplars` is left at its default; an exemplar older than that is simply gone.
 - [ ] The flag in the Prometheus command, a limit only if the measurement requires it, with the
       assertion. — `feat(prometheus): store the exemplars`
 - [ ] Graph → trace, and exemplars on the panel the measurement picks. —
