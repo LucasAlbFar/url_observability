@@ -75,11 +75,27 @@ datasources:
         filterByTraceID: true
 
   # Born with its uid too, for the same reason, and with no
-  # `deleteDatasources` entry. Logs are read in Explore, like traces:
-  # nothing provisioned queries this yet.
+  # `deleteDatasources` entry. Logs are read in Explore, like traces,
+  # and reached from a span through the link above.
   - name: loki
     uid: loki
     type: loki
     access: proxy
     url: http://loki:3100
     editable: false
+    jsonData:
+      # Logs -> trace. The id is structured metadata, not line content,
+      # so the matcher reads it by name — `label` — rather than by a
+      # regex over the line, which does not contain it. Measured: the
+      # link resolves on all three services' lines.
+      #
+      # `$$`, not `$`: provisioning expands `${...}` from the environment
+      # before Grafana reads the value, so a single dollar arrives empty
+      # — measured — and the link opens Tempo with no query.
+      derivedFields:
+        - name: TraceID
+          matcherType: label
+          matcherRegex: trace_id
+          url: $${__value.raw}
+          datasourceUid: tempo
+          urlDisplayLabel: Open trace

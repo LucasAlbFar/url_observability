@@ -375,6 +375,33 @@ def test_a_span_opens_the_logs_of_its_request(repo_root):
         assert tags.get("service.name") in indexed, (store["name"], tags)
 
 
+def test_a_log_line_opens_its_trace(repo_root):
+    """Confirm the log store links a line back to the trace store.
+
+    By name, because the trace id is structured metadata: a `regex`
+    matcher reads the line body, which never contains the id, and draws
+    no link at all. `trace_id` is the name Loki's OTLP translation gives
+    it, measured.
+    """
+    config = yaml.safe_load((repo_root / DATASOURCE_CONFIG).read_text())
+    traces = {d["uid"] for d in config["datasources"] if d["type"] == "tempo"}
+    stores = [d for d in config["datasources"] if d["type"] == "loki"]
+    assert stores
+    for store in stores:
+        fields = store.get("jsonData", {}).get("derivedFields", [])
+        assert any(
+            field.get("matcherType") == "label"
+            and field.get("matcherRegex") == "trace_id"
+            and field.get("datasourceUid") in traces
+            for field in fields
+        ), (store["name"], fields)
+        for field in fields:
+            # Provisioning expands `${...}` from the environment first, so
+            # an unescaped variable reaches Grafana as an empty string.
+            url = field.get("url", "")
+            assert "${" not in url.replace("$${", ""), (store["name"], url)
+
+
 def test_every_bucket_query_asks_for_exemplars(dashboards):
     """Confirm the latency panel draws the points that open a request.
 

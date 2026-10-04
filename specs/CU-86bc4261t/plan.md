@@ -195,8 +195,15 @@ One commit per task, its checkbox ticked in the same commit.
       | log_line_contains_trace_id="true" or trace_id="<id>"` over the span's own 8 ms window, and
       returned that request's one line, in Explore and through the Loki API alike. So no
       `customQuery` and no time shift.
-- [ ] Logs → trace, in the form the second task decided. —
+- [x] Logs → trace, in the form the second task decided. —
       `feat(grafana): open the trace of a log line`
+
+      The field the second task measured, provisioned — with one difference the API-created probe
+      could not show. **Provisioning expands `${...}` from the environment**, so `url:
+      ${__value.raw}` reached Grafana as an empty string, read back off
+      `/api/datasources/uid/loki`, and the link would have opened Tempo with no query. Escaped as
+      `$${__value.raw}`, it arrives intact; the `service-node` line's *Open trace* then opened
+      `service-node: GET /fail`, status 500.
 - [ ] Loki retention and compactor, asserted against Prometheus's; Tempo's measured and recorded. —
       `feat(loki): bound how long a line is kept`
 - [ ] **Measure:** the full walk by hand from `/fail` and from a `/chain` 502, in two services;
