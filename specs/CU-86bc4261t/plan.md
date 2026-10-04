@@ -245,7 +245,7 @@ One commit per task, its checkbox ticked in the same commit.
 - [x] The two defects the walk found: the derived-field matcher anchored as `^trace_id$`, and
       the trace → logs window shifted a second either side, each asserted. —
       `fix(grafana): anchor the trace id matcher and pad the span window`
-- [ ] The `smoke` job. — `ci: prove the chain answers, not just that it parses`
+- [x] The `smoke` job. — `ci: prove the chain answers, not just that it parses`
 - [ ] `CLAUDE.md`: `/fail`, the three links and what each depends on. —
       `docs: document the correlation path`
 - [ ] `README.md`: the walk as a script, and how to attach a new service. —
