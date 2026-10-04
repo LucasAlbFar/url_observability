@@ -38,10 +38,6 @@ Checked on 2026-10-04, at `b4a3d87`.
 - **Prometheus discovery reads the socket through `${DOCKER_GID:-983}`**; a CI runner's `docker`
   group id is not 983.
 
-**Hypotheses, to measure with the stack up:**
-
-- How long the stack takes to come up healthy on a cold CI runner.
-
 ## Affected files
 
 | File | Change |
@@ -260,10 +256,10 @@ One commit per task, its checkbox ticked in the same commit.
       `--no-index` is passed through to pip by this `pip-tools` and blocks PyPI, so it was dropped
       from the invocation; the header itself did not change. `safety` passes, and the app image
       rebuilt with 2.8.0 passes the `smoke` check.
-- [ ] Run the verification steps and record each result. — verification
+- [x] Run the verification steps and record each result. — verification
 
-      Run 2026-10-04 under `core` + `load`; step 1 re-run after the `urllib3` bump above. **One
-      step is pending.**
+      Run 2026-10-04 under `core` + `load`; step 1 re-run after the `urllib3` bump above, step 10
+      in CI once the PR was open. **All eleven pass.**
 
       1. `tox`: `py311` 114 passed at 100% coverage, `lint` clean, `safety` no known
          vulnerabilities in either file. `go vet` and `go test` pass, `gofmt -l` empty, `npm test`
@@ -285,8 +281,9 @@ One commit per task, its checkbox ticked in the same commit.
          trace id.
       9. Collector stopped: `/health` 200 on all three, `/chain` 200 in 23 ms, and every container
          still `healthy` 40 s later. Started again afterwards.
-      10. **Pending.** Needs the branch pushed; the cold start of the `smoke` job is unmeasured
-          until then.
+      10. PR #13, run `37216924175`: all five jobs green. `smoke` took 1m51s on a cold runner —
+          91s to build three images and come up healthy against a 600s ceiling, 6s for its
+          three waits, 10s to tear down.
       11. `git diff --stat main...HEAD` names 24 files: the table's, and the two ticket documents.
           `prometheus.yml` is untouched, as the exemplar measurement allowed.
 
