@@ -373,6 +373,9 @@ def test_a_span_opens_the_logs_of_its_request(repo_root):
         assert link["filterByTraceID"] is True, store["name"]
         tags = {tag["key"]: tag["value"] for tag in link["tags"]}
         assert tags.get("service.name") in indexed, (store["name"], tags)
+        # Grafana truncates the span window to whole milliseconds; a line
+        # written in the span's last one is missed without an end shift.
+        assert link.get("spanEndTimeShift", "").strip("+") not in ("", "0"), link
 
 
 def test_a_log_line_opens_its_trace(repo_root):
@@ -381,7 +384,8 @@ def test_a_log_line_opens_its_trace(repo_root):
     By name, because the trace id is structured metadata: a `regex`
     matcher reads the line body, which never contains the id, and draws
     no link at all. `trace_id` is the name Loki's OTLP translation gives
-    it, measured.
+    it, measured. Anchored, because the name is itself a regex and the
+    trace -> logs query adds `log_line_contains_trace_id`, valued `false`.
     """
     config = yaml.safe_load((repo_root / DATASOURCE_CONFIG).read_text())
     traces = {d["uid"] for d in config["datasources"] if d["type"] == "tempo"}
@@ -391,7 +395,7 @@ def test_a_log_line_opens_its_trace(repo_root):
         fields = store.get("jsonData", {}).get("derivedFields", [])
         assert any(
             field.get("matcherType") == "label"
-            and field.get("matcherRegex") == "trace_id"
+            and field.get("matcherRegex") == "^trace_id$"
             and field.get("datasourceUid") in traces
             for field in fields
         ), (store["name"], fields)

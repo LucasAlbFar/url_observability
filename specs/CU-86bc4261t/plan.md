@@ -242,6 +242,9 @@ One commit per task, its checkbox ticked in the same commit.
       failed hop — always writes one. A latency anomaly writes none, and does not need to: the
       trace is where it is answered, as the 502 above showed where its 40 ms went.
       A `traceparent` sent by the caller became that trace's id, which the smoke test relies on.
+- [x] The two defects the walk found: the derived-field matcher anchored as `^trace_id$`, and
+      the trace → logs window shifted a second either side, each asserted. —
+      `fix(grafana): anchor the trace id matcher and pad the span window`
 - [ ] The `smoke` job. — `ci: prove the chain answers, not just that it parses`
 - [ ] `CLAUDE.md`: `/fail`, the three links and what each depends on. —
       `docs: document the correlation path`

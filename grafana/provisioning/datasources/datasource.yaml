@@ -66,13 +66,22 @@ datasources:
       # Loki indexes it under. `filterByTraceID` needs nothing more —
       # measured: the query it writes falls back to `trace_id=` over
       # structured metadata, where the id is, when the line does not
-      # contain it. No time shift: every line is written inside its span.
+      # contain it.
+      #
+      # The shifts are not slack for clock skew: every line is written
+      # inside its span. Grafana truncates the span's window to whole
+      # milliseconds, so a line written in its span's last millisecond
+      # falls outside it — measured on a `service-go` 502, whose line came
+      # back empty. A second either side costs nothing, since the trace
+      # id is what selects the line.
       tracesToLogsV2:
         datasourceUid: loki
         tags:
           - key: service.name
             value: service_name
         filterByTraceID: true
+        spanStartTimeShift: -1s
+        spanEndTimeShift: 1s
 
   # Born with its uid too, for the same reason, and with no
   # `deleteDatasources` entry. Logs are read in Explore, like traces,
@@ -89,13 +98,18 @@ datasources:
       # regex over the line, which does not contain it. Measured: the
       # link resolves on all three services' lines.
       #
+      # Anchored, because the name is matched as a regex: a bare
+      # `trace_id` also matches the `log_line_contains_trace_id` label the
+      # trace -> logs query adds, and the link opened Tempo on `false` —
+      # measured, from the lines a span had just opened.
+      #
       # `$$`, not `$`: provisioning expands `${...}` from the environment
       # before Grafana reads the value, so a single dollar arrives empty
       # — measured — and the link opens Tempo with no query.
       derivedFields:
         - name: TraceID
           matcherType: label
-          matcherRegex: trace_id
+          matcherRegex: ^trace_id$
           url: $${__value.raw}
           datasourceUid: tempo
           urlDisplayLabel: Open trace
