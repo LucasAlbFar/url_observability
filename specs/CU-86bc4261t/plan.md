@@ -40,8 +40,6 @@ Checked on 2026-10-04, at `b4a3d87`.
 
 **Hypotheses, to measure with the stack up:**
 
-- Whether `derivedFields` on Grafana 12.4.7 can match structured metadata (`matcherType: label`),
-  or only a regex over the line, which does not contain the id.
 - Whether switching the exporter to OpenMetrics leaves the series names and the sample count as
   they are — OpenMetrics treats `_total` and `_created` differently.
 - Whether Prometheus v3.13.2 negotiates OpenMetrics by default, and whether the `job` re-key in
@@ -49,7 +47,6 @@ Checked on 2026-10-04, at `b4a3d87`.
 - How much the exposition grows against `body_size_limit`.
 - Whether Grafana draws exemplars on a `histogram_quantile` panel or only on a raw bucket query.
 - Tempo 3.0.3's default block retention.
-- Whether the app's span carries status 500 when the exception handler, not the route, answers.
 - How long the stack takes to come up healthy on a cold CI runner.
 
 ## Affected files
@@ -83,9 +80,9 @@ Checked on 2026-10-04, at `b4a3d87`.
 Every link names its target by `uid`, never by name; a test asserts each `uid` is declared in the
 same file. No service code is touched for any of them.
 
-If `derivedFields` cannot read structured metadata, the id goes into the line body as well, in the
-three services' log calls. It never becomes a Loki label: a label per trace id is a stream per
-request.
+`derivedFields` reads the id from structured metadata with `matcherType: label`, measured in the
+second task, so the line body stays as it is. The id never becomes a Loki label: a label per trace
+id is a stream per request.
 
 ### The exemplar crosses three points and fails silently at each
 
@@ -136,9 +133,24 @@ One commit per task, its checkbox ticked in the same commit.
 
 - [x] `/fail` in the three services, with tests, and `service-node`'s async path wrapped. —
       `feat: give every service a way to fail on purpose`
-- [ ] **Measure:** whether `derivedFields` reads structured metadata on Grafana 12.4.7, via a
+- [x] **Measure:** whether `derivedFields` reads structured metadata on Grafana 12.4.7, via a
       datasource edited in the UI and discarded. Decides the shape of the logs → trace link. —
       verification
+
+      Measured 2026-10-04 against the running stack under `core` + `load`, after one `GET /fail`
+      on each service.
+
+      **It does: the link is configuration, and no service changes.** A temporary Loki datasource
+      created through `/api/datasources`, with one derived field — `matcherType: label`,
+      `matcherRegex: trace_id`, `url: ${__value.raw}`, `datasourceUid: tempo` — showed a `TraceID`
+      link in the details of each of the three lines in Explore. Clicked on the `service-go` one,
+      it opened `service-go: GET /fail`, status 500, in a split Tempo pane. The datasource was then
+      deleted, and `/api/datasources/uid/loki-probe` answers 404.
+
+      **`trace_id` is structured metadata on all three services' lines**, read off the
+      `query_range` response, and every one resolves through the Tempo proxy to a `GET /fail` server
+      span carrying `http.response.status_code` 500 and `STATUS_CODE_ERROR`. That includes the app,
+      where the exception handler answers rather than the route — the span still records the 500.
 - [ ] Exemplars in the connector, OpenMetrics in the exporter, with assertions. —
       `feat(collector): emit an exemplar with every derived metric`
 - [ ] **Measure:** series names and sample count before and after, the exposition size, and an
