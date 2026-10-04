@@ -246,7 +246,7 @@ One commit per task, its checkbox ticked in the same commit.
       the trace → logs window shifted a second either side, each asserted. —
       `fix(grafana): anchor the trace id matcher and pad the span window`
 - [x] The `smoke` job. — `ci: prove the chain answers, not just that it parses`
-- [ ] `CLAUDE.md`: `/fail`, the three links and what each depends on. —
+- [x] `CLAUDE.md`: `/fail`, the three links and what each depends on. —
       `docs: document the correlation path`
 - [ ] `README.md`: the walk as a script, and how to attach a new service. —
       `docs: explain the walk, and how to attach a service`
