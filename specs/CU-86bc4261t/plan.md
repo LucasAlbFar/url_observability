@@ -40,7 +40,6 @@ Checked on 2026-10-04, at `b4a3d87`.
 
 **Hypotheses, to measure with the stack up:**
 
-- Whether Grafana draws exemplars on a `histogram_quantile` panel or only on a raw bucket query.
 - Tempo 3.0.3's default block retention.
 - How long the stack takes to come up healthy on a cold CI runner.
 
@@ -180,8 +179,14 @@ One commit per task, its checkbox ticked in the same commit.
       `storage.exemplars` is left at its default; an exemplar older than that is simply gone.
 - [x] The flag in the Prometheus command, a limit only if the measurement requires it, with the
       assertion. — `feat(prometheus): store the exemplars`
-- [ ] Graph → trace, and exemplars on the panel the measurement picks. —
+- [x] Graph → trace, and exemplars on the panel the measurement picks. —
       `feat(grafana): open a trace from a point on the graph`
+
+      Measured 2026-10-04 in the browser: with `"exemplar": true` on its target, the existing *p95
+      by route* panel draws the points over its `histogram_quantile` lines — Grafana fetches the
+      exemplars of the bucket series inside it. So no raw-bucket panel is added. A point's tooltip
+      carries a *Query with tempo* link, and clicking one opened `service-go: GET /load/cpu-bound`
+      in Tempo.
 - [ ] Trace → logs. — `feat(grafana): open the logs of a trace`
 - [ ] Logs → trace, in the form the second task decided. —
       `feat(grafana): open the trace of a log line`

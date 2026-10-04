@@ -291,6 +291,78 @@ def test_no_query_names_a_scrape_job(dashboards, scrape_job_names):
                 assert job not in query, (name, job, query)
 
 
+def datasource_links(value):
+    """Yield every `datasourceUid` nested anywhere under a datasource.
+
+    The links between datasources live in different keys per type —
+    a list on Prometheus, an object on Tempo, a list of objects on
+    Loki — and all three name their target the same way.
+    """
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key == "datasourceUid":
+                yield child
+            else:
+                yield from datasource_links(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from datasource_links(child)
+
+
+def test_every_datasource_link_targets_a_declared_uid(repo_root, datasource_uids):
+    """Confirm a link opens a datasource that exists.
+
+    A link to an unknown uid is still drawn; it fails only when clicked,
+    which is the moment the walk from one pillar to the next is needed.
+    """
+    config = yaml.safe_load((repo_root / DATASOURCE_CONFIG).read_text())
+    links = [
+        (datasource["name"], target)
+        for datasource in config["datasources"]
+        for target in datasource_links(datasource.get("jsonData", {}))
+    ]
+    assert links, "no datasource links to another"
+    for name, target in links:
+        assert target in datasource_uids, (name, target)
+
+
+def test_an_exemplar_opens_its_trace(repo_root):
+    """Confirm the exemplar label the Collector writes is the one read.
+
+    The connector attaches the trace id as `trace_id`, measured; a
+    destination naming any other label draws the point and links it to
+    nothing.
+    """
+    config = yaml.safe_load((repo_root / DATASOURCE_CONFIG).read_text())
+    destinations = [
+        destination
+        for datasource in config["datasources"]
+        if datasource["type"] == "prometheus"
+        for destination in datasource["jsonData"].get("exemplarTraceIdDestinations", [])
+    ]
+    traces = {d["uid"] for d in config["datasources"] if d["type"] == "tempo"}
+    assert any(
+        d["name"] == "trace_id" and d["datasourceUid"] in traces for d in destinations
+    ), destinations
+
+
+def test_every_bucket_query_asks_for_exemplars(dashboards):
+    """Confirm the latency panel draws the points that open a request.
+
+    An exemplar lives on a histogram bucket, and Grafana fetches it only
+    for a target that asks. Measured: it draws on the p95 panel's
+    `histogram_quantile`, so no raw-bucket panel is needed for it.
+    """
+    checked = 0
+    for name, dashboard in dashboards:
+        for panel in iter_panels(dashboard):
+            for target in panel.get("targets", []):
+                if "_bucket" in target.get("expr", ""):
+                    checked += 1
+                    assert target.get("exemplar") is True, (name, panel["title"])
+    assert checked, "no panel queries a histogram bucket"
+
+
 def test_datasource_time_interval_matches_the_scrape_interval(repo_root):
     """Confirm Grafana is told how often Prometheus actually scrapes.
 

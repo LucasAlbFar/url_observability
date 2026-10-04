@@ -31,6 +31,13 @@ datasources:
       # `$__rate_interval`, which is derived from it, never resolves below
       # 60s however far the time picker is zoomed in.
       timeInterval: 5s
+      # Graph -> trace. An exemplar carries the trace id under the label
+      # the Collector's connector gives it, `trace_id`, and this turns
+      # that value into a link to the trace store by uid. Without it the
+      # point is drawn and opens nothing.
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: tempo
 
   # No `deleteDatasources` entry, and that is the whole difference from
   # the one above: this datasource is born with its uid, so there is no
