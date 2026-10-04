@@ -262,6 +262,34 @@ One commit per task, its checkbox ticked in the same commit.
       rebuilt with 2.8.0 passes the `smoke` check.
 - [ ] Run the verification steps and record each result. — verification
 
+      Run 2026-10-04 under `core` + `load`; step 1 re-run after the `urllib3` bump above. **One
+      step is pending.**
+
+      1. `tox`: `py311` 114 passed at 100% coverage, `lint` clean, `safety` no known
+         vulnerabilities in either file. `go vet` and `go test` pass, `gofmt -l` empty, `npm test`
+         14 of 14.
+      2. `config -q` resolves ten services; `promtool`, the Collector's `validate`, Tempo's
+         `-config.verify=true` and Loki's `-verify-config` all accept their files.
+      3. Six targets at `up=1`. The Collector at **389** samples against `sample_limit: 8000` — up
+         from 357 by the `/fail` series — and a **140 KB** body against `body_size_limit: 4MB`.
+      4. A `service-go` `/fail` exemplar from `query_exemplars` resolved in Tempo to `GET /fail`,
+         status 500.
+      5. Graph → trace → logs, by clicks: from the exemplar's trace, the `service-go` span — 99 µs —
+         opened its `failed on purpose` line. The graph → trace click itself was last made in the
+         walk, on the same configuration. The canvas froze the browser twice here.
+      6. That line's *Open trace* linked the same trace id.
+      7. Two services: `service-go` here, after the fix; `service-node` and the `fastapi-app` →
+         `service-go` 502 in the walk, with the fixed links re-clicked on the 502 trace.
+      8. Derived series for all three jobs — 8, 6 and 5. A `/chain` with a known `traceparent`
+         crossed all three services in Tempo. A `service-node` `/fail` line was found by its
+         trace id.
+      9. Collector stopped: `/health` 200 on all three, `/chain` 200 in 23 ms, and every container
+         still `healthy` 40 s later. Started again afterwards.
+      10. **Pending.** Needs the branch pushed; the cold start of the `smoke` job is unmeasured
+          until then.
+      11. `git diff --stat main...HEAD` names 24 files: the table's, and the two ticket documents.
+          `prometheus.yml` is untouched, as the exemplar measurement allowed.
+
 ## Edge cases
 
 - **An exemplar outlives its trace**, or a line outlives its trace, when retentions disagree.
