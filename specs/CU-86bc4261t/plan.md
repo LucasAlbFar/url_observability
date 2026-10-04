@@ -213,9 +213,35 @@ One commit per task, its checkbox ticked in the same commit.
       change reads `retention_period: 1w` with `retention_enabled: true`, the compactor module
       starts, and a `/fail` line is ingested after the restart. Its `retention_period: 0s` belongs
       to `table_manager`, which a tsdb store does not use.
-- [ ] **Measure:** the full walk by hand from `/fail` and from a `/chain` 502, in two services;
+- [x] **Measure:** the full walk by hand from `/fail` and from a `/chain` 502, in two services;
       record whether the empty trace → logs result for a successful request is a problem. —
       verification
+
+      Walked 2026-10-04 in the browser under `core` + `load`, and **it found two defects in the
+      links already committed**, neither visible to the per-link checks that preceded it.
+
+      **`service-node`, from five `/fail`:** the p95 panel filtered to `service-node` and `/fail`
+      drew three exemplar points — three of five requests, since the connector keeps one exemplar
+      per series per flush. One opened `service-node: GET /fail`, 500, 1.27 ms; its span opened
+      the one `unhandled exception` line. **The way back failed**: that line's *Open trace* queried
+      Tempo for `false`. `matcherRegex` is not anchored, so `trace_id` also matches the
+      `log_line_contains_trace_id` label the trace → logs query adds, whose value is `false`.
+      `^trace_id$`, tried on a throwaway datasource over the same query, links the real id.
+
+      **A `/chain` 502, `service-node` stopped:** the panel filtered to `fastapi-app` and `/chain`
+      showed the anomaly as points falling from ~1 s to near zero. One, labelled 502, opened
+      `fastapi-app: GET /chain`, 502, 40.69 ms over two services; the call to `service-go` starts
+      ~30 ms in and takes 1.69 ms, so the time went in the app before the hop. **The `service-go`
+      span's logs came back empty** although its `next hop failed` line exists: Grafana truncates
+      the span window to milliseconds, so it ended at `…282.000` ms while the line was written at
+      `…282.198`, inside a span ending at `…282.286`. The same query to `…283` ms returns it. The
+      app's line was found only because it did not land in its span's last millisecond.
+
+      **A successful request leaves no line, and that is not a gap in the walk.** A `/chain` 200
+      crossing all three services returned zero lines for its trace id. An error — a 5xx or a
+      failed hop — always writes one. A latency anomaly writes none, and does not need to: the
+      trace is where it is answered, as the 502 above showed where its 40 ms went.
+      A `traceparent` sent by the caller became that trace's id, which the smoke test relies on.
 - [ ] The `smoke` job. — `ci: prove the chain answers, not just that it parses`
 - [ ] `CLAUDE.md`: `/fail`, the three links and what each depends on. —
       `docs: document the correlation path`
