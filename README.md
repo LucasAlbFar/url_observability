@@ -11,9 +11,9 @@ Three small services — one FastAPI, one Go, one Node — instrumented end-to-e
 - **`loadgen`** — a standalone async script (`worker/load_driver.py`) that continuously calls every service's `/load/*` endpoints over HTTP, purely to generate traffic for the metrics/dashboards. It also calls `/chain` on the app, which is the one request that crosses all three services.
 - **`otel-collector`** — receives OTLP from the three services, forwards it to Tempo, and derives every request metric in the stack from those same spans, publishing them on 8888 for Prometheus to pull. It declares no published port: the senders and Prometheus reach it over the compose network. Nothing declares `depends_on` for it, so it can go down without taking an application with it.
 - **`tempo`** — stores the traces, on a named volume so they survive a `down`. Reached through Grafana rather than directly; it publishes no port either.
-- **`loki`** — the log store, on the same terms as Tempo: a named volume, no published port, and one port carrying both its queries and its `/metrics`. What reaches it are the error lines the services emit, carrying the trace id of the request they were made inside.
+- **`loki`** — the log store, on the same terms as Tempo: a named volume, no published port, and one port carrying both its queries and its `/metrics`. What reaches it are the error lines the services emit, carrying the trace id of the request they were made inside. Lines are kept 7 days, the same window as the metrics.
 - **`prometheus`** — finds what to scrape by reading the Docker socket every 15s, and scrapes whatever it finds every 5s. No address is written down: a service opts in with labels in its own compose block (see [Joining the scrape](#joining-the-scrape)). The scrape interval and the retention window (7 days, capped at 512 MB) live in `prometheus.yml`; the container's command line only points it at that file and at the volume its TSDB writes to.
-- **`grafana`** — auto-provisioned with a Prometheus datasource and a ready-made "Services Overview" dashboard. Fifteen panels in three rows: *Services* compares them side by side (targets up, throughput, CPU, resident memory, 4xx/5xx); *Requests* breaks the same traffic down by route, p95 and response code; and *Cardinality* shows how much each target writes, how much the guard discards, and how fast each one is adding series. Two dropdowns sit at the top: `Service` filters every panel, and `Route` narrows the *Requests* row to particular endpoints. It was eighteen panels in four rows while three services labelled a request three different ways.
+- **`grafana`** — auto-provisioned with Prometheus, Tempo and Loki datasources, linked to each other (see [From a graph to the request, and back](#from-a-graph-to-the-request-and-back)), and a ready-made "Services Overview" dashboard. Fifteen panels in three rows: *Services* compares them side by side (targets up, throughput, CPU, resident memory, 4xx/5xx); *Requests* breaks the same traffic down by route, p95 and response code; and *Cardinality* shows how much each target writes, how much the guard discards, and how fast each one is adding series. Two dropdowns sit at the top: `Service` filters every panel, and `Route` narrows the *Requests* row to particular endpoints. It was eighteen panels in four rows while three services labelled a request three different ways.
 
 The `/load/*` endpoints each stress a different resource on purpose, so the dashboard has something to plot. On the FastAPI app (`:8002`):
 
@@ -25,6 +25,7 @@ The `/load/*` endpoints each stress a different resource on purpose, so the dash
 | `GET /load/stress/{seconds}` | Blocking busy-wait for N seconds | CPU by service |
 | `GET /load/memory-spike` | Allocates a large in-memory list | Resident memory |
 | `GET /chain` | Calls `service-go`, which calls `service-node` | Throughput by route — and the only request that crosses services |
+| `GET /fail` | Raises, and answers 500 — an error on demand, never driven by the load generator | 5xx error rate |
 
 The Go service (`:8003`) and the Node service (`:8004`) serve the same paths, deliberately — a route that exists on all three is what makes their series merge visible:
 
@@ -34,6 +35,7 @@ The Go service (`:8003`) and the Node service (`:8004`) serve the same paths, de
 | `GET /load/io-bound` | Sleeps 2s |
 | `GET /load/cpu-bound` | Spins for roughly as long as the FastAPI one takes |
 | `GET /chain` | The Go one calls the Node one and wraps its answer; the Node one answers and ends the chain |
+| `GET /fail` | Answers 500 and logs one error line |
 
 **One convention, and it used to be three.** Each service emitted what its own library gave it — `handler`/`status` in the app, `code`/`method` in Go, `route`/`status_code` in Node — so no single query reached all three and the dashboard needed a row per convention. The request metrics are derived from spans now: one instrumentation, one set of labels, and the route on a graph is the same string the trace shows. The cost of the split, measured while it was live, is in `specs/CU-86bbpx4by/plan.md`; what replaced it is in `specs/CU-86bbw0j24/plan.md`.
 
@@ -159,14 +161,70 @@ Expand a line and the attributes below it hold `trace_id`, `span_id`, `server.ad
 {service_name=~".+"} | trace_id="<the id you copied>"
 ```
 
-Two lines come back for that failure — one from `fastapi-app` naming `service-go`, one from `service-go` naming `service-node`. Paste the same id into the `tempo` datasource and you get the trace those lines were written inside. That walk is manual today; making it a click is the next feature.
+Two lines come back for that failure — one from `fastapi-app` naming `service-go`, one from `service-go` naming `service-node`. Paste the same id into the `tempo` datasource and you get the trace those lines were written inside — or skip the copying, and follow the links in the next section.
 
 Four things are worth knowing before you go looking:
 
-- **Only errors are logged.** The 502 above and any unhandled exception — not one line per request, which would repeat what the throughput panel already counts.
+- **Only errors are logged.** The 502 above, any unhandled exception and `/fail` — not one line per request, which would repeat what the throughput panel already counts.
 - **`service_name` and `log_severity` are the only labels**, and they are the only things you may put in the `{}`. Everything else — the trace id included — is structured metadata, filtered with `|` after the selector. In Loki every label combination is a separate stream with its own index, so a label per trace id would be a stream per request.
 - **Boot lines are not here.** They are written before there is a request to belong to, so they carry no trace id and stay in `docker logs` — which is where you look when a container fails to start, and exactly when this path does not exist yet.
-- **Logs live on the `loki_data` volume** and survive a `down`, like the traces and the metrics. Only `down --volumes` destroys them.
+- **Logs live on the `loki_data` volume** and survive a `down`, like the traces and the metrics. They are kept 7 days; only `down --volumes` destroys them sooner.
+
+### From a graph to the request, and back
+
+Each pillar links to the next, so a spike on a graph is three clicks from the line that explains it. Start from an error you made yourself:
+
+```bash
+for i in 1 2 3; do curl -s -o /dev/null localhost:8004/fail; sleep 5; done
+```
+
+1. **Graph → request.** Open the dashboard, set `Service` to `service-node` and `Route` to `/fail`, and look at *p95 by route*. The small diamonds over the line are **exemplars**: each one is a real request that landed in that bucket. Click one — the tooltip carries its `trace_id` and a **Query with tempo** link.
+2. **Request → where the time went.** The link opens the trace: `service-node: GET /fail`, status 500, with its duration. On a `/chain`, this is the waterfall that shows which service the time went to.
+3. **Trace → its logs.** On the span row, the logs icon opens Loki filtered to that service and that trace id. One line comes back: `unhandled exception`.
+4. **Log → trace, the way back.** Expand the line; under *Links*, **Open trace** takes you back to the same trace.
+
+The same walk across two services: stop the end of the chain, so the app and the Go service both fail on the same request.
+
+```bash
+docker compose --profile core stop service-node
+curl -s -o /dev/null -w '%{http_code}\n' localhost:8002/chain   # 502
+docker compose --profile core start service-node
+```
+
+Set `Service` to `fastapi-app` and `Route` to `/chain`: the points fall from about a second to near zero — the failures are fast. Open one: the trace spans `fastapi-app` and `service-go`, and each span's logs icon opens the line that service wrote, each naming the neighbour it could not reach.
+
+Three things are worth knowing:
+
+- **A successful request has no lines.** Only errors are logged, so the logs link of a healthy span comes back empty. The trace is where a slow request is explained.
+- **Exemplars are kept for hours, not days.** Prometheus holds the last 100000 — about seven hours under load — so an older stretch of graph has no points to click, even though its traces and lines are still stored.
+- **One point per bucket per few seconds.** The Collector keeps one exemplar per series each time it publishes, so five quick requests may draw three points.
+
+### Attaching a new service
+
+The stack was built to take a service it has not seen before, and `service-node` was attached exactly this way. What a new service needs, all of it in its own compose block and its own code:
+
+1. **Join the scrape** with the four labels in [Joining the scrape](#joining-the-scrape). Pick a `prometheus.io/job` no other service uses.
+2. **Send telemetry to the Collector.** Start an OpenTelemetry SDK, and give it the environment the other three get:
+
+   ```yaml
+   environment:
+     - OTEL_SERVICE_NAME=my-service          # must equal prometheus.io/job
+     - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+     - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+     - OTEL_TRACES_EXPORTER=otlp
+     - OTEL_METRICS_EXPORTER=none
+     - OTEL_LOGS_EXPORTER=otlp
+     - OTEL_SEMCONV_STABILITY_OPT_IN=http
+   ```
+
+   Its request metrics then appear on the dashboard by themselves — they are derived from its spans, so it counts nothing of its own. Its `/metrics` only needs the process and runtime series.
+3. **Name each server span by its route.** Without a framework, set `http.route` on the span yourself, and one fixed value for paths nobody serves — `unmatched` in the other two. A raw path there is one series per URL.
+4. **Propagate the context**, so `traceparent` is read on the way in and written on the way out. Some SDKs do it by default; Go's does not.
+5. **Log errors, and only errors, through the SDK**, so each line carries the trace id. Keep boot lines on stdout.
+6. **Leave `/metrics` out of the traces.**
+7. **Answer `/health`** with `{"status": "ok"}` and point a healthcheck at it. Put the service in the `core` profile — and in `load`, plus `URLS` in `worker/load_driver.py`, only if the load generator should drive it.
+
+Nothing in `prometheus.yml`, the Collector, Grafana or the dashboard changes. `tox` checks what it can — the labels, `OTEL_SERVICE_NAME` against `prometheus.io/job`, no `depends_on` on the telemetry path — and the `smoke` job in CI checks that the stack still answers.
 
 ## Stack
 
@@ -322,7 +380,7 @@ npm test
 
 ### Infra checks
 
-Four test files validate the stack's configuration rather than any Python module — `docker-compose.yml`, `prometheus.yml`, the provisioned Grafana files, and the image versions this README and `CLAUDE.md` quote. They run inside the normal `tox` and need no Docker. CI additionally validates the same files with the tools that own them:
+Four test files validate the stack's configuration rather than any Python module — `docker-compose.yml`, `prometheus.yml`, the provisioned Grafana files, and the image versions this README and `CLAUDE.md` quote. They run inside the normal `tox` and need no Docker. CI additionally validates the same files with the tools that own them, and a `smoke` job starts the stack, provokes one error and waits for its trace id in Tempo and in Loki:
 
 ```bash
 docker compose --profile '*' config -q
@@ -391,14 +449,14 @@ Notes:
 ```text
 app/
   main.py                 # FastAPI app, instrumentation, router registration
-  api/endpoints/          # one module per route group (chain, example, health, load)
+  api/endpoints/          # one module per route group (chain, example, fail, health, load)
   core/config.py          # pydantic-settings Settings singleton
 service-go/
-  main.go                 # the Go service: /health, /load/*, /chain, /metrics on :8003
+  main.go                 # the Go service: /health, /load/*, /chain, /fail, /metrics on :8003
   main_test.go            # its tests — run by `go test`, not by pytest
   go.mod / go.sum         # module definition and committed checksums
 service-node/
-  main.js                 # the Node service: /health, /load/*, /chain, /metrics on :8004
+  main.js                 # the Node service: /health, /load/*, /chain, /fail, /metrics on :8004
   main.test.js            # its tests — run by `npm test`, not by pytest
   tracing.mjs             # the OTel bootstrap, loaded by `node --import`
   package.json / package-lock.json   # manifest and committed lockfile
@@ -410,7 +468,7 @@ grafana/                  # provisioned datasources + "Services Overview" dashbo
 prometheus.yml            # scrape settings, the label-discovery job, the cardinality guard
 otel-collector-config.yaml  # OTLP in; traces to Tempo, logs to Loki, request metrics out on 8888
 tempo.yaml                # the trace store: one receiver, local blocks on a named volume
-loki.yaml                 # the log store: local index and chunks on a named volume
+loki.yaml                 # the log store: local index and chunks on a named volume, kept 7 days
 docker-compose.yml        # the ten services, their profiles and named volumes
 tests/                    # pytest suite: one file per module, plus six that check config
 requirements/             # pip-compile sources (base.in/dev.in) and lockfiles (base.txt/dev.txt)

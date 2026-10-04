@@ -248,7 +248,7 @@ One commit per task, its checkbox ticked in the same commit.
 - [x] The `smoke` job. — `ci: prove the chain answers, not just that it parses`
 - [x] `CLAUDE.md`: `/fail`, the three links and what each depends on. —
       `docs: document the correlation path`
-- [ ] `README.md`: the walk as a script, and how to attach a new service. —
+- [x] `README.md`: the walk as a script, and how to attach a new service. —
       `docs: explain the walk, and how to attach a service`
 - [ ] Run the verification steps and record each result. — verification
 
