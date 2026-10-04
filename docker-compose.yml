@@ -204,6 +204,11 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
+      # What keeps the trace id the Collector attaches to each derived
+      # metric; off by default, and without it every exemplar is dropped
+      # at ingest with no error. A buffer of 100000, not a retention:
+      # under load it holds about seven hours, measured.
+      - "--enable-feature=exemplar-storage"
     ports:
       - "9090:9090"
     restart: unless-stopped

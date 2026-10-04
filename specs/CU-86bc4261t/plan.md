@@ -178,7 +178,7 @@ One commit per task, its checkbox ticked in the same commit.
       is **100000** and it filled at **3.7 per second** under load — about **7.4 hours** before the
       oldest is evicted. That is a long way over the dashboard's default 30-minute range, so
       `storage.exemplars` is left at its default; an exemplar older than that is simply gone.
-- [ ] The flag in the Prometheus command, a limit only if the measurement requires it, with the
+- [x] The flag in the Prometheus command, a limit only if the measurement requires it, with the
       assertion. — `feat(prometheus): store the exemplars`
 - [ ] Graph → trace, and exemplars on the panel the measurement picks. —
       `feat(grafana): open a trace from a point on the graph`
