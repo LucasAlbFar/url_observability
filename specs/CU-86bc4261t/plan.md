@@ -60,6 +60,7 @@ Checked on 2026-10-04, at `b4a3d87`.
 | `tests/test_collector_config.py`, `tests/test_compose_config.py`, `tests/test_grafana_provisioning.py`, `tests/test_loki_config.py` | The new fields |
 | `.github/workflows/python-app.yml` | The `smoke` job |
 | `CLAUDE.md`, `README.md` | The links, the walk, attaching a service |
+| `requirements/base.txt`, `requirements/dev.txt` | `urllib3` past three advisories the verification found |
 
 ## Design
 
@@ -250,6 +251,15 @@ One commit per task, its checkbox ticked in the same commit.
       `docs: document the correlation path`
 - [x] `README.md`: the walk as a script, and how to attach a new service. —
       `docs: explain the walk, and how to attach a service`
+- [x] `urllib3` 2.7.0 → 2.8.0 in `base.txt` and `dev.txt`, for PYSEC-2026-4175, -4176 and -4177,
+      found by the verification below and not by this branch: `main` pins the same version. —
+      `fix(deps): bump urllib3 past three advisories`
+
+      `pip-compile --upgrade-package 'urllib3==2.8.0'` from a throwaway venv on `pip==25.3`, since
+      pip 26.2 breaks `pip-tools` 7.6.0; the diff is that one line in each file. The header's
+      `--no-index` is passed through to pip by this `pip-tools` and blocks PyPI, so it was dropped
+      from the invocation; the header itself did not change. `safety` passes, and the app image
+      rebuilt with 2.8.0 passes the `smoke` check.
 - [ ] Run the verification steps and record each result. — verification
 
 ## Edge cases
