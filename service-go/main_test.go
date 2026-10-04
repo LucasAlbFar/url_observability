@@ -241,6 +241,36 @@ func TestChainLogsWhichNeighbourFailed(t *testing.T) {
 	}
 }
 
+// The route exists for its two effects, so both are asserted: the 500,
+// and the line that joins it to the request in the logs pillar.
+func TestFailIsAnsweredAndLogged(t *testing.T) {
+	var written bytes.Buffer
+	restoreLogger := logger
+	logger = slog.New(slog.NewJSONHandler(&written, nil))
+	defer func() { logger = restoreLogger }()
+
+	rec := httptest.NewRecorder()
+	newMux().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/fail", nil))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+	if got, want := rec.Body.String(), "Internal Server Error\n"; got != want {
+		t.Errorf("body = %q, want %q", got, want)
+	}
+
+	var record map[string]any
+	if err := json.Unmarshal(written.Bytes(), &record); err != nil {
+		t.Fatalf("no line was written: %v (%q)", err, written.String())
+	}
+	if record["level"] != "ERROR" {
+		t.Errorf("level = %v, want ERROR", record["level"])
+	}
+	if record["url.path"] != "/fail" {
+		t.Errorf("url.path = %v, want /fail", record["url.path"])
+	}
+}
+
 // Every record reaches every handler, which is the point of writing
 // this type rather than handing slog the bridge alone: the bridge is
 // the only handler carrying the trace id and the only one that goes

@@ -134,7 +134,7 @@ exemplar would point at a trace that is gone.
 
 One commit per task, its checkbox ticked in the same commit.
 
-- [ ] `/fail` in the three services, with tests, and `service-node`'s async path wrapped. —
+- [x] `/fail` in the three services, with tests, and `service-node`'s async path wrapped. —
       `feat: give every service a way to fail on purpose`
 - [ ] **Measure:** whether `derivedFields` reads structured metadata on Grafana 12.4.7, via a
       datasource edited in the UI and discarded. Decides the shape of the logs → trace link. —
