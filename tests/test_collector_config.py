@@ -346,6 +346,27 @@ def test_the_request_metrics_are_derived_from_the_spans(
         raise AssertionError("no metrics pipeline reads the connector")
 
 
+def test_the_derived_metrics_carry_exemplars_to_the_scrape(
+    collector_config, compose_labels
+):
+    """Confirm an exemplar is attached and then actually served.
+
+    Two halves, and each fails silently without the other: the
+    connector attaches the trace id, and only OpenMetrics carries it out
+    of the exporter. Either missing, the latency panel draws no point
+    and nothing says why.
+    """
+    connectors = collector_config["connectors"]
+    assert connectors
+    for name, connector in connectors.items():
+        assert connector.get("exemplars", {}).get("enabled") is True, name
+
+    published = published_exporters(collector_config, compose_labels)
+    assert published
+    for name, exporter in published.items():
+        assert exporter.get("enable_open_metrics") is True, name
+
+
 def span_filters(collector_config):
     """Return the processors that actually drop spans, by name.
 

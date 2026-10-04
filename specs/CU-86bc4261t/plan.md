@@ -151,7 +151,7 @@ One commit per task, its checkbox ticked in the same commit.
       `query_range` response, and every one resolves through the Tempo proxy to a `GET /fail` server
       span carrying `http.response.status_code` 500 and `STATUS_CODE_ERROR`. That includes the app,
       where the exception handler answers rather than the route — the span still records the 500.
-- [ ] Exemplars in the connector, OpenMetrics in the exporter, with assertions. —
+- [x] Exemplars in the connector, OpenMetrics in the exporter, with assertions. —
       `feat(collector): emit an exemplar with every derived metric`
 - [ ] **Measure:** series names and sample count before and after, the exposition size, and an
       exemplar in `query_exemplars` after the flag is set by hand. — verification
