@@ -64,7 +64,11 @@ def test_the_store_writes_inside_the_named_volume(loki_config, compose):
     target = mount_target(compose, LOKI_SERVICE, LOKI_VOLUME)
     assert target
     common = loki_config["common"]
-    paths = [common["path_prefix"], *common["storage"]["filesystem"].values()]
+    paths = [
+        common["path_prefix"],
+        *common["storage"]["filesystem"].values(),
+        loki_config["compactor"]["working_directory"],
+    ]
     for path in paths:
         assert path == target or path.startswith(f"{target}/"), path
 
@@ -122,3 +126,22 @@ def test_the_defaults_are_turned_off_rather_than_added_to(loki_config):
     """
     rules = resource_attribute_rules(loki_config)
     assert rules.get("ignore_defaults") is True, rules
+
+
+def hours(duration):
+    """Return a duration written as `<n>h`, `<n>d` or `<n>w` in hours."""
+    units = {"h": 1, "d": 24, "w": 168}
+    return int(duration[:-1]) * units[duration[-1]]
+
+
+def test_lines_are_kept_as_long_as_the_series(loki_config, repo_root):
+    """Confirm a line is kept as long as the metrics that counted it.
+
+    Two halves, because the period alone is read and ignored: Loki
+    deletes nothing unless the compactor runs retention, and keeps every
+    line forever without saying so.
+    """
+    prometheus = yaml.safe_load((repo_root / "prometheus.yml").read_text())
+    kept = prometheus["storage"]["tsdb"]["retention"]["time"]
+    assert hours(loki_config["limits_config"]["retention_period"]) == hours(kept)
+    assert loki_config["compactor"]["retention_enabled"] is True

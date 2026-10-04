@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import http from "node:http";
 import { after, before, describe, test } from "node:test";
 
 import { trace } from "@opentelemetry/api";
@@ -202,6 +203,47 @@ test("a handler that throws is answered and logged", async () => {
   assert.equal(records.length, 1);
   assert.equal(records[0].body, "unhandled exception");
   assert.equal(records[0].attributes["url.path"], "/health");
+  assert.equal(records[0].attributes["http.request.method"], "GET");
+});
+
+test("/fail is answered and logged", async () => {
+  const records = collectRecords();
+
+  const response = await fetch(origin + "/fail");
+
+  assert.equal(response.status, 500);
+  assert.equal(await response.text(), "Internal Server Error\n");
+  assert.equal(records.length, 1);
+  assert.equal(records[0].body, "unhandled exception");
+  assert.equal(records[0].attributes["url.path"], "/fail");
+});
+
+// The path the dispatch `catch` cannot see. The first writeHead throws,
+// which is what reaches the callback's own catch; the second is the
+// 500 it answers with, and has to go through.
+test("a throw in the io-bound callback is answered and logged", async () => {
+  const records = collectRecords();
+  const restore = http.ServerResponse.prototype.writeHead;
+  let thrown = false;
+  http.ServerResponse.prototype.writeHead = function (...args) {
+    if (!thrown) {
+      thrown = true;
+      throw new Error("boom");
+    }
+    return restore.apply(this, args);
+  };
+
+  try {
+    const response = await fetch(origin + "/load/io-bound");
+    assert.equal(response.status, 500);
+    assert.equal(await response.text(), "Internal Server Error\n");
+  } finally {
+    http.ServerResponse.prototype.writeHead = restore;
+  }
+
+  assert.equal(records.length, 1);
+  assert.equal(records[0].body, "unhandled exception");
+  assert.equal(records[0].attributes["url.path"], "/load/io-bound");
   assert.equal(records[0].attributes["http.request.method"], "GET");
 });
 

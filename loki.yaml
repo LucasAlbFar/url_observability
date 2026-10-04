@@ -51,9 +51,23 @@ schema_config:
 # Collector puts it there for exactly this — severity is not reachable
 # from this side.
 limits_config:
+  # The seven days Prometheus keeps, so a line is not kept long after the
+  # series that counted its request — or dropped while they are still
+  # drawn. Applied by the compactor below, and by nothing else: without
+  # it this value is read and ignored, and Loki keeps everything.
+  # Tempo keeps its traces 336h by default, measured; longer, so a line
+  # still here always finds its trace.
+  retention_period: 168h
   otlp_config:
     resource_attributes:
       ignore_defaults: true
       attributes_config:
         - action: index_label
           attributes: [service.name, log.severity]
+
+# What deletes. Retention is a compactor job in Loki, off unless asked
+# for; `delete_request_store` is required once it is on.
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem

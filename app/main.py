@@ -8,6 +8,7 @@ from starlette.responses import PlainTextResponse
 
 from app.api.endpoints.chain import router as chain_router
 from app.api.endpoints.example import router as example_route
+from app.api.endpoints.fail import router as fail_router
 from app.api.endpoints.health import router as health_router
 from app.api.endpoints.load import router as load_router
 
@@ -57,6 +58,7 @@ async def log_unhandled_exception(request: Request, error: Exception):
 
 app.include_router(chain_router)
 app.include_router(example_route)
+app.include_router(fail_router)
 app.include_router(health_router)
 app.include_router(load_router, prefix="/load", tags=["Load Testing"])
 

@@ -370,6 +370,23 @@ def test_prometheus_command_sets_the_storage_path(compose):
         assert flag in flags, flag
 
 
+def test_prometheus_stores_exemplars(compose):
+    """Confirm the trace id on a derived metric is kept.
+
+    The Collector serves exemplars either way. Without this flag
+    Prometheus discards them at ingest, and a point on the latency graph
+    has nothing to open.
+    """
+    command = compose["services"]["prometheus"]["command"]
+    features = {
+        feature
+        for argument in command
+        if argument.startswith("--enable-feature=")
+        for feature in argument.split("=", 1)[1].split(",")
+    }
+    assert "exemplar-storage" in features, command
+
+
 def test_scraped_services_declare_a_job_and_a_port(compose_labels):
     """Confirm an opted-in service carries the rest of the contract.
 

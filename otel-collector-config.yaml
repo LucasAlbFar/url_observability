@@ -122,6 +122,12 @@ connectors:
     # $__rate_interval is derived from a 5s scrape, so that is what the
     # dashboard would ask for.
     metrics_flush_interval: 5s
+    # The trace id of a request that landed in each bucket, which is
+    # what a point on the latency graph opens. Off by default, and a
+    # point needs the exporter below to speak OpenMetrics as well: the
+    # classic exposition has no place to carry one.
+    exemplars:
+      enabled: true
 
 exporters:
   # `otlp_grpc`, not the `otlp` alias: 0.160 still accepts the alias
@@ -148,6 +154,10 @@ exporters:
   # advertised, so the label did not move — the telemetry did.
   prometheus:
     endpoint: 0.0.0.0:8888
+    # OpenMetrics, served when the scraper asks for it, because it is
+    # the only text format that carries an exemplar. Without it the
+    # connector attaches them and this port drops them in silence.
+    enable_open_metrics: true
 
 service:
   pipelines:

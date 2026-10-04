@@ -156,3 +156,68 @@ jobs:
         echo "using $image"
         docker run --rm -v "$PWD/loki.yaml:/etc/loki.yaml:ro" \
           "$image" -config.file=/etc/loki.yaml -verify-config
+
+  # The other four validate files; this one starts the stack and proves
+  # the chain answers. One error, provoked on purpose, and its trace id
+  # followed into both stores — the walk from graph to logs, without the
+  # browser. Tempo and Loki publish no port, so they are read through
+  # Grafana's datasource proxy, which tests the provisioned datasources
+  # on the way.
+  smoke:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v7
+    # The runner's docker group is not this machine's 983, and a wrong id
+    # fails quietly: Prometheus reports healthy and discovers nothing.
+    - name: Read the docker group id
+      run: |
+        echo "DOCKER_GID=$(getent group docker | cut -d: -f3)" >> "$GITHUB_ENV"
+    # `--wait` inherits Grafana's 90s start_period; the timeout is the
+    # ceiling on a cold runner building three images.
+    - name: Start the stack
+      run: docker compose --profile core up --build --wait --wait-timeout 600
+    # The trace id is the test's own, sent as a traceparent: every SDK
+    # here continues an incoming context, so nothing has to be parsed out
+    # of a response to know which trace to look for.
+    - name: Follow one error into every store
+      run: |
+        grafana=http://admin:admin@localhost:3000/api/datasources/proxy/uid
+        trace=$(openssl rand -hex 16)
+
+        status=$(curl -s -o /dev/null -w '%{http_code}' \
+          -H "traceparent: 00-$trace-$(openssl rand -hex 8)-01" \
+          localhost:8002/fail)
+        [ "$status" = 500 ] || { echo "/fail answered $status"; exit 1; }
+
+        # Read from the compose labels rather than written here, so a
+        # service joining the scrape does not have to edit this job.
+        expected=$(docker compose --profile core config --format json \
+          | jq '[.services[].labels["prometheus.io/scrape"] // empty
+                 | select(. == "true")] | length')
+
+        wait_for() {
+          local deadline=$((SECONDS + 120))
+          until eval "$2"; do
+            [ "$SECONDS" -lt "$deadline" ] || { echo "timed out: $1"; exit 1; }
+            sleep 5
+          done
+          echo "ok: $1"
+        }
+
+        wait_for "every scraped service is up ($expected)" \
+          '[ "$(curl -s localhost:9090/api/v1/query --data-urlencode "query=count(up == 1)" \
+              | jq -r ".data.result[0].value[1] // 0")" = "$expected" ]'
+        wait_for "the trace reached Tempo" \
+          'curl -sf "$grafana/tempo/api/traces/$trace" > /dev/null'
+        wait_for "the line reached Loki with its trace id" \
+          '[ "$(curl -s -G "$grafana/loki/loki/api/v1/query_range" \
+              --data-urlencode "query={service_name=\"fastapi-app\"} | trace_id=\"$trace\"" \
+              | jq "[.data.result[].values[]] | length")" -gt 0 ]'
+    - name: Show what the stack logged
+      if: failure()
+      run: docker compose --profile core logs --no-color --tail 100
+    - name: Tear down
+      if: always()
+      run: docker compose --profile core down --volumes

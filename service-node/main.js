@@ -61,9 +61,20 @@ function health(response) {
   writeJSON(response, 200, '{"status":"ok"}');
 }
 
-function ioBound(response) {
+// The callback runs on a stack the dispatch `try`/`catch` below never
+// sees, so it carries its own: a throw here would otherwise end the
+// process. The request is passed in for the line alone, so it carries
+// the same attributes as the one the dispatch writes.
+function ioBound(response, request) {
   setTimeout(() => {
-    writeJSON(response, 200, '{"message":"I/O-bound task completed"}');
+    try {
+      writeJSON(response, 200, '{"message":"I/O-bound task completed"}');
+    } catch (error) {
+      answerUnhandled(response, error, {
+        "http.request.method": request.method,
+        "url.path": "/load/io-bound",
+      });
+    }
   }, 2000);
 }
 
@@ -99,11 +110,19 @@ function chain(response) {
   writeJSON(response, 200, '{"service":"service-node"}');
 }
 
+// fail throws on purpose, so an error — span, status and log line — can
+// be produced with no service stopped. The other two serve the same
+// path. Synchronous, so the dispatch `catch` below is what answers it.
+function fail() {
+  throw new Error("failed on purpose");
+}
+
 const routes = {
   "/health": health,
   "/load/io-bound": ioBound,
   "/load/cpu-bound": cpuBound,
   "/chain": chain,
+  "/fail": fail,
 };
 
 // Every request is labelled by the route that matched, never by the path
@@ -130,8 +149,19 @@ function instrument(route, handler) {
       span.updateName(`${request.method} ${route}`);
     }
 
-    handler(response);
+    handler(response, request);
   };
+}
+
+// The line and the 500 for a handler that threw, the way the app writes
+// them in an exception handler. The 500 only if nothing was sent yet: a
+// handler that failed halfway has already committed its status.
+function answerUnhandled(response, error, attributes) {
+  logError("unhandled exception", { "error.type": error.name, ...attributes });
+  if (!response.headersSent) {
+    response.writeHead(500, { "Content-Type": "text/plain" });
+    response.end("Internal Server Error\n");
+  }
 }
 
 function notFound(response) {
@@ -178,26 +208,18 @@ export function createServer() {
 
     // A handler throwing is an uncaught exception on current Node,
     // which ends the process: nothing above this catches it, because
-    // the server callback is where the stack starts. So the line and
-    // the 500 are both written here, the way the app writes them in an
-    // exception handler.
+    // the server callback is where the stack starts.
     //
-    // Synchronous throws only, which is what the four routes below do.
-    // `ioBound` writes from a `setTimeout` callback, on a stack this
-    // never sees — a throw there still ends the process. `/metrics`
-    // returns above this and carries its own try/catch.
+    // Synchronous throws only. `ioBound` writes from a `setTimeout`
+    // callback, on a stack this never sees, and carries its own
+    // try/catch; `/metrics` returns above this and does the same.
     try {
       instrument(routeFor(path), routes[path] ?? notFound)(request, response);
     } catch (error) {
-      logError("unhandled exception", {
-        "error.type": error.name,
+      answerUnhandled(response, error, {
         "http.request.method": request.method,
         "url.path": path,
       });
-      if (!response.headersSent) {
-        response.writeHead(500, { "Content-Type": "text/plain" });
-        response.end("Internal Server Error\n");
-      }
     }
   });
 }

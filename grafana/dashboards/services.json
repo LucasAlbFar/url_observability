@@ -412,6 +412,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
+          "exemplar": true,
           "expr": "histogram_quantile(0.95, sum by (le, job, http_route) (rate(traces_span_metrics_duration_seconds_bucket{job=~\"$job\", http_route=~\"$http_route\"}[$__rate_interval])))",
           "legendFormat": "{{job}} — {{http_route}}",
           "range": true,

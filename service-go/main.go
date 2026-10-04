@@ -245,6 +245,19 @@ func chain(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, fmt.Sprintf(`{"service":"service-go","next":%s}`, body))
 }
 
+// fail answers 500 on purpose, so an error — span, status and log line —
+// can be produced with no service stopped. The other two serve the same
+// path. Written by hand rather than by panicking: net/http recovers a
+// handler panic by dropping the connection, which is no response at all
+// and no line through the bridge.
+func fail(w http.ResponseWriter, r *http.Request) {
+	logger.ErrorContext(r.Context(), "failed on purpose",
+		slog.String("http.request.method", r.Method),
+		slog.String("url.path", r.URL.Path),
+	)
+	http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+}
+
 // call fetches a JSON body, failing on anything but 200 so a downstream
 // error is not wrapped as if it were an answer.
 func call(ctx context.Context, url string) ([]byte, error) {
@@ -285,6 +298,7 @@ func newMux() *http.ServeMux {
 	mux.Handle("/load/io-bound", instrument("/load/io-bound", ioBound))
 	mux.Handle("/load/cpu-bound", instrument("/load/cpu-bound", cpuBound))
 	mux.Handle("/chain", instrument("/chain", chain))
+	mux.Handle("/fail", instrument("/fail", fail))
 	// The default registry, which is the process and Go runtime
 	// collectors now that this service counts no request of its own.
 	// Untraced: a scrape is not traffic in its own graphs, and at one

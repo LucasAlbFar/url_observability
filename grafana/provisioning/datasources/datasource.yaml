@@ -31,6 +31,13 @@ datasources:
       # `$__rate_interval`, which is derived from it, never resolves below
       # 60s however far the time picker is zoomed in.
       timeInterval: 5s
+      # Graph -> trace. An exemplar carries the trace id under the label
+      # the Collector's connector gives it, `trace_id`, and this turns
+      # that value into a link to the trace store by uid. Without it the
+      # point is drawn and opens nothing.
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: tempo
 
   # No `deleteDatasources` entry, and that is the whole difference from
   # the one above: this datasource is born with its uid, so there is no
@@ -54,13 +61,55 @@ datasources:
       streamingEnabled:
         search: false
         metrics: false
+      # Trace -> logs: a span opens the lines of its own service and its
+      # own request. The tag maps the span's `service.name` to the label
+      # Loki indexes it under. `filterByTraceID` needs nothing more —
+      # measured: the query it writes falls back to `trace_id=` over
+      # structured metadata, where the id is, when the line does not
+      # contain it.
+      #
+      # The shifts are not slack for clock skew: every line is written
+      # inside its span. Grafana truncates the span's window to whole
+      # milliseconds, so a line written in its span's last millisecond
+      # falls outside it — measured on a `service-go` 502, whose line came
+      # back empty. A second either side costs nothing, since the trace
+      # id is what selects the line.
+      tracesToLogsV2:
+        datasourceUid: loki
+        tags:
+          - key: service.name
+            value: service_name
+        filterByTraceID: true
+        spanStartTimeShift: -1s
+        spanEndTimeShift: 1s
 
   # Born with its uid too, for the same reason, and with no
-  # `deleteDatasources` entry. Logs are read in Explore, like traces:
-  # nothing provisioned queries this yet.
+  # `deleteDatasources` entry. Logs are read in Explore, like traces,
+  # and reached from a span through the link above.
   - name: loki
     uid: loki
     type: loki
     access: proxy
     url: http://loki:3100
     editable: false
+    jsonData:
+      # Logs -> trace. The id is structured metadata, not line content,
+      # so the matcher reads it by name — `label` — rather than by a
+      # regex over the line, which does not contain it. Measured: the
+      # link resolves on all three services' lines.
+      #
+      # Anchored, because the name is matched as a regex: a bare
+      # `trace_id` also matches the `log_line_contains_trace_id` label the
+      # trace -> logs query adds, and the link opened Tempo on `false` —
+      # measured, from the lines a span had just opened.
+      #
+      # `$$`, not `$`: provisioning expands `${...}` from the environment
+      # before Grafana reads the value, so a single dollar arrives empty
+      # — measured — and the link opens Tempo with no query.
+      derivedFields:
+        - name: TraceID
+          matcherType: label
+          matcherRegex: ^trace_id$
+          url: $${__value.raw}
+          datasourceUid: tempo
+          urlDisplayLabel: Open trace
